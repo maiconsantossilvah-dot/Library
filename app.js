@@ -1,6 +1,7 @@
 // ============================================================
 // VAULT — app.js
-// Cloudinary (storage) + Firebase Firestore (metadados)
+// Cloudinary (25 GB) + Firebase Firestore
+// + Mover arquivos entre pastas
 // ============================================================
 
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -19,9 +20,11 @@ let files         = [];
 let unsubFiles    = null;
 let unsubFolders  = null;
 
-// Cloudinary config
 let cloudName    = "";
 let uploadPreset = "";
+
+// Move modal state
+let fileToMove = null;
 
 // ─── DOM refs ─────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -41,11 +44,14 @@ const folderNameInput = $("folderNameInput");
 const configModal     = $("configModal");
 const uploadPanel     = $("uploadPanel");
 const uploadList      = $("uploadList");
+const moveModal       = $("moveModal");
+const moveFileName    = $("moveFileName");
+const moveFolderList  = $("moveFolderList");
 const sidebar         = $("sidebar");
 const mainEl          = $("main");
 const toast           = $("toast");
 
-// ─── Persist config ───────────────────────────────────────
+// ─── Config persistence ───────────────────────────────────
 const CFG_KEY = "vault_config_v2";
 
 function loadConfig() {
@@ -58,12 +64,8 @@ function saveConfig(cfg) {
 
 // ─── Bootstrap ────────────────────────────────────────────
 const savedCfg = loadConfig();
-if (savedCfg) {
-  prefillConfig(savedCfg);
-  initApp(savedCfg);
-} else {
-  configModal.style.display = "flex";
-}
+if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
+else configModal.style.display = "flex";
 
 function prefillConfig(cfg) {
   $("cfg_apiKey").value            = cfg.apiKey            || "";
@@ -78,14 +80,11 @@ function prefillConfig(cfg) {
 
 async function initApp(cfg) {
   try {
-    const existingApp = getApps().find(a => a.name === "vault");
-    const firebaseApp = existingApp || initializeApp({
-      apiKey:            cfg.apiKey,
-      authDomain:        cfg.authDomain,
-      projectId:         cfg.projectId,
-      storageBucket:     cfg.storageBucket,
-      messagingSenderId: cfg.messagingSenderId,
-      appId:             cfg.appId,
+    const existing    = getApps().find(a => a.name === "vault");
+    const firebaseApp = existing || initializeApp({
+      apiKey: cfg.apiKey, authDomain: cfg.authDomain,
+      projectId: cfg.projectId, storageBucket: cfg.storageBucket,
+      messagingSenderId: cfg.messagingSenderId, appId: cfg.appId,
     }, "vault");
 
     db           = getFirestore(firebaseApp);
@@ -139,7 +138,7 @@ function listenFiles() {
     query(collection(db, "vault_files"), orderBy("createdAt", "desc")),
     snap => {
       files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      updateStorage();
+      updateStorageUI();
       renderGrid();
     }
   );
@@ -165,12 +164,9 @@ function renderFolderList() {
 // ─── Navigate ─────────────────────────────────────────────
 function navigateFolder(folderId) {
   currentFolder = folderId;
-  if (folderId === "root") {
-    breadcrumb.textContent = "Todos os Arquivos";
-  } else {
-    const f = folders.find(x => x.id === folderId);
-    breadcrumb.textContent = f ? f.name : "Pasta";
-  }
+  breadcrumb.textContent = folderId === "root"
+    ? "Todos os Arquivos"
+    : (folders.find(x => x.id === folderId)?.name || "Pasta");
   renderFolderList();
   renderGrid();
   sidebar.classList.remove("mobile-open");
@@ -180,7 +176,6 @@ function navigateFolder(folderId) {
 function renderGrid() {
   fileGrid.innerHTML = "";
   fileGrid.className = "grid" + (isListView ? " list-view" : "");
-
   let items = [];
 
   if (currentFolder === "root") {
@@ -208,7 +203,6 @@ function applyFilter(list) {
 function makeFileCard(file) {
   const card = document.createElement("div");
   card.className = "file-card";
-
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
 
   let thumbHtml = "";
@@ -218,9 +212,9 @@ function makeFileCard(file) {
   } else if (file.fileType === "video") {
     const poster = cloudThumb(file.cloudPublicId, "video", 400, 250);
     thumbHtml = `<img src="${poster}" alt="${esc(file.name)}" loading="lazy" />
-                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-                   <div style="background:rgba(0,0,0,0.6);border:2px solid rgba(255,255,255,0.8);border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:18px;">▶</div>
-                 </div>`;
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+        <div style="background:rgba(0,0,0,0.6);border:2px solid rgba(255,255,255,0.8);border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:18px;">▶</div>
+      </div>`;
   } else {
     thumbHtml = `<span class="thumb-icon">${docIcon(file.name)}</span>`;
   }
@@ -233,10 +227,14 @@ function makeFileCard(file) {
     <div class="file-info">
       <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
       <span class="file-size">${fmtSize(file.size)}</span>
-      <button class="file-delete" title="Excluir">✕</button>
+      <div class="file-actions">
+        <button class="file-action-btn move-btn" title="Mover para pasta">⇄</button>
+        <button class="file-action-btn file-delete" title="Excluir">✕</button>
+      </div>
     </div>`;
 
   card.querySelector(".file-delete").onclick = e => { e.stopPropagation(); deleteFile(file); };
+  card.querySelector(".move-btn").onclick     = e => { e.stopPropagation(); openMoveModal(file); };
   card.onclick = () => openLightbox(file);
   return card;
 }
@@ -269,7 +267,82 @@ function makeFolderCard(folder, count) {
   return card;
 }
 
-// ─── Upload via Cloudinary Upload Widget / XHR ────────────
+// ─── Move Modal ───────────────────────────────────────────
+function openMoveModal(file) {
+  fileToMove = file;
+  moveFileName.textContent = file.name;
+  renderMoveFolderList();
+  moveModal.classList.add("active");
+}
+
+function renderMoveFolderList() {
+  moveFolderList.innerHTML = "";
+
+  // Option: Root (Sem pasta)
+  const currentFolderId = fileToMove?.folderId || null;
+
+  const rootItem = document.createElement("div");
+  rootItem.className = "move-folder-item" + (!currentFolderId ? " current" : "");
+  rootItem.innerHTML = `
+    <span class="move-folder-icon">◈</span>
+    <span class="move-folder-name">Raiz — Todos os Arquivos</span>
+    ${!currentFolderId ? '<span class="move-current-badge">atual</span>' : ''}`;
+
+  if (!currentFolderId) {
+    rootItem.style.opacity = "0.4";
+    rootItem.style.cursor  = "default";
+  } else {
+    rootItem.onclick = () => moveFileTo(null);
+  }
+  moveFolderList.appendChild(rootItem);
+
+  // All folders
+  folders.forEach(f => {
+    const isCurrent = f.id === currentFolderId;
+    const item = document.createElement("div");
+    item.className = "move-folder-item" + (isCurrent ? " current" : "");
+    item.innerHTML = `
+      <span class="move-folder-icon">▣</span>
+      <span class="move-folder-name">${esc(f.name)}</span>
+      ${isCurrent ? '<span class="move-current-badge">atual</span>' : ''}`;
+
+    if (isCurrent) {
+      item.style.opacity = "0.4";
+      item.style.cursor  = "default";
+    } else {
+      item.onclick = () => moveFileTo(f.id);
+    }
+    moveFolderList.appendChild(item);
+  });
+
+  if (folders.length === 0) {
+    moveFolderList.innerHTML += `<p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);padding:12px 0;">Nenhuma pasta criada ainda.</p>`;
+  }
+}
+
+async function moveFileTo(targetFolderId) {
+  if (!fileToMove) return;
+  try {
+    await updateDoc(doc(db, "vault_files", fileToMove.id), {
+      folderId: targetFolderId,
+    });
+    const destName = targetFolderId
+      ? (folders.find(f => f.id === targetFolderId)?.name || "pasta")
+      : "Raiz";
+    showToast(`Movido para "${destName}" ✓`, "success");
+    moveModal.classList.remove("active");
+    fileToMove = null;
+  } catch (e) {
+    showToast("Erro ao mover: " + e.message, "error");
+  }
+}
+
+$("closeMoveModal").onclick = () => {
+  moveModal.classList.remove("active");
+  fileToMove = null;
+};
+
+// ─── Upload ───────────────────────────────────────────────
 fileInput.onchange = e => handleFiles(Array.from(e.target.files));
 
 async function handleFiles(fileList) {
@@ -278,14 +351,9 @@ async function handleFiles(fileList) {
     return;
   }
   if (!fileList.length) return;
-
   uploadPanel.style.display = "block";
   uploadList.innerHTML = "";
-
-  for (const file of fileList) {
-    await uploadOneFile(file);
-  }
-
+  for (const file of fileList) await uploadOneFile(file);
   fileInput.value = "";
   setTimeout(() => { uploadPanel.style.display = "none"; }, 2000);
 }
@@ -364,7 +432,7 @@ function getFileType(file) {
 
 // ─── Delete file ──────────────────────────────────────────
 async function deleteFile(file) {
-  if (!confirm(`Excluir "${file.name}" do Vault?\n\nO registro será removido. Para apagar do Cloudinary também, acesse o painel deles.`)) return;
+  if (!confirm(`Excluir "${file.name}"?\n\nO registro será removido. Para apagar do Cloudinary também, acesse o painel deles.`)) return;
   try {
     await deleteDoc(doc(db, "vault_files", file.id));
     showToast("Arquivo excluído", "success");
@@ -380,7 +448,6 @@ async function deleteFolder(folderId, name) {
     ? `A pasta "${name}" tem ${count} arquivo(s). Os arquivos voltarão para a raiz.`
     : `Excluir a pasta "${name}"?`;
   if (!confirm(msg)) return;
-
   for (const f of files.filter(x => x.folderId === folderId)) {
     await updateDoc(doc(db, "vault_files", f.id), { folderId: null });
   }
@@ -414,39 +481,47 @@ function openLightbox(file) {
 
   if (file.fileType === "image") {
     const img = document.createElement("img");
-    img.src = file.url;
-    img.alt = file.name;
+    img.src = file.url; img.alt = file.name;
     lightboxInner.appendChild(img);
   } else if (file.fileType === "video") {
     const vid = document.createElement("video");
-    vid.src      = file.url;
-    vid.controls = true;
-    vid.autoplay = true;
+    vid.src = file.url; vid.controls = true; vid.autoplay = true;
     lightboxInner.appendChild(vid);
   } else {
     lightboxInner.innerHTML = `
       <div style="text-align:center;padding:40px;">
         <div style="font-size:80px;margin-bottom:16px;">${docIcon(file.name)}</div>
         <p style="font-family:var(--font-display);font-size:24px;letter-spacing:2px;">${esc(file.name)}</p>
-        <a href="${file.url}" target="_blank" style="
-          display:inline-block;margin-top:20px;
-          background:var(--accent);color:#000;
-          font-family:var(--font-mono);font-size:12px;font-weight:700;
-          padding:12px 24px;border-radius:4px;text-decoration:none;
-          letter-spacing:1px;text-transform:uppercase;">
-          ↓ Abrir / Baixar
-        </a>
+        <a href="${file.url}" target="_blank" style="display:inline-block;margin-top:20px;
+          background:var(--accent);color:#000;font-family:var(--font-mono);font-size:12px;
+          font-weight:700;padding:12px 24px;border-radius:4px;text-decoration:none;
+          letter-spacing:1px;text-transform:uppercase;">↓ Abrir / Baixar</a>
       </div>`;
   }
+
+  const folderName = file.folderId
+    ? (folders.find(f => f.id === file.folderId)?.name || "Pasta")
+    : "Raiz";
 
   lightboxInfo.innerHTML = `
     <span>${esc(file.name)}</span>
     <span style="color:var(--text3)">•</span>
     <span>${fmtSize(file.size)}</span>
-    <a href="${file.url}" target="_blank"
-      style="color:var(--accent);text-decoration:none;padding:4px 10px;
-             border:1px solid var(--accent);border-radius:3px;
-             font-family:var(--font-mono);font-size:11px;">↓ Baixar</a>`;
+    <span style="color:var(--text3)">•</span>
+    <span style="font-family:var(--font-mono);font-size:10px;color:var(--text2);">📁 ${esc(folderName)}</span>
+    <button onclick="openMoveModal(window.__lightboxFile)" style="
+      color:var(--accent);background:rgba(232,255,71,0.07);
+      border:1px solid rgba(232,255,71,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">
+      ⇄ Mover
+    </button>
+    <a href="${file.url}" target="_blank" style="color:var(--accent);text-decoration:none;
+      padding:4px 10px;border:1px solid var(--accent);border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;">↓ Baixar</a>`;
+
+  // expose to inline onclick
+  window.__lightboxFile = file;
+  window.openMoveModal  = openMoveModal;
 
   lightbox.classList.add("active");
 }
@@ -454,7 +529,11 @@ function openLightbox(file) {
 $("lightboxClose").onclick = closeLightbox;
 lightbox.onclick = e => { if (e.target === lightbox) closeLightbox(); };
 document.onkeydown = e => {
-  if (e.key === "Escape") { closeLightbox(); folderModal.classList.remove("active"); }
+  if (e.key === "Escape") {
+    closeLightbox();
+    folderModal.classList.remove("active");
+    moveModal.classList.remove("active");
+  }
 };
 function closeLightbox() {
   lightbox.classList.remove("active");
@@ -499,7 +578,7 @@ document.querySelectorAll(".chip").forEach(chip => {
   };
 });
 
-// ─── Sidebar toggle ───────────────────────────────────────
+// ─── Sidebar ──────────────────────────────────────────────
 folderList.firstElementChild.onclick = () => navigateFolder("root");
 
 $("sidebarToggle").onclick = () => {
@@ -515,18 +594,18 @@ $("sidebarOpenBtn").onclick = () => {
 };
 $("closePanel").onclick = () => { uploadPanel.style.display = "none"; };
 
-// ─── Storage indicator ────────────────────────────────────
-function updateStorage() {
+// ─── Storage UI ───────────────────────────────────────────
+function updateStorageUI() {
   const total = files.reduce((s, f) => s + (f.size || 0), 0);
-  const MAX   = 25 * 1024 * 1024 * 1024; // 25 GB Cloudinary free
+  const MAX   = 25 * 1024 * 1024 * 1024;
   const pct   = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
-  storageText.textContent = fmtSize(total) + " de 25 GB";
+  storageText.textContent = `${fmtSize(total)} de 25 GB`;
 }
 
 // ─── Helpers ──────────────────────────────────────────────
 function fmtSize(bytes) {
-  if (!bytes) return "—";
+  if (!bytes) return "0 B";
   if (bytes < 1024)      return bytes + " B";
   if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + " KB";
   if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + " MB";

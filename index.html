@@ -4,9 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VAULT — Seu Cofre Digital</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
-    <script src="./app.js"></script>
 </head>
 <body>
 
@@ -121,26 +120,39 @@
         <span class="logo-icon">⬡</span>
         <h2 class="modal-title">Configurar Firebase</h2>
       </div>
-      <p class="config-desc">Cole suas credenciais do Firebase (Firestore) e do Cloudinary. Esses dados ficam apenas no seu navegador.</p>
+      <p class="config-desc">Cole suas credenciais do Firebase (Firestore) e do Cloudinary. Ficam salvas apenas no seu navegador.</p>
       <div class="config-fields">
-        <p style="font-family:var(--font-mono);font-size:10px;letter-spacing:2px;color:var(--text3);margin-bottom:2px;">— FIREBASE FIRESTORE —</p>
+        <p class="cfg-section-label">— FIREBASE FIRESTORE —</p>
         <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" />
         <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" />
         <input class="modal-input" id="cfg_projectId" placeholder="projectId" />
         <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" />
         <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" />
         <input class="modal-input" id="cfg_appId" placeholder="appId" />
-        <p style="font-family:var(--font-mono);font-size:10px;letter-spacing:2px;color:var(--text3);margin:6px 0 2px;">— CLOUDINARY —</p>
-        <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name (ex: meu-vault)" />
-        <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (unsigned)" />
+        <p class="cfg-section-label" style="margin-top:10px;">— CLOUDINARY (25 GB grátis) —</p>
+        <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" />
+        <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (modo Unsigned)" />
       </div>
       <div class="modal-actions">
         <button class="modal-btn confirm" id="saveConfig">Salvar e Conectar</button>
       </div>
       <p class="config-help">
         Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> → Configurações → SDK<br/>
-        Cloudinary: <a href="https://cloudinary.com/console" target="_blank">cloudinary.com/console</a> → Settings → Upload Presets
+        Cloudinary: <a href="https://cloudinary.com" target="_blank">cloudinary.com</a> → Settings → Upload Presets → modo <strong>Unsigned</strong>
       </p>
+    </div>
+  </div>
+
+  <!-- MODAL: Mover arquivo -->
+  <div class="modal-overlay" id="moveModal">
+    <div class="modal move-modal">
+      <h2 class="modal-title">Mover Arquivo</h2>
+      <p class="move-file-label" id="moveFileName"></p>
+      <p class="sidebar-label" style="margin-bottom:10px;">ESCOLHA O DESTINO</p>
+      <div class="move-folder-list" id="moveFolderList"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="modal-btn cancel" id="closeMoveModal">Cancelar</button>
+      </div>
     </div>
   </div>
 
