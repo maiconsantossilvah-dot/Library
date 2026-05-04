@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAULT — Seu Cofre Digital</title>
+  <link rel="stylesheet" href="./style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+    <script src="./app.js"></script>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">VAULT</span>
+      </div>
+      <button class="sidebar-toggle" id="sidebarToggle" title="Fechar menu">&#9776;</button>
+    </div>
+
+    <div class="sidebar-section">
+      <button class="btn-new-folder" id="btnNewFolder">
+        <span>+</span> Nova Pasta
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <p class="sidebar-label">NAVEGAÇÃO</p>
+      <ul class="folder-list" id="folderList">
+        <li class="folder-item active" data-folder="root">
+          <span class="folder-icon">◈</span> Todos os Arquivos
+        </li>
+      </ul>
+    </div>
+
+    <div class="sidebar-section filter-section">
+      <p class="sidebar-label">FILTRAR POR TIPO</p>
+      <div class="filter-chips">
+        <button class="chip active" data-filter="all">Tudo</button>
+        <button class="chip" data-filter="image">🖼 Imagens</button>
+        <button class="chip" data-filter="video">🎬 Vídeos</button>
+        <button class="chip" data-filter="document">📄 Docs</button>
+      </div>
+    </div>
+
+    <div class="sidebar-storage">
+      <p class="sidebar-label">ARMAZENAMENTO</p>
+      <div class="storage-bar-wrap">
+        <div class="storage-bar" id="storageBar" style="width:0%"></div>
+      </div>
+      <p class="storage-text" id="storageText">0 MB usados</p>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main" id="main">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <button class="sidebar-open-btn" id="sidebarOpenBtn" title="Abrir menu">&#9776;</button>
+      <div class="breadcrumb" id="breadcrumb">
+        <span>Todos os Arquivos</span>
+      </div>
+      <div class="topbar-right">
+        <div class="view-toggle">
+          <button class="view-btn active" id="viewGrid" title="Grade grande">⊞</button>
+          <button class="view-btn" id="viewList" title="Lista">☰</button>
+        </div>
+        <label class="upload-btn" for="fileInput">
+          <span>↑ Upload</span>
+          <input type="file" id="fileInput" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
+        </label>
+      </div>
+    </header>
+
+    <!-- DROP ZONE OVERLAY -->
+    <div class="drop-overlay" id="dropOverlay">
+      <div class="drop-message">
+        <span class="drop-icon">↓</span>
+        <p>Solte os arquivos aqui</p>
+      </div>
+    </div>
+
+    <!-- CONTENT AREA -->
+    <div class="content" id="content">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⬡</div>
+        <p class="empty-title">Cofre vazio</p>
+        <p class="empty-sub">Arraste arquivos ou clique em Upload para começar</p>
+      </div>
+      <div class="grid" id="fileGrid"></div>
+    </div>
+
+  </main>
+
+  <!-- MODAL: Nova Pasta -->
+  <div class="modal-overlay" id="folderModal">
+    <div class="modal">
+      <h2 class="modal-title">Nova Pasta</h2>
+      <input type="text" class="modal-input" id="folderNameInput" placeholder="Nome da pasta..." maxlength="40" />
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="cancelFolder">Cancelar</button>
+        <button class="modal-btn confirm" id="confirmFolder">Criar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" id="lightboxClose">✕</button>
+    <div class="lightbox-inner" id="lightboxInner"></div>
+    <div class="lightbox-info" id="lightboxInfo"></div>
+  </div>
+
+  <!-- MODAL: Config Firebase -->
+  <div class="modal-overlay" id="configModal" style="display:flex;">
+    <div class="modal config-modal">
+      <div class="config-header">
+        <span class="logo-icon">⬡</span>
+        <h2 class="modal-title">Configurar Firebase</h2>
+      </div>
+      <p class="config-desc">Cole suas credenciais do Firebase (Firestore) e do Cloudinary. Esses dados ficam apenas no seu navegador.</p>
+      <div class="config-fields">
+        <p style="font-family:var(--font-mono);font-size:10px;letter-spacing:2px;color:var(--text3);margin-bottom:2px;">— FIREBASE FIRESTORE —</p>
+        <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" />
+        <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" />
+        <input class="modal-input" id="cfg_projectId" placeholder="projectId" />
+        <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" />
+        <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" />
+        <input class="modal-input" id="cfg_appId" placeholder="appId" />
+        <p style="font-family:var(--font-mono);font-size:10px;letter-spacing:2px;color:var(--text3);margin:6px 0 2px;">— CLOUDINARY —</p>
+        <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name (ex: meu-vault)" />
+        <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (unsigned)" />
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn confirm" id="saveConfig">Salvar e Conectar</button>
+      </div>
+      <p class="config-help">
+        Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> → Configurações → SDK<br/>
+        Cloudinary: <a href="https://cloudinary.com/console" target="_blank">cloudinary.com/console</a> → Settings → Upload Presets
+      </p>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- UPLOAD PROGRESS -->
+  <div class="upload-progress-panel" id="uploadPanel" style="display:none;">
+    <div class="upload-panel-header">
+      <span>Enviando arquivos</span>
+      <button id="closePanel">✕</button>
+    </div>
+    <div id="uploadList"></div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
