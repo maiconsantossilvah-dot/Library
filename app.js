@@ -11,6 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ─── State ────────────────────────────────────────────────
+let toastTimeout;
 let db;
 let currentFolder = "root";
 let currentFilter = "all";
@@ -617,7 +618,6 @@ function esc(str) {
   return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-let toastTimeout;
 function showToast(msg, type = "") {
   toast.textContent = msg;
   toast.className = "toast show " + type;
