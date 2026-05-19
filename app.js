@@ -14,7 +14,10 @@ let toastTimeout;
 let db;
 let currentFolder  = "root";   // "root" ou ID de pasta
 let currentFilter  = "all";
+let currentSearch  = "";
+let currentSort    = "newest";
 let isListView     = false;
+let isGalleryView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
 let folders        = [];
@@ -29,6 +32,9 @@ let uploadPreset = "";
 // Move modal state
 let fileToMove    = null;
 let bulkMoveMode  = false;
+let activeUploads = new Map();
+let lightboxFiles = [];
+let lightboxIndex = -1;
 
 // ??? DOM refs ?????????????????????????????????????????????
 const $ = id => document.getElementById(id);
@@ -56,6 +62,8 @@ const mainEl          = $("main");
 const toast           = $("toast");
 const bulkBar         = $("bulkBar");
 const bulkCount       = $("bulkCount");
+const searchInput     = $("searchInput");
+const sortSelect      = $("sortSelect");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -184,7 +192,9 @@ function renderFolderList() {
     li.innerHTML = `
       <span class="folder-icon">${hasChildren ? "+" : "#"}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</span>
+      <button class="folder-rename" title="Renomear pasta">Nome</button>
       <button class="folder-delete" title="Excluir pasta">×</button>`;
+    li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(f); };
     li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(f.id, f.name); };
     li.onclick = () => navigateFolder(f.id, f.name);
     folderList.appendChild(li);
@@ -271,28 +281,44 @@ function renderBreadcrumb() {
 // ??? Grid ?????????????????????????????????????????????????
 function renderGrid() {
   fileGrid.innerHTML = "";
-  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isSelectMode ? " select-mode" : "");
+  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isSelectMode ? " select-mode" : "");
   let items = [];
+  lightboxFiles = [];
 
-  if (currentFilter === "favorites") {
+  if (currentFilter === "trash") {
+    const trashFiles = sortFiles(applyFilter(files.filter(f => f.deletedAt)));
+    trashFiles.forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "favorites") {
     // Mostrar todos os favoritos independente de pasta
-    applyFilter(files.filter(f => f.favorite)).forEach(f => items.push(makeFileCard(f)));
+    sortFiles(applyFilter(files.filter(f => f.favorite && !f.deletedAt))).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
   } else if (currentFolder === "root") {
     // Subpastas de raiz (sem parentId)
-    const rootFolders = folders.filter(f => !f.parentId);
+    const rootFolders = folders.filter(f => !f.parentId && matchesSearch(f.name));
     rootFolders.forEach(folder => {
       const count = countFilesInFolder(folder.id);
       items.push(makeFolderCard(folder, count));
     });
-    applyFilter(files.filter(f => !f.folderId)).forEach(f => items.push(makeFileCard(f)));
+    sortFiles(applyFilter(files.filter(f => !f.folderId && !f.deletedAt))).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
   } else {
     // Subpastas da pasta atual
-    const subFolders = folders.filter(f => f.parentId === currentFolder);
+    const subFolders = folders.filter(f => f.parentId === currentFolder && matchesSearch(f.name));
     subFolders.forEach(folder => {
       const count = countFilesInFolder(folder.id);
       items.push(makeFolderCard(folder, count));
     });
-    applyFilter(files.filter(f => f.folderId === currentFolder)).forEach(f => items.push(makeFileCard(f)));
+    sortFiles(applyFilter(files.filter(f => f.folderId === currentFolder && !f.deletedAt))).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
   }
 
   emptyState.style.display = items.length === 0 ? "flex" : "none";
@@ -300,15 +326,47 @@ function renderGrid() {
 }
 
 function countFilesInFolder(folderId) {
-  let count = files.filter(f => f.folderId === folderId).length;
+  let count = files.filter(f => f.folderId === folderId && !f.deletedAt).length;
   // Conta subpastas tambem
   folders.filter(f => f.parentId === folderId).forEach(sub => { count += countFilesInFolder(sub.id); });
   return count;
 }
 
 function applyFilter(list) {
-  if (currentFilter === "all" || currentFilter === "favorites") return list;
-  return list.filter(f => f.fileType === currentFilter);
+  let result = list;
+  if (isGalleryView) result = result.filter(f => f.fileType === "image" || f.fileType === "video");
+  if (currentFilter !== "all" && currentFilter !== "favorites" && currentFilter !== "trash") {
+    result = result.filter(f => f.fileType === currentFilter);
+  }
+  return result.filter(fileMatchesSearch);
+}
+
+function sortFiles(list) {
+  return [...list].sort((a, b) => {
+    if (currentSort === "oldest") return dateValue(a.createdAt) - dateValue(b.createdAt);
+    if (currentSort === "name") return (a.name || "").localeCompare(b.name || "", "pt-BR");
+    if (currentSort === "size") return (b.size || 0) - (a.size || 0);
+    if (currentSort === "type") return (a.fileType || "").localeCompare(b.fileType || "");
+    return dateValue(b.createdAt) - dateValue(a.createdAt);
+  });
+}
+
+function dateValue(value) {
+  if (!value) return 0;
+  if (value.seconds) return value.seconds * 1000;
+  if (value.toDate) return value.toDate().getTime();
+  return new Date(value).getTime() || 0;
+}
+
+function fileMatchesSearch(file) {
+  if (!currentSearch) return true;
+  const tags = normalizeTags(file.tags).join(" ");
+  return matchesSearch(`${file.name || ""} ${tags}`);
+}
+
+function matchesSearch(text) {
+  if (!currentSearch) return true;
+  return (text || "").toLowerCase().includes(currentSearch);
 }
 
 // ??? File Card ????????????????????????????????????????????
@@ -335,6 +393,8 @@ function makeFileCard(file) {
 
   const favClass = file.favorite ? "fav-btn active" : "fav-btn";
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
+  const tags = normalizeTags(file.tags);
+  const isTrash = currentFilter === "trash" || file.deletedAt;
 
   card.innerHTML = `
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
@@ -344,16 +404,30 @@ function makeFileCard(file) {
       <div class="select-checkbox"><span class="chk">${selectedIds.has(file.id) ? "✓" : ""}</span></div>
     </div>
     <div class="file-info">
-      <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
-      <span class="file-size">${fmtSize(file.size)}</span>
+      <div class="file-meta">
+        <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+      </div>
+      <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
       <div class="file-actions">
-        <button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
-        <button class="file-action-btn file-delete" title="Excluir">×</button>
+        ${isTrash
+          ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
+             <button class="file-action-btn permanent-delete" title="Excluir definitivamente">×</button>`
+          : `<button class="file-action-btn rename-btn" title="Renomear">Nome</button>
+             <button class="file-action-btn tags-btn" title="Editar tags">Tags</button>
+             <button class="file-action-btn share-btn" title="Copiar link">Link</button>
+             <button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
+             <button class="file-action-btn file-delete" title="Enviar para lixeira">×</button>`}
       </div>
     </div>`;
 
-  card.querySelector(".file-delete").onclick = e => { e.stopPropagation(); deleteFile(file); };
-  card.querySelector(".move-btn").onclick     = e => { e.stopPropagation(); openMoveModal(file); };
+  card.querySelector(".file-delete")?.addEventListener("click", e => { e.stopPropagation(); deleteFile(file); });
+  card.querySelector(".move-btn")?.addEventListener("click", e => { e.stopPropagation(); openMoveModal(file); });
+  card.querySelector(".rename-btn")?.addEventListener("click", e => { e.stopPropagation(); renameFile(file); });
+  card.querySelector(".tags-btn")?.addEventListener("click", e => { e.stopPropagation(); editTags(file); });
+  card.querySelector(".share-btn")?.addEventListener("click", e => { e.stopPropagation(); shareFile(file); });
+  card.querySelector(".restore-btn")?.addEventListener("click", e => { e.stopPropagation(); restoreFile(file); });
+  card.querySelector(".permanent-delete")?.addEventListener("click", e => { e.stopPropagation(); permanentlyDeleteFile(file); });
 
   // Favorito
   card.querySelector(".fav-btn").onclick = e => {
@@ -369,10 +443,12 @@ function makeFileCard(file) {
 
   card.onclick = () => {
     if (isSelectMode) { toggleSelect(file.id); return; }
+    if (file.deletedAt) return;
     openLightbox(file);
   };
 
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
+  if (file.missing) markFileUnavailable(card);
   if (mediaEl) {
     mediaEl.addEventListener("error", () => markFileUnavailable(card), { once: true });
   }
@@ -443,11 +519,29 @@ function makeFolderCard(folder, count) {
       <span class="folder-card-icon">${hasChildren ? "+" : "#"}</span>
       <span class="folder-card-name">${esc(folder.name)}</span>
       <span class="folder-card-count">${count} arq.</span>
+      <button class="folder-card-rename" title="Renomear pasta">Nome</button>
       <button class="folder-card-delete" title="Excluir pasta">×</button>
     </div>`;
+  card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   card.querySelector(".folder-card-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
   card.onclick = () => navigateFolder(folder.id, folder.name);
   return card;
+}
+
+async function renameFolder(folder) {
+  const name = prompt("Novo nome da pasta:", folder.name || "");
+  if (name === null) return;
+  const clean = name.trim();
+  if (!clean) { showToast("Nome vazio", "error"); return; }
+  try {
+    await updateDoc(doc(db, "vault_folders", folder.id), { name: clean });
+    const pathItem = folderPath.find(p => p.id === folder.id);
+    if (pathItem) pathItem.name = clean;
+    renderBreadcrumb();
+    showToast("Pasta renomeada", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
 }
 
 // ??? Favorites ????????????????????????????????????????????
@@ -503,13 +597,13 @@ $("bulkCancelBtn").onclick = exitSelectMode;
 $("bulkDeleteBtn").onclick = async () => {
   const ids = [...selectedIds];
   if (!ids.length) return;
-  if (!confirm(`Excluir ${ids.length} arquivo(s)?`)) return;
+  if (!confirm(`Mover ${ids.length} arquivo(s) para a lixeira?`)) return;
   for (const id of ids) {
-    try { await deleteDoc(doc(db, "vault_files", id)); } catch {}
+    try { await updateDoc(doc(db, "vault_files", id), { deletedAt: serverTimestamp() }); } catch {}
   }
   selectedIds.clear();
   exitSelectMode();
-  showToast(`${ids.length} arquivo(s) excluido(s)`, "success");
+  showToast(`${ids.length} arquivo(s) enviado(s) para a lixeira`, "success");
 };
 
 $("bulkMoveBtn").onclick = () => {
@@ -643,12 +737,68 @@ async function createFolder() {
 
 // ??? Delete file ??????????????????????????????????????????
 async function deleteFile(file) {
-  if (!confirm(`Excluir "${file.name}"?\n\nO registro sera removido. Para apagar do Cloudinary tambem, acesse o painel deles.`)) return;
+  if (!confirm(`Mover "${file.name}" para a lixeira?`)) return;
   try {
-    await deleteDoc(doc(db, "vault_files", file.id));
-    showToast("Arquivo excluido", "success");
+    await updateDoc(doc(db, "vault_files", file.id), { deletedAt: serverTimestamp() });
+    showToast("Arquivo enviado para a lixeira", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function restoreFile(file) {
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null });
+    showToast("Arquivo restaurado", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function permanentlyDeleteFile(file) {
+  if (!confirm(`Excluir definitivamente "${file.name}" do app?\n\nIsso remove o registro do Firebase. Para apagar do Cloudinary com seguranca, use uma funcao de backend com a chave secreta.`)) return;
+  try {
+    await deleteDoc(doc(db, "vault_files", file.id));
+    showToast("Registro removido definitivamente", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function renameFile(file) {
+  const name = prompt("Novo nome do arquivo:", file.name || "");
+  if (name === null) return;
+  const clean = name.trim();
+  if (!clean) { showToast("Nome vazio", "error"); return; }
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), { name: clean });
+    showToast("Arquivo renomeado", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function editTags(file) {
+  const current = normalizeTags(file.tags).join(", ");
+  const value = prompt("Tags separadas por virgula:", current);
+  if (value === null) return;
+  const tags = normalizeTags(value);
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), { tags });
+    showToast("Tags atualizadas", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function shareFile(file) {
+  const url = file.url;
+  if (!url) { showToast("Arquivo sem link", "error"); return; }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("Link copiado", "success");
+  } catch {
+    prompt("Copie o link:", url);
   }
 }
 
@@ -690,6 +840,7 @@ async function deleteFolderRecursive(folderId) {
 
 // ??? Lightbox ?????????????????????????????????????????????
 function openLightbox(file) {
+  lightboxIndex = lightboxFiles.findIndex(f => f.id === file.id);
   lightboxInner.innerHTML = "";
   if (file.fileType === "image") {
     const img = document.createElement("img");
@@ -708,15 +859,7 @@ function openLightbox(file) {
     vid.onerror = () => showMissingLightbox(file);
     lightboxInner.appendChild(vid);
   } else {
-    lightboxInner.innerHTML = `
-      <div style="text-align:center;padding:40px;">
-        <div style="font-size:80px;margin-bottom:16px;">${docIcon(file.name)}</div>
-        <p style="font-family:var(--font-display);font-size:24px;letter-spacing:2px;">${esc(file.name)}</p>
-        <a href="${file.url}" target="_blank" style="display:inline-block;margin-top:20px;
-          background:var(--accent);color:#000;font-family:var(--font-mono);font-size:12px;
-          font-weight:700;padding:12px 24px;border-radius:4px;text-decoration:none;
-          letter-spacing:1px;text-transform:uppercase;">Abrir / Baixar</a>
-      </div>`;
+    renderDocumentPreview(file);
   }
 
   const folderName = file.folderId
@@ -729,6 +872,7 @@ function openLightbox(file) {
     : "color:var(--accent);background:rgba(232,255,71,0.07);border:1px solid rgba(232,255,71,0.3);";
 
   lightboxInfo.innerHTML = `
+    <button class="lb-nav-btn" id="lbPrevBtn">Anterior</button>
     <span>${esc(file.name)}</span>
     <span style="color:var(--text3)">.</span>
     <span>${fmtSize(file.size)}</span>
@@ -744,16 +888,65 @@ function openLightbox(file) {
       font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">
       Mover
     </button>
+    <button id="lbRenameBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
+      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Nome</button>
+    <button id="lbTagsBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
+      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Tags</button>
+    <button id="lbShareBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
+      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Copiar link</button>
     <a href="${file.url}" target="_blank" style="color:var(--accent);text-decoration:none;
       padding:4px 10px;border:1px solid var(--accent);border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;">Baixar</a>`;
+      font-family:var(--font-mono);font-size:11px;">Baixar</a>
+    <button class="lb-nav-btn" id="lbNextBtn">Proximo</button>`;
 
   $("lbFavBtn").onclick = () => { toggleFavorite(file); closeLightbox(); };
+  $("lbRenameBtn").onclick = () => renameFile(file);
+  $("lbTagsBtn").onclick = () => editTags(file);
+  $("lbShareBtn").onclick = () => shareFile(file);
+  $("lbPrevBtn").onclick = () => navigateLightbox(-1);
+  $("lbNextBtn").onclick = () => navigateLightbox(1);
+  $("lbPrevBtn").disabled = lightboxIndex <= 0;
+  $("lbNextBtn").disabled = lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
 
   window.__lightboxFile = file;
   window.openMoveModal  = openMoveModal;
   window.deleteFileFromLightbox = async () => { await deleteFile(file); closeLightbox(); };
   lightbox.classList.add("active");
+}
+
+async function renderDocumentPreview(file) {
+  const ext = (file.name || "").split(".").pop().toLowerCase();
+  if (ext === "pdf") {
+    lightboxInner.innerHTML = `<iframe class="doc-preview" src="${file.url}" title="${esc(file.name)}"></iframe>`;
+    return;
+  }
+  if (ext === "txt") {
+    lightboxInner.innerHTML = `<pre class="text-preview">Carregando texto...</pre>`;
+    try {
+      const res = await fetch(file.url);
+      const text = await res.text();
+      lightboxInner.querySelector(".text-preview").textContent = text.slice(0, 200000);
+    } catch {
+      lightboxInner.querySelector(".text-preview").textContent = "Nao foi possivel carregar a previa do texto.";
+    }
+    return;
+  }
+  lightboxInner.innerHTML = `
+    <div class="doc-fallback">
+      <div class="doc-fallback-icon">${docIcon(file.name)}</div>
+      <p>${esc(file.name)}</p>
+      <a href="${file.url}" target="_blank">Abrir / Baixar</a>
+    </div>`;
+}
+
+function navigateLightbox(direction) {
+  if (lightboxIndex < 0) return;
+  const next = lightboxIndex + direction;
+  if (next < 0 || next >= lightboxFiles.length) return;
+  openLightbox(lightboxFiles[next]);
 }
 
 function showMissingLightbox(file) {
@@ -777,6 +970,8 @@ document.onkeydown = e => {
       if ($("cancelConfig").style.display !== "none") configModal.style.display = "none";
     }
   }
+  if (lightbox.classList.contains("active") && e.key === "ArrowLeft") navigateLightbox(-1);
+  if (lightbox.classList.contains("active") && e.key === "ArrowRight") navigateLightbox(1);
 };
 function closeLightbox() {
   lightbox.classList.remove("active");
@@ -792,22 +987,26 @@ async function handleFiles(fileList) {
   if (!fileList.length) return;
   uploadPanel.style.display = "block";
   uploadList.innerHTML = "";
-  for (const file of fileList) await uploadOneFile(file);
+  await Promise.all(fileList.map(file => uploadOneFile(file)));
   fileInput.value = "";
-  setTimeout(() => { uploadPanel.style.display = "none"; }, 2000);
 }
 
 function uploadOneFile(file) {
   return new Promise(resolve => {
+    const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const itemEl = document.createElement("div");
     itemEl.className = "upload-item";
     itemEl.innerHTML = `
-      <div class="upload-item-name">${esc(file.name)}</div>
+      <div class="upload-item-top">
+        <div class="upload-item-name">${esc(file.name)}</div>
+        <button class="upload-cancel">Cancelar</button>
+      </div>
       <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
       <div class="upload-item-status">Aguardando...</div>`;
     uploadList.appendChild(itemEl);
     const bar    = itemEl.querySelector(".upload-item-bar");
     const status = itemEl.querySelector(".upload-item-status");
+    const cancelBtn = itemEl.querySelector(".upload-cancel");
 
     const resourceType = file.type.startsWith("video/") ? "video"
                        : file.type.startsWith("image/") ? "image" : "raw";
@@ -819,7 +1018,16 @@ function uploadOneFile(file) {
     form.append("folder", "vault");
 
     const xhr = new XMLHttpRequest();
+    activeUploads.set(uploadId, xhr);
     xhr.open("POST", url);
+    cancelBtn.onclick = () => {
+      xhr.abort();
+      activeUploads.delete(uploadId);
+      status.textContent = "Cancelado";
+      status.style.color = "var(--text3)";
+      cancelBtn.remove();
+      resolve();
+    };
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) {
         const pct = Math.round((e.loaded / e.total) * 100);
@@ -845,14 +1053,29 @@ function uploadOneFile(file) {
         });
         status.textContent = "Concluido";
         status.style.color = "var(--accent)";
+        cancelBtn.remove();
       } else {
-        status.textContent = "Erro no upload";
+        status.innerHTML = `Erro no upload <button class="upload-retry">Tentar novamente</button>`;
         status.style.color = "var(--danger)";
+        status.querySelector(".upload-retry").onclick = () => {
+          itemEl.remove();
+          uploadOneFile(file);
+        };
         console.error(xhr.responseText);
       }
+      activeUploads.delete(uploadId);
       resolve();
     };
-    xhr.onerror = () => { status.textContent = "Erro de rede"; status.style.color = "var(--danger)"; resolve(); };
+    xhr.onerror = () => {
+      status.innerHTML = `Erro de rede <button class="upload-retry">Tentar novamente</button>`;
+      status.style.color = "var(--danger)";
+      status.querySelector(".upload-retry").onclick = () => {
+        itemEl.remove();
+        uploadOneFile(file);
+      };
+      activeUploads.delete(uploadId);
+      resolve();
+    };
     xhr.send(form);
   });
 }
@@ -880,15 +1103,38 @@ window.addEventListener("drop", e => {
 $("viewGrid").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = false;
+  isGalleryView = false;
   $("viewGrid").classList.add("active");
   $("viewList").classList.remove("active");
+  $("viewGallery").classList.remove("active");
   renderGrid();
 };
 $("viewList").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = true;
+  isGalleryView = false;
   $("viewList").classList.add("active");
   $("viewGrid").classList.remove("active");
+  $("viewGallery").classList.remove("active");
+  renderGrid();
+};
+$("viewGallery").onclick = () => {
+  if (isSelectMode) exitSelectMode();
+  isListView = false;
+  isGalleryView = true;
+  $("viewGallery").classList.add("active");
+  $("viewGrid").classList.remove("active");
+  $("viewList").classList.remove("active");
+  renderGrid();
+};
+
+searchInput.oninput = () => {
+  currentSearch = searchInput.value.trim().toLowerCase();
+  renderFolderList();
+  renderGrid();
+};
+sortSelect.onchange = () => {
+  currentSort = sortSelect.value;
   renderGrid();
 };
 
@@ -898,6 +1144,8 @@ document.querySelectorAll(".chip").forEach(chip => {
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     currentFilter = chip.dataset.filter;
+    selectedIds.clear();
+    updateBulkBar();
     renderGrid();
   };
 });
@@ -916,11 +1164,57 @@ $("sidebarOpenBtn").onclick = () => {
   $("sidebarOpenBtn").classList.remove("visible");
   sidebar.classList.add("mobile-open");
 };
-$("closePanel").onclick = () => { uploadPanel.style.display = "none"; };
+$("closePanel").onclick = () => {
+  activeUploads.forEach(xhr => xhr.abort());
+  activeUploads.clear();
+  uploadPanel.style.display = "none";
+};
+$("btnCheckFiles").onclick = verifyFiles;
+
+async function verifyFiles() {
+  const liveFiles = files.filter(f => !f.deletedAt && f.url);
+  if (!liveFiles.length) { showToast("Nenhum arquivo para verificar"); return; }
+  showToast("Verificando arquivos...");
+  let missing = 0;
+  for (const file of liveFiles) {
+    const ok = await checkFileExists(file);
+    try {
+      await updateDoc(doc(db, "vault_files", file.id), {
+        missing: !ok,
+        checkedAt: serverTimestamp(),
+      });
+      if (!ok) missing++;
+    } catch {}
+  }
+  showToast(missing ? `${missing} arquivo(s) indisponivel(is)` : "Todos os arquivos carregaram", missing ? "error" : "success");
+}
+
+function checkFileExists(file) {
+  if (file.fileType === "image") {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      img.src = file.url;
+    });
+  }
+  if (file.fileType === "video") {
+    return new Promise(resolve => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => resolve(true);
+      video.onerror = () => resolve(false);
+      video.src = file.url;
+    });
+  }
+  return fetch(file.url, { method: "HEAD", mode: "no-cors" })
+    .then(() => true)
+    .catch(() => false);
+}
 
 // ??? Storage UI ???????????????????????????????????????????
 function updateStorageUI() {
-  const total = files.reduce((s, f) => s + (f.size || 0), 0);
+  const total = files.filter(f => !f.deletedAt).reduce((s, f) => s + (f.size || 0), 0);
   const MAX   = 25 * 1024 * 1024 * 1024;
   const pct   = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
@@ -937,7 +1231,11 @@ function fmtSize(bytes) {
 }
 function esc(str) {
   if (!str) return "";
-  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function normalizeTags(value) {
+  if (Array.isArray(value)) return [...new Set(value.map(t => String(t).trim()).filter(Boolean))].slice(0, 12);
+  return [...new Set(String(value || "").split(",").map(t => t.trim()).filter(Boolean))].slice(0, 12);
 }
 function showToast(msg, type = "") {
   toast.textContent = msg;

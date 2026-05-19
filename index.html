@@ -47,7 +47,13 @@
         <button class="chip" data-filter="video">VID Videos</button>
         <button class="chip" data-filter="document">DOC Docs</button>
         <button class="chip" data-filter="favorites">* Favoritos</button>
+        <button class="chip" data-filter="trash">Lixeira</button>
       </div>
+    </div>
+
+    <div class="sidebar-section">
+      <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
+      <p class="storage-text" style="margin-top:8px;">Marca itens que foram apagados no Cloudinary.</p>
     </div>
 
     <div class="sidebar-storage">
@@ -69,6 +75,16 @@
         <span>Todos os Arquivos</span>
       </div>
       <div class="topbar-right">
+        <div class="search-sort">
+          <input class="search-input" id="searchInput" placeholder="Buscar arquivo ou tag..." />
+          <select class="sort-select" id="sortSelect" title="Ordenar">
+            <option value="newest">Mais recentes</option>
+            <option value="oldest">Mais antigos</option>
+            <option value="name">Nome A-Z</option>
+            <option value="size">Tamanho</option>
+            <option value="type">Tipo</option>
+          </select>
+        </div>
         <!-- Bulk actions bar (hidden when nothing selected) -->
         <div class="bulk-bar" id="bulkBar" style="display:none;">
           <span class="bulk-count" id="bulkCount">0 selecionados</span>
@@ -80,6 +96,7 @@
         <div class="view-toggle">
           <button class="view-btn active" id="viewGrid" title="Grade">▦</button>
           <button class="view-btn" id="viewList" title="Lista">☰</button>
+          <button class="view-btn" id="viewGallery" title="Galeria">▣</button>
           <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
         </div>
         <label class="upload-btn" for="fileInput">
