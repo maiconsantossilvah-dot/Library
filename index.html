@@ -43,6 +43,7 @@
       <p class="sidebar-label">FILTRAR POR TIPO</p>
       <div class="filter-chips">
         <button class="chip active" data-filter="all">Tudo</button>
+        <button class="chip" data-filter="media">Midia</button>
         <button class="chip" data-filter="image">IMG Imagens</button>
         <button class="chip" data-filter="video">VID Videos</button>
         <button class="chip" data-filter="document">DOC Docs</button>
@@ -108,13 +109,16 @@
           <button class="bulk-btn" id="bulkDownloadBtn" title="Baixar selecionados">Baixar</button>
           <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
           <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
+          <button class="bulk-btn" id="bulkSelectMediaBtn" title="Selecionar fotos e videos visiveis">Midia</button>
+          <button class="bulk-btn" id="bulkSelectMonthBtn" title="Selecionar itens deste mes">Mes</button>
           <button class="bulk-btn cancel" id="bulkCancelBtn" title="Cancelar selecao">Cancelar</button>
         </div>
         <div class="view-toggle">
           <button class="view-btn active" id="viewGrid" title="Grade">▦</button>
           <button class="view-btn" id="viewList" title="Lista">☰</button>
           <button class="view-btn" id="viewGallery" title="Galeria">▣</button>
-          <button class="view-btn" id="viewFolders" title="Mostrar apenas pastas">Pastas</button>
+          <button class="view-btn" id="viewFolders" title="Mostrar apenas pastas">Ver Pastas</button>
+          <button class="view-btn" id="viewTimeline" title="Linha do tempo">Tempo</button>
           <button class="view-btn" id="viewDensity" title="Alternar compacto/detalhado">D</button>
           <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
         </div>

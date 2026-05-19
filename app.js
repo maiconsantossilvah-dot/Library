@@ -20,6 +20,7 @@ let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
 let isListView     = false;
 let isGalleryView  = false;
 let isFoldersView  = false;
+let isTimelineView = false;
 let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
@@ -294,7 +295,7 @@ function renderBreadcrumb() {
 // ??? Grid ?????????????????????????????????????????????????
 function renderGrid() {
   fileGrid.innerHTML = "";
-  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isCompactView ? " compact-view" : "") + (isSelectMode ? " select-mode" : "");
+  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isCompactView ? " compact-view" : "") + (isTimelineView ? " timeline-view" : "") + (isSelectMode ? " select-mode" : "");
   let items = [];
   lightboxFiles = [];
 
@@ -337,6 +338,11 @@ function renderGrid() {
       const count = countFilesInFolder(folder.id);
       items.push(makeFolderCard(folder, count));
     });
+  } else if (isTimelineView) {
+    const source = currentFolder === "root"
+      ? files.filter(f => !f.deletedAt)
+      : files.filter(f => f.folderId === currentFolder && !f.deletedAt);
+    renderTimelineItems(sortFiles(applyFilter(source)), items);
   } else if (currentFolder === "root") {
     // "Todos os Arquivos" mostra uma visao plana dos arquivos, mesmo os organizados em pastas.
     sortFiles(applyFilter(files.filter(f => !f.deletedAt))).forEach(f => {
@@ -356,6 +362,41 @@ function renderGrid() {
   loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, items.length - visibleLimit)})`;
 }
 
+function renderTimelineItems(list, items) {
+  let lastKey = "";
+  list.forEach(file => {
+    const key = monthKey(file);
+    if (key !== lastKey) {
+      const header = document.createElement("div");
+      header.className = "timeline-section";
+      header.textContent = monthLabel(file);
+      items.push(header);
+      lastKey = key;
+    }
+    lightboxFiles.push(file);
+    items.push(makeFileCard(file));
+  });
+}
+
+function monthKey(file) {
+  const d = fileDate(file);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(file) {
+  const d = fileDate(file);
+  return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+}
+
+function fileDate(file) {
+  const value = file.eventDate || file.createdAt;
+  if (typeof value === "string" && value) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const created = dateValue(value);
+  return created ? new Date(created) : new Date(0);
+}
 function countFilesInFolder(folderId) {
   let count = files.filter(f => f.folderId === folderId && !f.deletedAt).length;
   // Conta subpastas tambem
@@ -365,8 +406,8 @@ function countFilesInFolder(folderId) {
 
 function applyFilter(list) {
   let result = list;
-  if (isGalleryView) result = result.filter(f => f.fileType === "image" || f.fileType === "video");
-  if (currentFilter !== "all" && currentFilter !== "favorites" && currentFilter !== "trash") {
+  if (isGalleryView || currentFilter === "media") result = result.filter(f => f.fileType === "image" || f.fileType === "video");
+  if (["image", "video", "document"].includes(currentFilter)) {
     result = result.filter(f => f.fileType === currentFilter);
   }
   return result.filter(fileMatchesSearch);
@@ -392,7 +433,7 @@ function dateValue(value) {
 function fileMatchesSearch(file) {
   if (!currentSearch) return true;
   const tags = normalizeTags(file.tags).join(" ");
-  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""}`);
+  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)}`);
 }
 
 function matchesSearch(text) {
@@ -403,7 +444,7 @@ function matchesSearch(text) {
 // ??? File Card ????????????????????????????????????????????
 function makeFileCard(file) {
   const card = document.createElement("div");
-  card.className = "file-card" + (selectedIds.has(file.id) ? " selected" : "");
+  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (selectedIds.has(file.id) ? " selected" : "");
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
   const mediaLayout = getMediaLayout(file);
   if (mediaLayout.cardWidth) card.style.setProperty("--card-width", mediaLayout.cardWidth);
@@ -427,6 +468,8 @@ function makeFileCard(file) {
   const tags = normalizeTags(file.tags);
   const isTrash = currentFilter === "trash" || file.deletedAt;
   const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
+  const folderLabel = getFolderPathLabel(file.folderId);
+  const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
 
   card.innerHTML = `
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
@@ -439,6 +482,7 @@ function makeFileCard(file) {
       <div class="file-meta">
         <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
+        ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
         ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
         ${file.description ? `<p class="file-description">${esc(file.description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
@@ -453,6 +497,7 @@ function makeFileCard(file) {
              <button class="file-action-btn info-btn" title="Descricao e prioridade">Info</button>
              <button class="file-action-btn tags-btn" title="Editar tags">Tags</button>
              <button class="file-action-btn share-btn" title="Copiar link">Link</button>
+             ${canUseAsCover ? `<button class="file-action-btn cover-btn" title="Usar como capa da pasta">Capa</button>` : ""}
              <button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
              <button class="file-action-btn file-delete" title="Enviar para lixeira">×</button>`}
       </div>
@@ -460,6 +505,7 @@ function makeFileCard(file) {
 
   card.querySelector(".file-delete")?.addEventListener("click", e => { e.stopPropagation(); deleteFile(file); });
   card.querySelector(".move-btn")?.addEventListener("click", e => { e.stopPropagation(); openMoveModal(file); });
+  card.querySelector(".cover-btn")?.addEventListener("click", e => { e.stopPropagation(); setFolderCover(file); });
   card.querySelector(".rename-btn")?.addEventListener("click", e => { e.stopPropagation(); renameFile(file); });
   card.querySelector(".info-btn")?.addEventListener("click", e => { e.stopPropagation(); editFileInfo(file); });
   card.querySelector(".tags-btn")?.addEventListener("click", e => { e.stopPropagation(); editTags(file); });
@@ -564,9 +610,13 @@ function makeFolderCard(folder, count) {
   const card = document.createElement("div");
   card.className = "folder-card";
   const hasChildren = folders.some(f => f.parentId === folder.id);
+  const coverFile = folder.coverFileId ? files.find(f => f.id === folder.coverFileId && !f.deletedAt) : null;
+  const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
   card.innerHTML = `
+    <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
+      ${coverUrl ? `<img src="${coverUrl}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
+    </div>
     <div class="folder-card-inner">
-      <span class="folder-card-icon">${hasChildren ? "+" : "#"}</span>
       <span class="folder-card-name">${esc(folder.name)}</span>
       <span class="folder-card-count">${count} arq.</span>
       <button class="folder-card-rename" title="Renomear pasta">Nome</button>
@@ -579,6 +629,36 @@ function makeFolderCard(folder, count) {
   return card;
 }
 
+function getFolderPathLabel(folderId) {
+  if (!folderId) return "";
+  const names = [];
+  let cursor = folders.find(f => f.id === folderId);
+  const seen = new Set();
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    names.unshift(cursor.name || "Pasta");
+    cursor = cursor.parentId ? folders.find(f => f.id === cursor.parentId) : null;
+  }
+  return names.join(" / ");
+}
+
+function folderCoverUrl(file) {
+  if (!file) return "";
+  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", 520, 260) || file.url || "";
+  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", 520, 260, file.coverTime) || "";
+  return "";
+}
+
+async function setFolderCover(file) {
+  if (!file.folderId) { showToast("Mova o arquivo para uma pasta primeiro", "error"); return; }
+  try {
+    await updateDoc(doc(db, "vault_folders", file.folderId), { coverFileId: file.id });
+    addHistory(`Capa da pasta: ${file.name}`);
+    showToast("Capa da pasta atualizada", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
 function attachFolderDrop(el, folderId) {
   el.addEventListener("dragover", e => {
     e.preventDefault();
@@ -656,12 +736,12 @@ function toggleSelect(fileId) {
 
 function updateBulkBar() {
   const n = selectedIds.size;
-  if (n === 0 || !isSelectMode) {
+  if (!isSelectMode) {
     bulkBar.style.display = "none";
-  } else {
-    bulkBar.style.display = "flex";
-    bulkCount.textContent = `${n} selecionado${n > 1 ? "s" : ""}`;
+    return;
   }
+  bulkBar.style.display = "flex";
+  bulkCount.textContent = `${n} selecionado${n > 1 ? "s" : ""}`;
 }
 
 $("viewSelect").onclick = () => {
@@ -675,6 +755,20 @@ $("bulkSelectAllBtn").onclick = () => {
   renderGrid();
 };
 
+$("bulkSelectMediaBtn").onclick = () => {
+  lightboxFiles.filter(f => !f.deletedAt && (f.fileType === "image" || f.fileType === "video")).forEach(f => selectedIds.add(f.id));
+  updateBulkBar();
+  renderGrid();
+};
+$("bulkSelectMonthBtn").onclick = () => {
+  const now = new Date();
+  lightboxFiles.filter(f => {
+    const d = fileDate(f);
+    return !f.deletedAt && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }).forEach(f => selectedIds.add(f.id));
+  updateBulkBar();
+  renderGrid();
+};
 $("bulkDownloadBtn").onclick = () => {
   const selected = files.filter(f => selectedIds.has(f.id) && f.url && !f.deletedAt);
   selected.forEach(file => window.open(file.url, "_blank"));
@@ -1286,15 +1380,22 @@ window.addEventListener("drop", e => {
 });
 
 // ??? View toggle ??????????????????????????????????????????
+function clearViewModeButtons() {
+  $("viewGrid").classList.remove("active");
+  $("viewList").classList.remove("active");
+  $("viewGallery").classList.remove("active");
+  $("viewFolders").classList.remove("active");
+  $("viewTimeline").classList.remove("active");
+}
+
 $("viewGrid").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = false;
   isGalleryView = false;
   isFoldersView = false;
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewGrid").classList.add("active");
-  $("viewList").classList.remove("active");
-  $("viewGallery").classList.remove("active");
-  $("viewFolders").classList.remove("active");
   renderGrid();
 };
 $("viewList").onclick = () => {
@@ -1302,10 +1403,9 @@ $("viewList").onclick = () => {
   isListView = true;
   isGalleryView = false;
   isFoldersView = false;
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewList").classList.add("active");
-  $("viewGrid").classList.remove("active");
-  $("viewGallery").classList.remove("active");
-  $("viewFolders").classList.remove("active");
   renderGrid();
 };
 $("viewGallery").onclick = () => {
@@ -1313,10 +1413,9 @@ $("viewGallery").onclick = () => {
   isListView = false;
   isGalleryView = true;
   isFoldersView = false;
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewGallery").classList.add("active");
-  $("viewGrid").classList.remove("active");
-  $("viewList").classList.remove("active");
-  $("viewFolders").classList.remove("active");
   renderGrid();
 };
 $("viewFolders").onclick = () => {
@@ -1324,10 +1423,20 @@ $("viewFolders").onclick = () => {
   isListView = false;
   isGalleryView = false;
   isFoldersView = true;
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewFolders").classList.add("active");
-  $("viewGrid").classList.remove("active");
-  $("viewList").classList.remove("active");
-  $("viewGallery").classList.remove("active");
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+$("viewTimeline").onclick = () => {
+  if (isSelectMode) exitSelectMode();
+  isListView = false;
+  isGalleryView = false;
+  isFoldersView = false;
+  isTimelineView = true;
+  clearViewModeButtons();
+  $("viewTimeline").classList.add("active");
   visibleLimit = PAGE_SIZE;
   renderGrid();
 };
@@ -1376,9 +1485,8 @@ document.querySelectorAll(".chip").forEach(chip => {
 // ??? Sidebar ??????????????????????????????????????????????
 folderList.firstElementChild.onclick = () => {
   isFoldersView = false;
-  $("viewFolders").classList.remove("active");
-  $("viewGallery").classList.remove("active");
-  $("viewList").classList.remove("active");
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewGrid").classList.add("active");
   navigateFolder("root");
 };
