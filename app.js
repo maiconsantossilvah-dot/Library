@@ -19,6 +19,7 @@ let currentSort    = "newest";
 let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
 let isListView     = false;
 let isGalleryView  = false;
+let isFoldersView  = false;
 let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
@@ -329,24 +330,20 @@ function renderGrid() {
       lightboxFiles.push(f);
       items.push(makeFileCard(f));
     });
-  } else if (currentFolder === "root") {
-    // Subpastas de raiz (sem parentId)
-    const rootFolders = folders.filter(f => !f.parentId && matchesSearch(f.name));
-    rootFolders.forEach(folder => {
+  } else if (isFoldersView) {
+    const parentId = currentFolder === "root" ? null : currentFolder;
+    const visibleFolders = folders.filter(f => (f.parentId || null) === parentId && matchesSearch(f.name));
+    visibleFolders.forEach(folder => {
       const count = countFilesInFolder(folder.id);
       items.push(makeFolderCard(folder, count));
     });
-    sortFiles(applyFilter(files.filter(f => !f.folderId && !f.deletedAt))).forEach(f => {
+  } else if (currentFolder === "root") {
+    // "Todos os Arquivos" mostra uma visao plana dos arquivos, mesmo os organizados em pastas.
+    sortFiles(applyFilter(files.filter(f => !f.deletedAt))).forEach(f => {
       lightboxFiles.push(f);
       items.push(makeFileCard(f));
     });
   } else {
-    // Subpastas da pasta atual
-    const subFolders = folders.filter(f => f.parentId === currentFolder && matchesSearch(f.name));
-    subFolders.forEach(folder => {
-      const count = countFilesInFolder(folder.id);
-      items.push(makeFolderCard(folder, count));
-    });
     sortFiles(applyFilter(files.filter(f => f.folderId === currentFolder && !f.deletedAt))).forEach(f => {
       lightboxFiles.push(f);
       items.push(makeFileCard(f));
@@ -633,9 +630,12 @@ async function toggleFavorite(file) {
 // ??? Select mode ??????????????????????????????????????????
 function enterSelectMode() {
   isSelectMode = true;
+  isFoldersView = false;
   $("viewSelect").classList.add("active");
   $("viewGrid").classList.remove("active");
   $("viewList").classList.remove("active");
+  $("viewGallery").classList.remove("active");
+  $("viewFolders").classList.remove("active");
   renderGrid();
 }
 function exitSelectMode() {
@@ -1290,27 +1290,45 @@ $("viewGrid").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = false;
   isGalleryView = false;
+  isFoldersView = false;
   $("viewGrid").classList.add("active");
   $("viewList").classList.remove("active");
   $("viewGallery").classList.remove("active");
+  $("viewFolders").classList.remove("active");
   renderGrid();
 };
 $("viewList").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = true;
   isGalleryView = false;
+  isFoldersView = false;
   $("viewList").classList.add("active");
   $("viewGrid").classList.remove("active");
   $("viewGallery").classList.remove("active");
+  $("viewFolders").classList.remove("active");
   renderGrid();
 };
 $("viewGallery").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = false;
   isGalleryView = true;
+  isFoldersView = false;
   $("viewGallery").classList.add("active");
   $("viewGrid").classList.remove("active");
   $("viewList").classList.remove("active");
+  $("viewFolders").classList.remove("active");
+  renderGrid();
+};
+$("viewFolders").onclick = () => {
+  if (isSelectMode) exitSelectMode();
+  isListView = false;
+  isGalleryView = false;
+  isFoldersView = true;
+  $("viewFolders").classList.add("active");
+  $("viewGrid").classList.remove("active");
+  $("viewList").classList.remove("active");
+  $("viewGallery").classList.remove("active");
+  visibleLimit = PAGE_SIZE;
   renderGrid();
 };
 $("viewDensity").onclick = () => {
@@ -1346,6 +1364,8 @@ document.querySelectorAll(".chip").forEach(chip => {
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     currentFilter = chip.dataset.filter;
+    isFoldersView = false;
+    $("viewFolders").classList.remove("active");
     visibleLimit = PAGE_SIZE;
     selectedIds.clear();
     updateBulkBar();
@@ -1354,7 +1374,14 @@ document.querySelectorAll(".chip").forEach(chip => {
 });
 
 // ??? Sidebar ??????????????????????????????????????????????
-folderList.firstElementChild.onclick = () => navigateFolder("root");
+folderList.firstElementChild.onclick = () => {
+  isFoldersView = false;
+  $("viewFolders").classList.remove("active");
+  $("viewGallery").classList.remove("active");
+  $("viewList").classList.remove("active");
+  $("viewGrid").classList.add("active");
+  navigateFolder("root");
+};
 
 $("sidebarToggle").onclick = () => {
   sidebar.classList.toggle("hidden");
