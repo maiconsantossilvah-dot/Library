@@ -38,6 +38,8 @@ let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
 let lightboxZoom = 1;
+let visibleLimit = 60;
+const PAGE_SIZE = 60;
 
 // ??? DOM refs ?????????????????????????????????????????????
 const $ = id => document.getElementById(id);
@@ -69,6 +71,7 @@ const searchInput     = $("searchInput");
 const sortSelect      = $("sortSelect");
 const qualitySelect   = $("qualitySelect");
 const dashboard       = $("dashboard");
+const loadMoreBtn     = $("loadMoreBtn");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -351,7 +354,9 @@ function renderGrid() {
   }
 
   emptyState.style.display = items.length === 0 ? "flex" : "none";
-  items.forEach(el => fileGrid.appendChild(el));
+  items.slice(0, visibleLimit).forEach(el => fileGrid.appendChild(el));
+  loadMoreBtn.style.display = items.length > visibleLimit ? "inline-flex" : "none";
+  loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, items.length - visibleLimit)})`;
 }
 
 function countFilesInFolder(folderId) {
@@ -411,7 +416,7 @@ function makeFileCard(file) {
     const thumb = cloudThumb(file.cloudPublicId, "image", 520, 360) || file.url;
     thumbHtml = `<img src="${thumb}" alt="${esc(file.name)}" loading="lazy" />`;
   } else if (file.fileType === "video") {
-    const poster = cloudThumb(file.cloudPublicId, "video", 520, 360);
+    const poster = cloudThumb(file.cloudPublicId, "video", 520, 360, file.coverTime);
     thumbHtml = `${poster ? `<img src="${poster}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon">VID</span>`}
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
         <div class="play-indicator">▶</div>
@@ -437,7 +442,9 @@ function makeFileCard(file) {
       <div class="file-meta">
         <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
+        ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
         ${file.description ? `<p class="file-description">${esc(file.description)}</p>` : ""}
+        ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
         ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
       </div>
       <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
@@ -536,12 +543,13 @@ function applyLoadedMediaRatio(card, mediaEl) {
   if (layout.cardWidth) card.style.setProperty("--card-width", layout.cardWidth);
 }
 
-function cloudThumb(publicId, resourceType, w, h) {
+function cloudThumb(publicId, resourceType, w, h, coverTime = null) {
   if (!publicId || !cloudName) return "";
   const type = resourceType === "video" ? "video" : "image";
   const fmt  = resourceType === "video" ? "f_jpg" : "f_auto";
   const dims = qualityDims(w, h);
-  return `https://res.cloudinary.com/${cloudName}/${type}/upload/c_fit,w_${dims.w},h_${dims.h},q_auto,${fmt}/${publicId}`;
+  const cover = resourceType === "video" && Number.isFinite(Number(coverTime)) ? `so_${Math.max(0, Math.round(Number(coverTime)))},` : "";
+  return `https://res.cloudinary.com/${cloudName}/${type}/upload/${cover}c_fit,w_${dims.w},h_${dims.h},q_auto,${fmt}/${publicId}`;
 }
 
 function qualityDims(w, h) {
@@ -881,11 +889,25 @@ async function editFileInfo(file) {
   if (description === null) return;
   const priority = prompt("Prioridade: normal, important ou critical", file.priority || "normal");
   if (priority === null) return;
+  const eventDate = prompt("Data do arquivo/evento (AAAA-MM-DD, opcional):", file.eventDate || "");
+  if (eventDate === null) return;
+  const dueDate = prompt("Data limite (AAAA-MM-DD, opcional):", file.dueDate || "");
+  if (dueDate === null) return;
+  const fields = prompt("Campos personalizados em formato chave: valor, separados por virgula:", customFieldsToText(file.customFields));
+  if (fields === null) return;
+  const note = prompt("Adicionar anotacao/comentario (opcional):", "");
+  if (note === null) return;
   const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "normal";
+  const notes = normalizeNotes(file.notes);
+  if (note.trim()) notes.unshift({ text: note.trim(), at: new Date().toLocaleString() });
   try {
     await updateDoc(doc(db, "vault_files", file.id), {
       description: description.trim(),
       priority: cleanPriority,
+      eventDate: eventDate.trim(),
+      dueDate: dueDate.trim(),
+      customFields: parseCustomFields(fields),
+      notes: notes.slice(0, 20),
     });
     addHistory(`Info atualizada: ${file.name || "arquivo"}`);
     showToast("Informacoes atualizadas", "success");
@@ -960,6 +982,10 @@ function openLightbox(file) {
     vid.autoplay = true;
     vid.playsInline = true;
     vid.preload = "metadata";
+    vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
+    vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
+    vid.onvolumechange = () => localStorage.setItem("vault_video_volume", String(vid.volume));
+    vid.onratechange = () => localStorage.setItem("vault_video_speed", String(vid.playbackRate));
     vid.onerror = () => showMissingLightbox(file);
     lightboxInner.appendChild(vid);
   } else {
@@ -1003,6 +1029,12 @@ function openLightbox(file) {
     <button id="lbShareBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
       border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
       font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Copiar link</button>
+    ${file.fileType === "video" ? `<button id="lbSpeedBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
+      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Velocidade</button>
+    <button id="lbCoverBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
+      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
+      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Usar frame</button>` : ""}
     <a href="${file.url}" target="_blank" style="color:var(--accent);text-decoration:none;
       padding:4px 10px;border:1px solid var(--accent);border-radius:3px;
       font-family:var(--font-mono);font-size:11px;">Baixar</a>
@@ -1014,6 +1046,10 @@ function openLightbox(file) {
   $("lbRenameBtn").onclick = () => renameFile(file);
   $("lbTagsBtn").onclick = () => editTags(file);
   $("lbShareBtn").onclick = () => shareFile(file);
+  if (file.fileType === "video") {
+    $("lbSpeedBtn").onclick = () => cycleVideoSpeed();
+    $("lbCoverBtn").onclick = () => saveCurrentVideoFrame(file);
+  }
   $("lbPrevBtn").onclick = () => navigateLightbox(-1);
   $("lbNextBtn").onclick = () => navigateLightbox(1);
   $("lbPrevBtn").disabled = lightboxIndex <= 0;
@@ -1067,6 +1103,28 @@ function navigateLightbox(direction) {
   const next = lightboxIndex + direction;
   if (next < 0 || next >= lightboxFiles.length) return;
   openLightbox(lightboxFiles[next]);
+}
+
+function cycleVideoSpeed() {
+  const video = lightboxInner.querySelector("video");
+  if (!video) return;
+  const speeds = [0.5, 1, 1.25, 1.5, 2];
+  const idx = speeds.findIndex(s => s > video.playbackRate + 0.01);
+  video.playbackRate = idx >= 0 ? speeds[idx] : speeds[0];
+  localStorage.setItem("vault_video_speed", String(video.playbackRate));
+  showToast(`Velocidade ${video.playbackRate}x`, "success");
+}
+
+async function saveCurrentVideoFrame(file) {
+  const video = lightboxInner.querySelector("video");
+  if (!video) return;
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), { coverTime: Math.round(video.currentTime || 0) });
+    addHistory(`Capa do video: ${file.name}`);
+    showToast("Frame salvo como capa", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
 }
 
 function showMissingLightbox(file) {
@@ -1172,6 +1230,10 @@ function uploadOneFile(file) {
           tags:          [],
           description:   "",
           priority:      "normal",
+          eventDate:     "",
+          dueDate:       "",
+          customFields:  {},
+          notes:         [],
           createdAt:     serverTimestamp(),
         });
         addHistory(`Upload: ${file.name}`);
@@ -1259,16 +1321,22 @@ $("viewDensity").onclick = () => {
 
 searchInput.oninput = () => {
   currentSearch = searchInput.value.trim().toLowerCase();
+  visibleLimit = PAGE_SIZE;
   renderFolderList();
   renderGrid();
 };
 sortSelect.onchange = () => {
   currentSort = sortSelect.value;
+  visibleLimit = PAGE_SIZE;
   renderGrid();
 };
 qualitySelect.onchange = () => {
   thumbQuality = qualitySelect.value;
   localStorage.setItem("vault_thumb_quality", thumbQuality);
+  renderGrid();
+};
+loadMoreBtn.onclick = () => {
+  visibleLimit += PAGE_SIZE;
   renderGrid();
 };
 
@@ -1278,6 +1346,7 @@ document.querySelectorAll(".chip").forEach(chip => {
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     currentFilter = chip.dataset.filter;
+    visibleLimit = PAGE_SIZE;
     selectedIds.clear();
     updateBulkBar();
     renderGrid();
@@ -1328,6 +1397,10 @@ async function importFromUrl() {
       tags: [],
       description: "Importado por URL",
       priority: "normal",
+      eventDate: "",
+      dueDate: "",
+      customFields: {},
+      notes: [],
       createdAt: serverTimestamp(),
     });
     addHistory(`URL importada: ${name}`);
@@ -1438,6 +1511,32 @@ function esc(str) {
 function normalizeTags(value) {
   if (Array.isArray(value)) return [...new Set(value.map(t => String(t).trim()).filter(Boolean))].slice(0, 12);
   return [...new Set(String(value || "").split(",").map(t => t.trim()).filter(Boolean))].slice(0, 12);
+}
+function parseCustomFields(value) {
+  const fields = {};
+  String(value || "").split(",").forEach(pair => {
+    const [key, ...rest] = pair.split(":");
+    const cleanKey = (key || "").trim();
+    const cleanValue = rest.join(":").trim();
+    if (cleanKey && cleanValue) fields[cleanKey] = cleanValue;
+  });
+  return fields;
+}
+function customFieldsToText(fields) {
+  return Object.entries(fields || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+}
+function customFieldSummary(file) {
+  const entries = Object.entries(file.customFields || {}).slice(0, 2);
+  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
+}
+function dateSummary(file) {
+  const parts = [];
+  if (file.eventDate) parts.push(`Data: ${file.eventDate}`);
+  if (file.dueDate) parts.push(`Limite: ${file.dueDate}`);
+  return parts.join(" · ");
+}
+function normalizeNotes(value) {
+  return Array.isArray(value) ? value.filter(n => n && n.text).slice(0, 20) : [];
 }
 function showToast(msg, type = "") {
   toast.textContent = msg;
