@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VAULT — Seu Cofre Digital</title>
+  <title>VAULT - Seu Cofre Digital</title>
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
 </head>
@@ -13,10 +13,13 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
-        <span class="logo-icon">⬡</span>
+        <span class="logo-icon">V</span>
         <span class="logo-text">VAULT</span>
       </div>
-      <button class="sidebar-toggle" id="sidebarToggle" title="Fechar menu">&#9776;</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="sidebar-cfg-btn" id="openConfigBtn" title="Configuracoes">⚙</button>
+        <button class="sidebar-toggle" id="sidebarToggle" title="Fechar menu">&#9776;</button>
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -26,10 +29,12 @@
     </div>
 
     <div class="sidebar-section">
-      <p class="sidebar-label">NAVEGAÇÃO</p>
+      <p class="sidebar-label">NAVEGACAO</p>
+      <!-- Breadcrumb trail inside sidebar -->
+      <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
       <ul class="folder-list" id="folderList">
         <li class="folder-item active" data-folder="root">
-          <span class="folder-icon">◈</span> Todos os Arquivos
+          <span class="folder-icon">#</span> Todos os Arquivos
         </li>
       </ul>
     </div>
@@ -38,9 +43,10 @@
       <p class="sidebar-label">FILTRAR POR TIPO</p>
       <div class="filter-chips">
         <button class="chip active" data-filter="all">Tudo</button>
-        <button class="chip" data-filter="image">🖼 Imagens</button>
-        <button class="chip" data-filter="video">🎬 Vídeos</button>
-        <button class="chip" data-filter="document">📄 Docs</button>
+        <button class="chip" data-filter="image">IMG Imagens</button>
+        <button class="chip" data-filter="video">VID Videos</button>
+        <button class="chip" data-filter="document">DOC Docs</button>
+        <button class="chip" data-filter="favorites">* Favoritos</button>
       </div>
     </div>
 
@@ -63,12 +69,21 @@
         <span>Todos os Arquivos</span>
       </div>
       <div class="topbar-right">
+        <!-- Bulk actions bar (hidden when nothing selected) -->
+        <div class="bulk-bar" id="bulkBar" style="display:none;">
+          <span class="bulk-count" id="bulkCount">0 selecionados</span>
+          <button class="bulk-btn" id="bulkMoveBtn" title="Mover selecionados">Mover</button>
+          <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
+          <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
+          <button class="bulk-btn cancel" id="bulkCancelBtn" title="Cancelar selecao">Cancelar</button>
+        </div>
         <div class="view-toggle">
-          <button class="view-btn active" id="viewGrid" title="Grade grande">⊞</button>
+          <button class="view-btn active" id="viewGrid" title="Grade">▦</button>
           <button class="view-btn" id="viewList" title="Lista">☰</button>
+          <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
         </div>
         <label class="upload-btn" for="fileInput">
-          <span>↑ Upload</span>
+          <span>Upload</span>
           <input type="file" id="fileInput" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
         </label>
       </div>
@@ -77,7 +92,7 @@
     <!-- DROP ZONE OVERLAY -->
     <div class="drop-overlay" id="dropOverlay">
       <div class="drop-message">
-        <span class="drop-icon">↓</span>
+        <span class="drop-icon">+</span>
         <p>Solte os arquivos aqui</p>
       </div>
     </div>
@@ -85,9 +100,9 @@
     <!-- CONTENT AREA -->
     <div class="content" id="content">
       <div class="empty-state" id="emptyState">
-        <div class="empty-icon">⬡</div>
+        <div class="empty-icon">VAULT</div>
         <p class="empty-title">Cofre vazio</p>
-        <p class="empty-sub">Arraste arquivos ou clique em Upload para começar</p>
+        <p class="empty-sub">Arraste arquivos ou clique em Upload para comecar</p>
       </div>
       <div class="grid" id="fileGrid"></div>
     </div>
@@ -108,7 +123,7 @@
 
   <!-- MODAL: Lightbox -->
   <div class="lightbox" id="lightbox">
-    <button class="lightbox-close" id="lightboxClose">✕</button>
+    <button class="lightbox-close" id="lightboxClose">×</button>
     <div class="lightbox-inner" id="lightboxInner"></div>
     <div class="lightbox-info" id="lightboxInfo"></div>
   </div>
@@ -117,33 +132,34 @@
   <div class="modal-overlay" id="configModal" style="display:flex;">
     <div class="modal config-modal">
       <div class="config-header">
-        <span class="logo-icon">⬡</span>
+        <span class="logo-icon">V</span>
         <h2 class="modal-title">Configurar Firebase</h2>
       </div>
       <p class="config-desc">Cole suas credenciais do Firebase (Firestore) e do Cloudinary. Ficam salvas apenas no seu navegador.</p>
       <div class="config-fields">
-        <p class="cfg-section-label">— FIREBASE FIRESTORE —</p>
+        <p class="cfg-section-label">- FIREBASE FIRESTORE -</p>
         <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" />
         <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" />
         <input class="modal-input" id="cfg_projectId" placeholder="projectId" />
         <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" />
         <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" />
         <input class="modal-input" id="cfg_appId" placeholder="appId" />
-        <p class="cfg-section-label" style="margin-top:10px;">— CLOUDINARY (25 GB grátis) —</p>
+        <p class="cfg-section-label" style="margin-top:10px;">- CLOUDINARY (25 GB gratis) -</p>
         <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" />
         <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (modo Unsigned)" />
       </div>
       <div class="modal-actions">
+        <button class="modal-btn cancel" id="cancelConfig" style="display:none;">Cancelar</button>
         <button class="modal-btn confirm" id="saveConfig">Salvar e Conectar</button>
       </div>
       <p class="config-help">
-        Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> → Configurações → SDK<br/>
-        Cloudinary: <a href="https://cloudinary.com" target="_blank">cloudinary.com</a> → Settings → Upload Presets → modo <strong>Unsigned</strong>
+        Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> > Configuracoes > SDK<br/>
+        Cloudinary: <a href="https://cloudinary.com" target="_blank">cloudinary.com</a> > Settings > Upload Presets > modo <strong>Unsigned</strong>
       </p>
     </div>
   </div>
 
-  <!-- MODAL: Mover arquivo -->
+  <!-- MODAL: Mover arquivo / lote -->
   <div class="modal-overlay" id="moveModal">
     <div class="modal move-modal">
       <h2 class="modal-title">Mover Arquivo</h2>
@@ -163,7 +179,7 @@
   <div class="upload-progress-panel" id="uploadPanel" style="display:none;">
     <div class="upload-panel-header">
       <span>Enviando arquivos</span>
-      <button id="closePanel">✕</button>
+      <button id="closePanel">×</button>
     </div>
     <div id="uploadList"></div>
   </div>
