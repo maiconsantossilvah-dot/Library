@@ -316,7 +316,8 @@ function makeFileCard(file) {
   const card = document.createElement("div");
   card.className = "file-card" + (selectedIds.has(file.id) ? " selected" : "");
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
-  const mediaRatio = getMediaRatio(file);
+  const mediaLayout = getMediaLayout(file);
+  if (mediaLayout.cardWidth) card.style.setProperty("--card-width", mediaLayout.cardWidth);
 
   let thumbHtml = "";
   if (file.fileType === "image") {
@@ -336,7 +337,7 @@ function makeFileCard(file) {
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
 
   card.innerHTML = `
-    <div class="file-thumb" ${mediaRatio ? `style="--media-ratio:${mediaRatio}"` : ""}>
+    <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
       <button class="${favClass}" title="${favTitle}">★</button>
@@ -372,7 +373,10 @@ function makeFileCard(file) {
   };
 
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
-  if (mediaEl && !mediaRatio) {
+  if (mediaEl) {
+    mediaEl.addEventListener("error", () => markFileUnavailable(card), { once: true });
+  }
+  if (mediaEl && !mediaLayout.ratio) {
     mediaEl.addEventListener("load", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
     mediaEl.addEventListener("loadedmetadata", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
     if (mediaEl.complete || mediaEl.readyState >= 1) applyLoadedMediaRatio(card, mediaEl);
@@ -380,17 +384,41 @@ function makeFileCard(file) {
   return card;
 }
 
-function getMediaRatio(file) {
+function markFileUnavailable(card) {
+  const thumb = card.querySelector(".file-thumb");
+  if (!thumb) return;
+  card.classList.add("file-unavailable");
+  thumb.querySelectorAll("img, video").forEach(el => el.remove());
+  thumb.insertAdjacentHTML("afterbegin", `
+    <div class="missing-media">
+      <span class="missing-media-title">Arquivo indisponivel</span>
+      <span class="missing-media-sub">Apagado do Cloudinary</span>
+    </div>
+  `);
+}
+
+function getMediaLayout(file) {
   const w = Number(file.width || file.mediaWidth);
   const h = Number(file.height || file.mediaHeight);
-  if (!w || !h) return "";
-  return `${w} / ${h}`;
+  if (!w || !h) return { ratio: "", cardWidth: "" };
+  return mediaLayoutFromSize(w, h);
+}
+
+function mediaLayoutFromSize(w, h) {
+  const ratioValue = w / h;
+  let cardWidth = "";
+  if (ratioValue < 0.62) cardWidth = "min(72%, 220px)";
+  else if (ratioValue < 0.85) cardWidth = "min(82%, 250px)";
+  return { ratio: `${w} / ${h}`, cardWidth };
 }
 
 function applyLoadedMediaRatio(card, mediaEl) {
   const w = mediaEl.naturalWidth || mediaEl.videoWidth;
   const h = mediaEl.naturalHeight || mediaEl.videoHeight;
-  if (w && h) card.querySelector(".file-thumb")?.style.setProperty("--media-ratio", `${w} / ${h}`);
+  if (!w || !h) return;
+  const layout = mediaLayoutFromSize(w, h);
+  card.querySelector(".file-thumb")?.style.setProperty("--media-ratio", layout.ratio);
+  if (layout.cardWidth) card.style.setProperty("--card-width", layout.cardWidth);
 }
 
 function cloudThumb(publicId, resourceType, w, h) {
@@ -668,6 +696,7 @@ function openLightbox(file) {
     img.src = file.url;
     img.alt = file.name;
     img.loading = "eager";
+    img.onerror = () => showMissingLightbox(file);
     lightboxInner.appendChild(img);
   } else if (file.fileType === "video") {
     const vid = document.createElement("video");
@@ -676,6 +705,7 @@ function openLightbox(file) {
     vid.autoplay = true;
     vid.playsInline = true;
     vid.preload = "metadata";
+    vid.onerror = () => showMissingLightbox(file);
     lightboxInner.appendChild(vid);
   } else {
     lightboxInner.innerHTML = `
@@ -722,7 +752,18 @@ function openLightbox(file) {
 
   window.__lightboxFile = file;
   window.openMoveModal  = openMoveModal;
+  window.deleteFileFromLightbox = async () => { await deleteFile(file); closeLightbox(); };
   lightbox.classList.add("active");
+}
+
+function showMissingLightbox(file) {
+  lightboxInner.innerHTML = `
+    <div class="missing-lightbox">
+      <div class="missing-lightbox-title">Arquivo indisponivel</div>
+      <p>Este item ainda existe no Firebase, mas o arquivo foi apagado ou movido no Cloudinary.</p>
+      <button onclick="deleteFileFromLightbox()">Remover registro do app</button>
+    </div>
+  `;
 }
 
 $("lightboxClose").onclick = closeLightbox;

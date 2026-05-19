@@ -478,6 +478,37 @@ html, body {
   color: var(--text3);
   user-select: none;
 }
+.missing-media {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px;
+  text-align: center;
+  background: rgba(15,19,24,0.92);
+  color: var(--text2);
+}
+.missing-media-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+.missing-media-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+.file-unavailable .file-type-badge {
+  border-color: rgba(255,59,48,0.35);
+  color: var(--danger);
+}
 .play-indicator {
   background: rgba(3,7,12,0.68);
   border: 1px solid rgba(255,255,255,0.55);
@@ -838,6 +869,40 @@ html, body {
 }
 .lightbox-inner img { max-width: 100%; max-height: 84vh; object-fit: contain; border-radius: 4px; }
 .lightbox-inner video { max-width: 100%; max-height: 84vh; object-fit: contain; border-radius: 4px; }
+.missing-lightbox {
+  width: min(90vw, 460px);
+  padding: 28px;
+  border: 1px solid rgba(255,59,48,0.35);
+  border-radius: 8px;
+  background: var(--bg2);
+  text-align: center;
+}
+.missing-lightbox-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: 2px;
+  color: var(--danger);
+  margin-bottom: 10px;
+}
+.missing-lightbox p {
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+.missing-lightbox button {
+  border: 1px solid var(--danger);
+  background: rgba(255,59,48,0.1);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.missing-lightbox button:hover { background: var(--danger); }
 .lightbox-info {
   font-family: var(--font-mono);
   font-size: 12px;
