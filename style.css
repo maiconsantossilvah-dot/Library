@@ -414,6 +414,8 @@ html, body {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-items: start;
+  grid-auto-flow: dense;
   gap: 18px;
 }
 .grid.list-view { grid-template-columns: 1fr; gap: 4px; }
@@ -447,7 +449,9 @@ html, body {
 /* Thumbnail */
 .file-thumb {
   width: 100%;
-  aspect-ratio: 4/3;
+  aspect-ratio: var(--media-ratio, 4 / 3);
+  min-height: 150px;
+  max-height: min(72vh, 560px);
   overflow: hidden;
   background:
     linear-gradient(45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
@@ -603,7 +607,7 @@ html, body {
 
 /* LIST VIEW */
 .grid.list-view .file-card { display: flex; align-items: center; border-radius: 2px; }
-.grid.list-view .file-thumb { width: 80px; height: 52px; aspect-ratio: unset; flex-shrink: 0; }
+.grid.list-view .file-thumb { width: 80px; height: 52px; min-height: 52px; max-height: 52px; aspect-ratio: unset; flex-shrink: 0; }
 .grid.list-view .file-type-badge { display: none; }
 .grid.list-view .file-info { flex: 1; border-top: none; border-left: 1px solid var(--border); padding: 8px 14px; }
 .grid.list-view .fav-btn { top: 50%; right: auto; left: 58px; transform: translateY(-50%); opacity: 1; }

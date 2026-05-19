@@ -316,6 +316,7 @@ function makeFileCard(file) {
   const card = document.createElement("div");
   card.className = "file-card" + (selectedIds.has(file.id) ? " selected" : "");
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
+  const mediaRatio = getMediaRatio(file);
 
   let thumbHtml = "";
   if (file.fileType === "image") {
@@ -335,7 +336,7 @@ function makeFileCard(file) {
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
 
   card.innerHTML = `
-    <div class="file-thumb">
+    <div class="file-thumb" ${mediaRatio ? `style="--media-ratio:${mediaRatio}"` : ""}>
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
       <button class="${favClass}" title="${favTitle}">★</button>
@@ -369,7 +370,27 @@ function makeFileCard(file) {
     if (isSelectMode) { toggleSelect(file.id); return; }
     openLightbox(file);
   };
+
+  const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
+  if (mediaEl && !mediaRatio) {
+    mediaEl.addEventListener("load", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
+    mediaEl.addEventListener("loadedmetadata", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
+    if (mediaEl.complete || mediaEl.readyState >= 1) applyLoadedMediaRatio(card, mediaEl);
+  }
   return card;
+}
+
+function getMediaRatio(file) {
+  const w = Number(file.width || file.mediaWidth);
+  const h = Number(file.height || file.mediaHeight);
+  if (!w || !h) return "";
+  return `${w} / ${h}`;
+}
+
+function applyLoadedMediaRatio(card, mediaEl) {
+  const w = mediaEl.naturalWidth || mediaEl.videoWidth;
+  const h = mediaEl.naturalHeight || mediaEl.videoHeight;
+  if (w && h) card.querySelector(".file-thumb")?.style.setProperty("--media-ratio", `${w} / ${h}`);
 }
 
 function cloudThumb(publicId, resourceType, w, h) {
@@ -773,6 +794,8 @@ function uploadOneFile(file) {
           url:           res.secure_url,
           cloudPublicId: res.public_id,
           size:          file.size,
+          width:         res.width || null,
+          height:        res.height || null,
           fileType:      getFileType(file),
           mimeType:      file.type,
           folderId:      currentFolder === "root" ? null : currentFolder,
