@@ -16,8 +16,10 @@ let currentFolder  = "root";   // "root" ou ID de pasta
 let currentFilter  = "all";
 let currentSearch  = "";
 let currentSort    = "newest";
+let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
 let isListView     = false;
 let isGalleryView  = false;
+let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
 let folders        = [];
@@ -35,6 +37,7 @@ let bulkMoveMode  = false;
 let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
+let lightboxZoom = 1;
 
 // ??? DOM refs ?????????????????????????????????????????????
 const $ = id => document.getElementById(id);
@@ -64,6 +67,8 @@ const bulkBar         = $("bulkBar");
 const bulkCount       = $("bulkCount");
 const searchInput     = $("searchInput");
 const sortSelect      = $("sortSelect");
+const qualitySelect   = $("qualitySelect");
+const dashboard       = $("dashboard");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -79,6 +84,8 @@ function clearConfig()   { localStorage.removeItem(CFG_KEY); }
 const savedCfg = loadConfig();
 if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
 else openConfigModal(false); // nao pode cancelar na primeira vez
+qualitySelect.value = thumbQuality;
+renderHistory();
 
 function prefillConfig(cfg) {
   $("cfg_apiKey").value            = cfg.apiKey            || "";
@@ -172,6 +179,7 @@ function listenFiles() {
     snap => {
       files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       updateStorageUI();
+      updateDashboard();
       renderGrid();
     }
   );
@@ -197,6 +205,7 @@ function renderFolderList() {
     li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(f); };
     li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(f.id, f.name); };
     li.onclick = () => navigateFolder(f.id, f.name);
+    attachFolderDrop(li, f.id);
     folderList.appendChild(li);
   });
 
@@ -281,13 +290,33 @@ function renderBreadcrumb() {
 // ??? Grid ?????????????????????????????????????????????????
 function renderGrid() {
   fileGrid.innerHTML = "";
-  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isSelectMode ? " select-mode" : "");
+  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isCompactView ? " compact-view" : "") + (isSelectMode ? " select-mode" : "");
   let items = [];
   lightboxFiles = [];
 
   if (currentFilter === "trash") {
     const trashFiles = sortFiles(applyFilter(files.filter(f => f.deletedAt)));
     trashFiles.forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "recent") {
+    sortFiles(applyFilter(files.filter(f => !f.deletedAt))).slice(0, 30).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "untagged") {
+    sortFiles(applyFilter(files.filter(f => !f.deletedAt && normalizeTags(f.tags).length === 0))).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "largeVideos") {
+    sortFiles(applyFilter(files.filter(f => !f.deletedAt && f.fileType === "video" && (f.size || 0) > 100 * 1024 * 1024))).forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "important") {
+    sortFiles(applyFilter(files.filter(f => !f.deletedAt && (f.priority === "important" || f.priority === "critical")))).forEach(f => {
       lightboxFiles.push(f);
       items.push(makeFileCard(f));
     });
@@ -361,7 +390,7 @@ function dateValue(value) {
 function fileMatchesSearch(file) {
   if (!currentSearch) return true;
   const tags = normalizeTags(file.tags).join(" ");
-  return matchesSearch(`${file.name || ""} ${tags}`);
+  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""}`);
 }
 
 function matchesSearch(text) {
@@ -395,6 +424,7 @@ function makeFileCard(file) {
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
   const tags = normalizeTags(file.tags);
   const isTrash = currentFilter === "trash" || file.deletedAt;
+  const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
 
   card.innerHTML = `
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
@@ -406,6 +436,8 @@ function makeFileCard(file) {
     <div class="file-info">
       <div class="file-meta">
         <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
+        ${file.description ? `<p class="file-description">${esc(file.description)}</p>` : ""}
         ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
       </div>
       <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
@@ -414,6 +446,7 @@ function makeFileCard(file) {
           ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
              <button class="file-action-btn permanent-delete" title="Excluir definitivamente">×</button>`
           : `<button class="file-action-btn rename-btn" title="Renomear">Nome</button>
+             <button class="file-action-btn info-btn" title="Descricao e prioridade">Info</button>
              <button class="file-action-btn tags-btn" title="Editar tags">Tags</button>
              <button class="file-action-btn share-btn" title="Copiar link">Link</button>
              <button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
@@ -424,6 +457,7 @@ function makeFileCard(file) {
   card.querySelector(".file-delete")?.addEventListener("click", e => { e.stopPropagation(); deleteFile(file); });
   card.querySelector(".move-btn")?.addEventListener("click", e => { e.stopPropagation(); openMoveModal(file); });
   card.querySelector(".rename-btn")?.addEventListener("click", e => { e.stopPropagation(); renameFile(file); });
+  card.querySelector(".info-btn")?.addEventListener("click", e => { e.stopPropagation(); editFileInfo(file); });
   card.querySelector(".tags-btn")?.addEventListener("click", e => { e.stopPropagation(); editTags(file); });
   card.querySelector(".share-btn")?.addEventListener("click", e => { e.stopPropagation(); shareFile(file); });
   card.querySelector(".restore-btn")?.addEventListener("click", e => { e.stopPropagation(); restoreFile(file); });
@@ -446,6 +480,11 @@ function makeFileCard(file) {
     if (file.deletedAt) return;
     openLightbox(file);
   };
+  card.draggable = !isTrash;
+  card.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("text/plain", file.id);
+    e.dataTransfer.effectAllowed = "move";
+  });
 
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
   if (file.missing) markFileUnavailable(card);
@@ -501,7 +540,13 @@ function cloudThumb(publicId, resourceType, w, h) {
   if (!publicId || !cloudName) return "";
   const type = resourceType === "video" ? "video" : "image";
   const fmt  = resourceType === "video" ? "f_jpg" : "f_auto";
-  return `https://res.cloudinary.com/${cloudName}/${type}/upload/c_fit,w_${w},h_${h},q_auto,${fmt}/${publicId}`;
+  const dims = qualityDims(w, h);
+  return `https://res.cloudinary.com/${cloudName}/${type}/upload/c_fit,w_${dims.w},h_${dims.h},q_auto,${fmt}/${publicId}`;
+}
+
+function qualityDims(w, h) {
+  const scale = { low: 0.55, medium: 1, high: 1.55 }[thumbQuality] || 1;
+  return { w: Math.round(w * scale), h: Math.round(h * scale) };
 }
 
 function docIcon(name) {
@@ -525,7 +570,29 @@ function makeFolderCard(folder, count) {
   card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   card.querySelector(".folder-card-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
   card.onclick = () => navigateFolder(folder.id, folder.name);
+  attachFolderDrop(card, folder.id);
   return card;
+}
+
+function attachFolderDrop(el, folderId) {
+  el.addEventListener("dragover", e => {
+    e.preventDefault();
+    el.classList.add("drop-target");
+  });
+  el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
+  el.addEventListener("drop", async e => {
+    e.preventDefault();
+    el.classList.remove("drop-target");
+    const fileId = e.dataTransfer.getData("text/plain");
+    if (!fileId) return;
+    try {
+      await updateDoc(doc(db, "vault_files", fileId), { folderId });
+      addHistory("Movido por arrastar");
+      showToast("Arquivo movido", "success");
+    } catch (err) {
+      showToast("Erro: " + err.message, "error");
+    }
+  });
 }
 
 async function renameFolder(folder) {
@@ -535,6 +602,7 @@ async function renameFolder(folder) {
   if (!clean) { showToast("Nome vazio", "error"); return; }
   try {
     await updateDoc(doc(db, "vault_folders", folder.id), { name: clean });
+    addHistory(`Pasta renomeada: ${folder.name} -> ${clean}`);
     const pathItem = folderPath.find(p => p.id === folder.id);
     if (pathItem) pathItem.name = clean;
     renderBreadcrumb();
@@ -593,6 +661,17 @@ $("viewSelect").onclick = () => {
   else { isListView = false; enterSelectMode(); }
 };
 $("bulkCancelBtn").onclick = exitSelectMode;
+$("bulkSelectAllBtn").onclick = () => {
+  lightboxFiles.filter(f => !f.deletedAt).forEach(f => selectedIds.add(f.id));
+  updateBulkBar();
+  renderGrid();
+};
+
+$("bulkDownloadBtn").onclick = () => {
+  const selected = files.filter(f => selectedIds.has(f.id) && f.url && !f.deletedAt);
+  selected.forEach(file => window.open(file.url, "_blank"));
+  showToast(`${selected.length} link(s) aberto(s) para download`, "success");
+};
 
 $("bulkDeleteBtn").onclick = async () => {
   const ids = [...selectedIds];
@@ -726,12 +805,13 @@ async function createFolder() {
   const name = folderNameInput.value.trim();
   if (!name) return;
   const parentId = currentFolder === "root" ? null : currentFolder;
-  await addDoc(collection(db, "vault_folders"), {
+    await addDoc(collection(db, "vault_folders"), {
     name,
     parentId,   // subpasta!
     createdAt: serverTimestamp(),
   });
   folderModal.classList.remove("active");
+  addHistory(`Pasta criada: ${name}`);
   showToast(`Pasta "${name}" criada${parentId ? " aqui dentro" : ""}`, "success");
 }
 
@@ -740,6 +820,7 @@ async function deleteFile(file) {
   if (!confirm(`Mover "${file.name}" para a lixeira?`)) return;
   try {
     await updateDoc(doc(db, "vault_files", file.id), { deletedAt: serverTimestamp() });
+    addHistory(`Lixeira: ${file.name}`);
     showToast("Arquivo enviado para a lixeira", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -749,6 +830,7 @@ async function deleteFile(file) {
 async function restoreFile(file) {
   try {
     await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null });
+    addHistory(`Restaurado: ${file.name}`);
     showToast("Arquivo restaurado", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -759,6 +841,7 @@ async function permanentlyDeleteFile(file) {
   if (!confirm(`Excluir definitivamente "${file.name}" do app?\n\nIsso remove o registro do Firebase. Para apagar do Cloudinary com seguranca, use uma funcao de backend com a chave secreta.`)) return;
   try {
     await deleteDoc(doc(db, "vault_files", file.id));
+    addHistory(`Removido: ${file.name}`);
     showToast("Registro removido definitivamente", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -772,6 +855,7 @@ async function renameFile(file) {
   if (!clean) { showToast("Nome vazio", "error"); return; }
   try {
     await updateDoc(doc(db, "vault_files", file.id), { name: clean });
+    addHistory(`Renomeado: ${file.name} -> ${clean}`);
     showToast("Arquivo renomeado", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -785,7 +869,26 @@ async function editTags(file) {
   const tags = normalizeTags(value);
   try {
     await updateDoc(doc(db, "vault_files", file.id), { tags });
+    addHistory(`Tags: ${file.name}`);
     showToast("Tags atualizadas", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function editFileInfo(file) {
+  const description = prompt("Descricao do arquivo:", file.description || "");
+  if (description === null) return;
+  const priority = prompt("Prioridade: normal, important ou critical", file.priority || "normal");
+  if (priority === null) return;
+  const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "normal";
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), {
+      description: description.trim(),
+      priority: cleanPriority,
+    });
+    addHistory(`Info atualizada: ${file.name || "arquivo"}`);
+    showToast("Informacoes atualizadas", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -825,6 +928,7 @@ async function deleteFolder(folderId, name) {
     navigateFolder(parentId || "root", folderPath[folderPath.length - 1]?.name || "root", true);
   }
   showToast("Pasta excluida", "success");
+  addHistory(`Pasta excluida: ${name}`);
 }
 
 function getDescendantFolderIds(folderId) {
@@ -872,6 +976,8 @@ function openLightbox(file) {
     : "color:var(--accent);background:rgba(232,255,71,0.07);border:1px solid rgba(232,255,71,0.3);";
 
   lightboxInfo.innerHTML = `
+    <button class="lb-nav-btn" id="lbZoomOut">-</button>
+    <button class="lb-nav-btn" id="lbZoomIn">+</button>
     <button class="lb-nav-btn" id="lbPrevBtn">Anterior</button>
     <span>${esc(file.name)}</span>
     <span style="color:var(--text3)">.</span>
@@ -903,6 +1009,8 @@ function openLightbox(file) {
     <button class="lb-nav-btn" id="lbNextBtn">Proximo</button>`;
 
   $("lbFavBtn").onclick = () => { toggleFavorite(file); closeLightbox(); };
+  $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
+  $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
   $("lbRenameBtn").onclick = () => renameFile(file);
   $("lbTagsBtn").onclick = () => editTags(file);
   $("lbShareBtn").onclick = () => shareFile(file);
@@ -915,6 +1023,18 @@ function openLightbox(file) {
   window.openMoveModal  = openMoveModal;
   window.deleteFileFromLightbox = async () => { await deleteFile(file); closeLightbox(); };
   lightbox.classList.add("active");
+  lightboxZoom = 1;
+  setLightboxZoom(1);
+}
+
+function setLightboxZoom(value) {
+  lightboxZoom = Math.max(0.5, Math.min(3, value));
+  const media = lightboxInner.querySelector("img, video");
+  if (media) {
+    media.style.transform = `scale(${lightboxZoom})`;
+    media.style.transformOrigin = "center center";
+  }
+  lightboxInner.classList.toggle("zoomed", lightboxZoom > 1);
 }
 
 async function renderDocumentPreview(file) {
@@ -1049,8 +1169,12 @@ function uploadOneFile(file) {
           mimeType:      file.type,
           folderId:      currentFolder === "root" ? null : currentFolder,
           favorite:      false,
+          tags:          [],
+          description:   "",
+          priority:      "normal",
           createdAt:     serverTimestamp(),
         });
+        addHistory(`Upload: ${file.name}`);
         status.textContent = "Concluido";
         status.style.color = "var(--accent)";
         cancelBtn.remove();
@@ -1127,6 +1251,11 @@ $("viewGallery").onclick = () => {
   $("viewList").classList.remove("active");
   renderGrid();
 };
+$("viewDensity").onclick = () => {
+  isCompactView = !isCompactView;
+  $("viewDensity").classList.toggle("active", isCompactView);
+  renderGrid();
+};
 
 searchInput.oninput = () => {
   currentSearch = searchInput.value.trim().toLowerCase();
@@ -1135,6 +1264,11 @@ searchInput.oninput = () => {
 };
 sortSelect.onchange = () => {
   currentSort = sortSelect.value;
+  renderGrid();
+};
+qualitySelect.onchange = () => {
+  thumbQuality = qualitySelect.value;
+  localStorage.setItem("vault_thumb_quality", thumbQuality);
   renderGrid();
 };
 
@@ -1170,6 +1304,45 @@ $("closePanel").onclick = () => {
   uploadPanel.style.display = "none";
 };
 $("btnCheckFiles").onclick = verifyFiles;
+$("importUrlBtn").onclick = importFromUrl;
+
+async function importFromUrl() {
+  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  const url = prompt("Cole a URL do arquivo:");
+  if (!url) return;
+  const name = prompt("Nome para salvar:", url.split("/").pop()?.split("?")[0] || "arquivo-url");
+  if (!name) return;
+  const fileType = guessFileTypeFromUrl(url);
+  try {
+    await addDoc(collection(db, "vault_files"), {
+      name: name.trim(),
+      url: url.trim(),
+      cloudPublicId: "",
+      size: 0,
+      width: null,
+      height: null,
+      fileType,
+      mimeType: "",
+      folderId: currentFolder === "root" ? null : currentFolder,
+      favorite: false,
+      tags: [],
+      description: "Importado por URL",
+      priority: "normal",
+      createdAt: serverTimestamp(),
+    });
+    addHistory(`URL importada: ${name}`);
+    showToast("URL importada", "success");
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+function guessFileTypeFromUrl(url) {
+  const ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
+  if (["jpg","jpeg","png","gif","webp","avif"].includes(ext)) return "image";
+  if (["mp4","webm","mov","m4v"].includes(ext)) return "video";
+  return "document";
+}
 
 async function verifyFiles() {
   const liveFiles = files.filter(f => !f.deletedAt && f.url);
@@ -1219,6 +1392,35 @@ function updateStorageUI() {
   const pct   = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
   storageText.textContent = `${fmtSize(total)} de 25 GB`;
+}
+
+function updateDashboard() {
+  const active = files.filter(f => !f.deletedAt);
+  $("dashTotal").textContent = active.length;
+  $("dashImages").textContent = active.filter(f => f.fileType === "image").length;
+  $("dashVideos").textContent = active.filter(f => f.fileType === "video").length;
+  $("dashDocs").textContent = active.filter(f => f.fileType === "document").length;
+  renderHistory();
+}
+
+function historyItems() {
+  try { return JSON.parse(localStorage.getItem("vault_history_v1")) || []; }
+  catch { return []; }
+}
+
+function addHistory(text) {
+  const items = [{ text, at: new Date().toLocaleString() }, ...historyItems()].slice(0, 12);
+  localStorage.setItem("vault_history_v1", JSON.stringify(items));
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = $("dashHistory");
+  if (!el) return;
+  const items = historyItems().slice(0, 3);
+  el.innerHTML = items.length
+    ? items.map(item => `<span title="${esc(item.at)}">${esc(item.text)}</span>`).join("")
+    : "Sem historico";
 }
 
 // ??? Helpers ??????????????????????????????????????????????

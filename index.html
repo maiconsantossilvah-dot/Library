@@ -51,6 +51,16 @@
       </div>
     </div>
 
+    <div class="sidebar-section filter-section">
+      <p class="sidebar-label">ALBUNS INTELIGENTES</p>
+      <div class="filter-chips">
+        <button class="chip" data-filter="recent">Recentes</button>
+        <button class="chip" data-filter="untagged">Sem tags</button>
+        <button class="chip" data-filter="largeVideos">Videos grandes</button>
+        <button class="chip" data-filter="important">Importantes</button>
+      </div>
+    </div>
+
     <div class="sidebar-section">
       <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
       <p class="storage-text" style="margin-top:8px;">Marca itens que foram apagados no Cloudinary.</p>
@@ -84,11 +94,18 @@
             <option value="size">Tamanho</option>
             <option value="type">Tipo</option>
           </select>
+          <select class="sort-select" id="qualitySelect" title="Qualidade das miniaturas">
+            <option value="medium">Qualidade media</option>
+            <option value="low">Qualidade baixa</option>
+            <option value="high">Qualidade alta</option>
+          </select>
         </div>
         <!-- Bulk actions bar (hidden when nothing selected) -->
         <div class="bulk-bar" id="bulkBar" style="display:none;">
           <span class="bulk-count" id="bulkCount">0 selecionados</span>
+          <button class="bulk-btn" id="bulkSelectAllBtn" title="Selecionar todos visiveis">Todos</button>
           <button class="bulk-btn" id="bulkMoveBtn" title="Mover selecionados">Mover</button>
+          <button class="bulk-btn" id="bulkDownloadBtn" title="Baixar selecionados">Baixar</button>
           <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
           <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
           <button class="bulk-btn cancel" id="bulkCancelBtn" title="Cancelar selecao">Cancelar</button>
@@ -97,8 +114,10 @@
           <button class="view-btn active" id="viewGrid" title="Grade">▦</button>
           <button class="view-btn" id="viewList" title="Lista">☰</button>
           <button class="view-btn" id="viewGallery" title="Galeria">▣</button>
+          <button class="view-btn" id="viewDensity" title="Alternar compacto/detalhado">D</button>
           <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
         </div>
+        <button class="upload-btn inline-btn" id="importUrlBtn" type="button">URL</button>
         <label class="upload-btn" for="fileInput">
           <span>Upload</span>
           <input type="file" id="fileInput" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
@@ -116,6 +135,13 @@
 
     <!-- CONTENT AREA -->
     <div class="content" id="content">
+      <section class="dashboard" id="dashboard">
+        <div class="dash-card"><span class="dash-label">Arquivos</span><strong id="dashTotal">0</strong></div>
+        <div class="dash-card"><span class="dash-label">Imagens</span><strong id="dashImages">0</strong></div>
+        <div class="dash-card"><span class="dash-label">Videos</span><strong id="dashVideos">0</strong></div>
+        <div class="dash-card"><span class="dash-label">Docs</span><strong id="dashDocs">0</strong></div>
+        <div class="dash-card wide"><span class="dash-label">Ultimas acoes</span><div id="dashHistory" class="dash-history">Sem historico</div></div>
+      </section>
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">VAULT</div>
         <p class="empty-title">Cofre vazio</p>
