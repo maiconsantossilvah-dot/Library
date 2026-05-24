@@ -315,6 +315,18 @@ html, body {
   font-size: 11px;
   outline: none;
 }
+.date-input {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.adv-select { min-height: 34px; }
+.danger-inline { border-color: rgba(255,59,48,0.45) !important; color: var(--danger) !important; }
+
 .search-input {
   width: 230px;
   padding: 0 12px;
@@ -762,6 +774,10 @@ html, body {
 .file-card.is-priority {
   box-shadow: inset 3px 0 0 rgba(246,200,95,0.8);
 }
+.file-card.is-duplicate {
+  outline: 1px dashed rgba(255,59,48,0.55);
+  outline-offset: -4px;
+}
 .file-folder-path {
   width: fit-content;
   max-width: 100%;
@@ -965,6 +981,16 @@ html, body {
 
 /* MOVE MODAL */
 .move-modal { width: 440px; }
+.info-modal { width: min(680px, 92vw); }
+.info-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.info-key { font-family: var(--font-mono); color: var(--text3); font-size: 11px; text-transform: uppercase; }
+.info-value { color: var(--text); font-size: 13px; word-break: break-word; }
 .move-file-label {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1291,7 +1317,19 @@ html, body {
   .topbar { min-height: var(--topbar-h); height: auto; padding: 10px 12px; gap: 8px; align-items: flex-start; }
   .topbar-right { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
   .search-sort { width: 100%; order: 10; }
-  .search-input { flex: 1; width: auto; }
+  .date-input {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.adv-select { min-height: 34px; }
+.danger-inline { border-color: rgba(255,59,48,0.45) !important; color: var(--danger) !important; }
+
+.search-input { flex: 1; width: auto; }
   .breadcrumb { min-width: 140px; font-size: 18px; }
   .content { padding: 16px; }
   .dashboard { grid-template-columns: repeat(2, 1fr); }

@@ -24,6 +24,8 @@ let isTimelineView = false;
 let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
+let advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
+let slideshowTimer = null;
 let folders        = [];
 let files          = [];
 let unsubFiles     = null;
@@ -74,6 +76,12 @@ const sortSelect      = $("sortSelect");
 const qualitySelect   = $("qualitySelect");
 const dashboard       = $("dashboard");
 const loadMoreBtn     = $("loadMoreBtn");
+const advFolderSelect = $("advFolderSelect");
+const advPrioritySelect = $("advPrioritySelect");
+const advDateFrom = $("advDateFrom");
+const advDateTo = $("advDateTo");
+const infoModal = $("infoModal");
+const infoModalBody = $("infoModalBody");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -172,6 +180,7 @@ function listenFolders() {
     snap => {
       folders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderFolderList();
+      populateFolderFilter();
       renderGrid();
     }
   );
@@ -189,6 +198,7 @@ function listenFiles() {
     }
   );
 }
+
 
 // ??? Sidebar folder list ??????????????????????????????????
 function renderFolderList() {
@@ -219,6 +229,16 @@ function renderFolderList() {
 }
 
 // ??? Folder breadcrumb (sidebar) ?????????????????????????
+function populateFolderFilter() {
+  if (!advFolderSelect) return;
+  const current = advFolderSelect.value;
+  const opts = ['<option value="">Todas as pastas</option>', '<option value="root">Raiz</option>'];
+  folders.forEach(folder => {
+    opts.push(`<option value="${folder.id}">${esc(getFolderPathLabel(folder.id) || folder.name)}</option>`);
+  });
+  advFolderSelect.innerHTML = opts.join("");
+  advFolderSelect.value = [...advFolderSelect.options].some(o => o.value === current) ? current : "";
+}
 function renderFolderBreadcrumb() {
   const bc = $("folderBreadcrumb");
   if (!bc) return;
@@ -410,7 +430,48 @@ function applyFilter(list) {
   if (["image", "video", "document"].includes(currentFilter)) {
     result = result.filter(f => f.fileType === currentFilter);
   }
+  result = result.filter(matchesAdvancedFilters);
   return result.filter(fileMatchesSearch);
+}
+
+function matchesAdvancedFilters(file) {
+  if (advancedFilters.folderId && (file.folderId || "root") !== advancedFilters.folderId) return false;
+  if (advancedFilters.priority && (file.priority || "normal") !== advancedFilters.priority) return false;
+  const d = fileDate(file);
+  if (advancedFilters.dateFrom) {
+    const from = new Date(advancedFilters.dateFrom + "T00:00:00");
+    if (d < from) return false;
+  }
+  if (advancedFilters.dateTo) {
+    const to = new Date(advancedFilters.dateTo + "T23:59:59");
+    if (d > to) return false;
+  }
+  return true;
+}
+
+function getDuplicateFiles() {
+  const groups = new Map();
+  files.filter(f => !f.deletedAt).forEach(file => {
+    const key = `${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(file);
+  });
+  return [...groups.values()].filter(group => group.length > 1).flat();
+}
+
+function duplicateSummary() {
+  const groups = new Map();
+  files.filter(f => !f.deletedAt).forEach(file => {
+    const key = `${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(file);
+  });
+  return [...groups.values()].filter(group => group.length > 1);
+}
+function isDuplicateFile(file) {
+  if (!file || file.deletedAt) return false;
+  const keyName = (file.name || "").toLowerCase();
+  return files.filter(f => !f.deletedAt && (f.name || "").toLowerCase() === keyName && (f.size || 0) === (file.size || 0) && (f.fileType || "") === (file.fileType || "")).length > 1;
 }
 
 function sortFiles(list) {
@@ -805,6 +866,106 @@ $("bulkFavBtn").onclick = async () => {
   showToast(`${ids.length} arquivo(s) favoritado(s)`, "success");
 };
 
+async function bulkEditSelected() {
+  const ids = [...selectedIds];
+  if (!ids.length) { showToast("Selecione arquivos primeiro", "error"); return; }
+  const tagsText = prompt("Adicionar tags aos selecionados (separe por virgula, opcional):", "");
+  if (tagsText === null) return;
+  const priority = prompt("Prioridade para todos: vazio, normal, important ou critical", "");
+  if (priority === null) return;
+  const description = prompt("Descricao para todos (vazio nao altera):", "");
+  if (description === null) return;
+  const tagsToAdd = normalizeTags(tagsText);
+  const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "";
+  for (const id of ids) {
+    const file = files.find(f => f.id === id);
+    if (!file) continue;
+    const patch = {};
+    if (tagsToAdd.length) patch.tags = normalizeTags([...normalizeTags(file.tags), ...tagsToAdd]);
+    if (cleanPriority) patch.priority = cleanPriority;
+    if (description.trim()) patch.description = description.trim();
+    if (Object.keys(patch).length) {
+      try { await updateDoc(doc(db, "vault_files", id), patch); } catch {}
+    }
+  }
+  addHistory(`Edicao em lote: ${ids.length} item(s)`);
+  showToast("Edicao em lote aplicada", "success");
+}
+
+function showFileInfo(file) {
+  const rows = [
+    ["Nome", file.name || ""],
+    ["Tipo", file.fileType || ""],
+    ["Tamanho", fmtSize(file.size)],
+    ["Pasta", getFolderPathLabel(file.folderId) || "Raiz"],
+    ["Prioridade", file.priority || "normal"],
+    ["Favorito", file.favorite ? "Sim" : "Nao"],
+    ["Resolucao", file.width && file.height ? `${file.width} x ${file.height}` : "-"],
+    ["Data", file.eventDate || formatDateValue(file.createdAt)],
+    ["Tags", normalizeTags(file.tags).join(", ") || "-"],
+    ["Descricao", file.description || "-"],
+    ["URL", file.url || "-"],
+  ];
+  infoModalBody.innerHTML = rows.map(([k, v]) => `<div class="info-key">${esc(k)}</div><div class="info-value">${esc(v)}</div>`).join("");
+  infoModal.classList.add("active");
+}
+
+function exportData(format) {
+  const activeFolders = folders.map(f => ({ id: f.id, name: f.name, parentId: f.parentId || null, coverFileId: f.coverFileId || null }));
+  const activeFiles = files.map(f => ({
+    id: f.id, name: f.name, fileType: f.fileType, size: f.size || 0, folder: getFolderPathLabel(f.folderId) || "Raiz",
+    folderId: f.folderId || null, favorite: !!f.favorite, priority: f.priority || "normal", tags: normalizeTags(f.tags).join("; "),
+    description: f.description || "", url: f.url || "", deleted: !!f.deletedAt,
+  }));
+  if (format === "csv") {
+    const rows = [["id","name","type","size","folder","favorite","priority","tags","description","url","deleted"], ...activeFiles.map(f => [f.id,f.name,f.fileType,f.size,f.folder,f.favorite,f.priority,f.tags,f.description,f.url,f.deleted])];
+    downloadText("vault-export.csv", rows.map(row => row.map(csvCell).join(",")).join("\n"), "text/csv");
+  } else {
+    downloadText("vault-export.json", JSON.stringify({ exportedAt: new Date().toISOString(), folders: activeFolders, files: activeFiles }, null, 2), "application/json");
+  }
+  showToast("Exportacao gerada", "success");
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function downloadText(filename, text, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function startSlideshow() {
+  const media = lightboxFiles.filter(f => !f.deletedAt && (f.fileType === "image" || f.fileType === "video"));
+  if (!media.length) { showToast("Nenhuma foto ou video visivel", "error"); return; }
+  stopSlideshow(false);
+  lightboxFiles = media;
+  openLightbox(media[0]);
+  slideshowTimer = setInterval(() => {
+    if (!lightbox.classList.contains("active")) { stopSlideshow(false); return; }
+    const next = lightboxIndex + 1 >= lightboxFiles.length ? 0 : lightboxIndex + 1;
+    openLightbox(lightboxFiles[next]);
+  }, 5000);
+  showToast("Apresentacao iniciada", "success");
+}
+
+function stopSlideshow(notify = true) {
+  if (slideshowTimer) clearInterval(slideshowTimer);
+  slideshowTimer = null;
+  if (notify) showToast("Apresentacao parada");
+}
+
+function formatDateValue(value) {
+  const d = value?.toDate ? value.toDate() : value?.seconds ? new Date(value.seconds * 1000) : value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : "-";
+}
 // ??? Move Modal ???????????????????????????????????????????
 function openMoveModal(file) {
   bulkMoveMode = false;
@@ -929,6 +1090,27 @@ async function deleteFile(file) {
   }
 }
 
+async function emptyTrash() {
+  const trashed = files.filter(f => f.deletedAt);
+  if (!trashed.length) { showToast("Lixeira vazia"); return; }
+  if (!confirm(`Excluir definitivamente ${trashed.length} registro(s) da lixeira?`)) return;
+  for (const file of trashed) {
+    try { await deleteDoc(doc(db, "vault_files", file.id)); } catch {}
+  }
+  addHistory(`Lixeira esvaziada: ${trashed.length} item(s)`);
+  showToast("Lixeira esvaziada", "success");
+}
+
+async function restoreTrash() {
+  const trashed = files.filter(f => f.deletedAt);
+  if (!trashed.length) { showToast("Nada para restaurar"); return; }
+  if (!confirm(`Restaurar ${trashed.length} arquivo(s) da lixeira?`)) return;
+  for (const file of trashed) {
+    try { await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null }); } catch {}
+  }
+  addHistory(`Lixeira restaurada: ${trashed.length} item(s)`);
+  showToast("Arquivos restaurados", "success");
+}
 async function restoreFile(file) {
   try {
     await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null });
@@ -1257,10 +1439,20 @@ fileInput.onchange = e => handleFiles(Array.from(e.target.files));
 async function handleFiles(fileList) {
   if (!db || !cloudName || !uploadPreset) { showToast("Configure as credenciais primeiro", "error"); return; }
   if (!fileList.length) return;
+  const uniqueFiles = [];
+  for (const file of fileList) {
+    if (isUploadDuplicate(file) && !confirm(`Ja existe um arquivo chamado "${file.name}" com o mesmo tamanho. Enviar mesmo assim?`)) continue;
+    uniqueFiles.push(file);
+  }
+  if (!uniqueFiles.length) return;
   uploadPanel.style.display = "block";
   uploadList.innerHTML = "";
-  await Promise.all(fileList.map(file => uploadOneFile(file)));
+  await Promise.all(uniqueFiles.map(file => uploadOneFile(file)));
   fileInput.value = "";
+}
+
+function isUploadDuplicate(file) {
+  return files.some(f => !f.deletedAt && (f.name || "").toLowerCase() === file.name.toLowerCase() && (f.size || 0) === file.size);
 }
 
 function uploadOneFile(file) {
@@ -1482,6 +1674,24 @@ document.querySelectorAll(".chip").forEach(chip => {
   };
 });
 
+function attachRootDrop() {
+  const rootItem = folderList.firstElementChild;
+  rootItem.addEventListener("dragover", e => { e.preventDefault(); rootItem.classList.add("drop-target"); });
+  rootItem.addEventListener("dragleave", () => rootItem.classList.remove("drop-target"));
+  rootItem.addEventListener("drop", async e => {
+    e.preventDefault();
+    rootItem.classList.remove("drop-target");
+    const fileId = e.dataTransfer.getData("text/plain");
+    if (!fileId) return;
+    try {
+      await updateDoc(doc(db, "vault_files", fileId), { folderId: null });
+      showToast("Arquivo movido para a raiz", "success");
+    } catch (err) {
+      showToast("Erro: " + err.message, "error");
+    }
+  });
+}
+attachRootDrop();
 // ??? Sidebar ??????????????????????????????????????????????
 folderList.firstElementChild.onclick = () => {
   isFoldersView = false;
@@ -1508,6 +1718,33 @@ $("closePanel").onclick = () => {
   uploadPanel.style.display = "none";
 };
 $("btnCheckFiles").onclick = verifyFiles;
+$("bulkEditBtn").onclick = bulkEditSelected;
+$("btnFindDuplicates").onclick = () => {
+  currentFilter = "duplicates";
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+  showToast(`${duplicateSummary().length} grupo(s) duplicado(s)`);
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+$("btnEmptyTrash").onclick = emptyTrash;
+$("btnRestoreTrash").onclick = restoreTrash;
+$("exportJsonBtn").onclick = () => exportData("json");
+$("exportCsvBtn").onclick = () => exportData("csv");
+$("btnSlideshow").onclick = startSlideshow;
+$("closeInfoModal").onclick = () => infoModal.classList.remove("active");
+advFolderSelect.onchange = () => { advancedFilters.folderId = advFolderSelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
+advPrioritySelect.onchange = () => { advancedFilters.priority = advPrioritySelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
+advDateFrom.onchange = () => { advancedFilters.dateFrom = advDateFrom.value; visibleLimit = PAGE_SIZE; renderGrid(); };
+advDateTo.onchange = () => { advancedFilters.dateTo = advDateTo.value; visibleLimit = PAGE_SIZE; renderGrid(); };
+$("clearAdvancedBtn").onclick = () => {
+  advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
+  advFolderSelect.value = "";
+  advPrioritySelect.value = "";
+  advDateFrom.value = "";
+  advDateTo.value = "";
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
 $("importUrlBtn").onclick = importFromUrl;
 
 async function importFromUrl() {

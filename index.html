@@ -100,12 +100,25 @@
             <option value="low">Qualidade baixa</option>
             <option value="high">Qualidade alta</option>
           </select>
+          <select class="sort-select adv-select" id="advFolderSelect" title="Filtrar por pasta">
+            <option value="">Todas as pastas</option>
+          </select>
+          <select class="sort-select adv-select" id="advPrioritySelect" title="Filtrar por prioridade">
+            <option value="">Prioridade</option>
+            <option value="normal">Normal</option>
+            <option value="important">Importante</option>
+            <option value="critical">Critico</option>
+          </select>
+          <input class="date-input adv-select" id="advDateFrom" type="date" title="Data inicial" />
+          <input class="date-input adv-select" id="advDateTo" type="date" title="Data final" />
+          <button class="bulk-btn" id="clearAdvancedBtn" type="button" title="Limpar filtros avancados">Limpar</button>
         </div>
         <!-- Bulk actions bar (hidden when nothing selected) -->
         <div class="bulk-bar" id="bulkBar" style="display:none;">
           <span class="bulk-count" id="bulkCount">0 selecionados</span>
           <button class="bulk-btn" id="bulkSelectAllBtn" title="Selecionar todos visiveis">Todos</button>
           <button class="bulk-btn" id="bulkMoveBtn" title="Mover selecionados">Mover</button>
+          <button class="bulk-btn" id="bulkEditBtn" title="Editar tags, prioridade e descricao em lote">Editar</button>
           <button class="bulk-btn" id="bulkDownloadBtn" title="Baixar selecionados">Baixar</button>
           <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
           <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
@@ -122,6 +135,12 @@
           <button class="view-btn" id="viewDensity" title="Alternar compacto/detalhado">D</button>
           <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
         </div>
+        <button class="upload-btn inline-btn" id="btnSlideshow" type="button">Apresentar</button>
+        <button class="upload-btn inline-btn" id="btnFindDuplicates" type="button">Duplicados</button>
+        <button class="upload-btn inline-btn" id="exportJsonBtn" type="button">JSON</button>
+        <button class="upload-btn inline-btn" id="exportCsvBtn" type="button">CSV</button>
+        <button class="upload-btn inline-btn" id="btnRestoreTrash" type="button">Restaurar lixeira</button>
+        <button class="upload-btn inline-btn danger-inline" id="btnEmptyTrash" type="button">Esvaziar lixeira</button>
         <button class="upload-btn inline-btn" id="importUrlBtn" type="button">URL</button>
         <label class="upload-btn" for="fileInput">
           <span>Upload</span>
@@ -210,6 +229,16 @@
     </div>
   </div>
 
+  <!-- MODAL: Info do arquivo -->
+  <div class="modal-overlay" id="infoModal">
+    <div class="modal info-modal">
+      <h2 class="modal-title">Informacoes</h2>
+      <div class="info-grid" id="infoModalBody"></div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="closeInfoModal">Fechar</button>
+      </div>
+    </div>
+  </div>
   <!-- MODAL: Mover arquivo / lote -->
   <div class="modal-overlay" id="moveModal">
     <div class="modal move-modal">
