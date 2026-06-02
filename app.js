@@ -1455,6 +1455,18 @@ function isUploadDuplicate(file) {
   return files.some(f => !f.deletedAt && (f.name || "").toLowerCase() === file.name.toLowerCase() && (f.size || 0) === file.size);
 }
 
+function scheduleUploadItemRemoval(itemEl, delay = 2200) {
+  setTimeout(() => {
+    itemEl.classList.add("upload-removing");
+    setTimeout(() => {
+      itemEl.remove();
+      if (!activeUploads.size && uploadList.children.length === 0) {
+        uploadPanel.style.display = "none";
+      }
+    }, 220);
+  }, delay);
+}
+
 function uploadOneFile(file) {
   return new Promise(resolve => {
     const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -1490,6 +1502,8 @@ function uploadOneFile(file) {
       status.textContent = "Cancelado";
       status.style.color = "var(--text3)";
       cancelBtn.remove();
+      itemEl.classList.add("upload-complete");
+      scheduleUploadItemRemoval(itemEl, 900);
       resolve();
     };
     xhr.upload.onprogress = e => {
@@ -1526,7 +1540,10 @@ function uploadOneFile(file) {
         status.textContent = "Concluido";
         status.style.color = "var(--accent)";
         cancelBtn.remove();
+        itemEl.classList.add("upload-complete");
+        scheduleUploadItemRemoval(itemEl);
       } else {
+        itemEl.classList.add("upload-error");
         status.innerHTML = `Erro no upload <button class="upload-retry">Tentar novamente</button>`;
         status.style.color = "var(--danger)";
         status.querySelector(".upload-retry").onclick = () => {
@@ -1539,6 +1556,7 @@ function uploadOneFile(file) {
       resolve();
     };
     xhr.onerror = () => {
+      itemEl.classList.add("upload-error");
       status.innerHTML = `Erro de rede <button class="upload-retry">Tentar novamente</button>`;
       status.style.color = "var(--danger)";
       status.querySelector(".upload-retry").onclick = () => {

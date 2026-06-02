@@ -1371,8 +1371,9 @@ html, body {
 /* ===== UPLOAD PROGRESS ===== */
 .upload-progress-panel {
   position: fixed;
-  bottom: 24px; right: 24px;
-  width: 320px;
+  bottom: 18px; right: 18px;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(46vh, 360px);
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: 6px;
@@ -1389,33 +1390,90 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 1px;
   color: var(--text2);
   text-transform: uppercase;
 }
 .upload-panel-header button { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; padding: 2px 6px; }
 .upload-panel-header button:hover { color: var(--text); }
-.upload-item { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
-.upload-item-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.upload-item-name { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#uploadList {
+  max-height: calc(min(46vh, 360px) - 39px);
+  overflow-y: auto;
+}
+#uploadList::-webkit-scrollbar { width: 4px; }
+#uploadList::-webkit-scrollbar-track { background: transparent; }
+#uploadList::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.upload-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "name action"
+    "bar status";
+  align-items: center;
+  gap: 5px 8px;
+  transition: opacity 0.2s ease, max-height 0.2s ease, padding 0.2s ease;
+}
+.upload-item-top {
+  display: contents;
+}
+.upload-item-name {
+  grid-area: name;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .upload-cancel, .upload-retry {
+  grid-area: action;
   border: 1px solid var(--border2);
   background: var(--bg3);
   color: var(--text2);
   border-radius: var(--radius);
-  padding: 3px 7px;
+  padding: 2px 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   cursor: pointer;
 }
 .upload-cancel:hover, .upload-retry:hover { color: var(--text); border-color: var(--accent); }
-.upload-item-bar-wrap { background: var(--bg3); height: 4px; border-radius: 2px; overflow: hidden; }
+.upload-item-bar-wrap {
+  grid-area: bar;
+  background: var(--bg3);
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+}
 .upload-item-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width 0.2s; }
-.upload-item-status { font-family: var(--font-mono); font-size: 10px; color: var(--text3); }
+.upload-item-status {
+  grid-area: status;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.upload-item.upload-complete {
+  opacity: 0.72;
+}
+.upload-item.upload-complete .upload-item-name {
+  color: var(--text2);
+}
+.upload-item.upload-error {
+  background: rgba(255,59,48,0.05);
+}
+.upload-item.upload-removing {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
 
 /* ===== SCROLLBAR ===== */
 .sidebar::-webkit-scrollbar { width: 4px; }
