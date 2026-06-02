@@ -12,7 +12,8 @@ import {
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
 let db;
-let currentFolder  = "root";   // "root" ou ID de pasta
+const ROOT_ID = "root";
+let currentFolder  = ROOT_ID;   // ROOT_ID ou ID de pasta
 let currentFilter  = "all";
 let currentSearch  = "";
 let currentSort    = "newest";
@@ -30,7 +31,8 @@ let folders        = [];
 let files          = [];
 let unsubFiles     = null;
 let unsubFolders   = null;
-let folderPath     = [];       // stack de {id, name} para navegacao hierarquica
+let folderPath     = [];       // legado: o caminho agora e calculado por getFolderPath()
+let expandedFolders = new Set([ROOT_ID]);
 
 let cloudName    = "";
 let uploadPreset = "";
@@ -140,8 +142,9 @@ async function initApp(cfg) {
     showToast("Conectado com sucesso", "success");
 
     // Reset state
-    currentFolder = "root";
+    currentFolder = ROOT_ID;
     folderPath    = [];
+    expandedFolders = new Set([ROOT_ID]);
     selectedIds.clear();
     exitSelectMode();
 
@@ -179,6 +182,8 @@ function listenFolders() {
     query(collection(db, "vault_folders"), orderBy("createdAt", "asc")),
     snap => {
       folders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      ensureCurrentFolderExists();
+      renderBreadcrumb();
       renderFolderList();
       populateFolderFilter();
       renderGrid();
@@ -201,31 +206,103 @@ function listenFiles() {
 
 
 // ??? Sidebar folder list ??????????????????????????????????
+function normalizeFolderId(folderId) {
+  return folderId || ROOT_ID;
+}
+
+function toFirestoreFolderId(folderId) {
+  return normalizeFolderId(folderId) === ROOT_ID ? null : folderId;
+}
+
+function getFolder(folderId) {
+  return folders.find(folder => folder.id === folderId) || null;
+}
+
+function ensureCurrentFolderExists() {
+  if (currentFolder !== ROOT_ID && !getFolder(currentFolder)) {
+    currentFolder = ROOT_ID;
+    folderPath = [];
+  }
+}
+
+function getFolderChildren(parentId = ROOT_ID) {
+  const firestoreParentId = toFirestoreFolderId(parentId);
+  return folders
+    .filter(folder => (folder.parentId || null) === firestoreParentId)
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+}
+
+function getFolderPath(folderId = currentFolder) {
+  const normalizedId = normalizeFolderId(folderId);
+  if (normalizedId === ROOT_ID) return [];
+
+  const path = [];
+  const seen = new Set();
+  let cursor = getFolder(normalizedId);
+
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    path.unshift({ id: cursor.id, name: cursor.name || "Pasta" });
+    cursor = cursor.parentId ? getFolder(cursor.parentId) : null;
+  }
+
+  return path;
+}
+
+function syncLegacyFolderPath() {
+  folderPath = getFolderPath(currentFolder);
+  return folderPath;
+}
+
+function expandFolderPath(folderId = currentFolder) {
+  expandedFolders.add(ROOT_ID);
+  getFolderPath(folderId).forEach(seg => expandedFolders.add(seg.id));
+}
+
+function toggleFolderExpanded(folderId) {
+  if (expandedFolders.has(folderId)) expandedFolders.delete(folderId);
+  else expandedFolders.add(folderId);
+  renderFolderList();
+}
+
 function renderFolderList() {
   while (folderList.children.length > 1) folderList.removeChild(folderList.lastChild);
 
-  // Pastas filhas da pasta atual (ou raiz se currentFolder === "root")
-  const parentId = currentFolder === "root" ? null : currentFolder;
-  const visibleFolders = folders.filter(f => (f.parentId || null) === parentId);
-
-  visibleFolders.forEach(f => {
-    const hasChildren = folders.some(c => c.parentId === f.id);
-    const li = document.createElement("li");
-    li.className = "folder-item" + (currentFolder === f.id ? " active" : "");
-    li.innerHTML = `
-      <span class="folder-icon">${hasChildren ? "+" : "#"}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</span>
-      <button class="folder-rename" title="Renomear pasta">Nome</button>
-      <button class="folder-delete" title="Excluir pasta">×</button>`;
-    li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(f); };
-    li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(f.id, f.name); };
-    li.onclick = () => navigateFolder(f.id, f.name);
-    attachFolderDrop(li, f.id);
-    folderList.appendChild(li);
-  });
-
-  folderList.firstElementChild.classList.toggle("active", currentFolder === "root");
+  expandFolderPath(currentFolder);
+  getFolderChildren(ROOT_ID).forEach(folder => renderFolderTreeNode(folder, 0));
+  folderList.firstElementChild.classList.toggle("active", currentFolder === ROOT_ID);
   renderFolderBreadcrumb();
+}
+
+function renderFolderTreeNode(folder, depth) {
+  const children = getFolderChildren(folder.id);
+  const hasChildren = children.length > 0;
+  const isExpanded = expandedFolders.has(folder.id);
+  const li = document.createElement("li");
+  li.className = "folder-item tree-folder-item" + (currentFolder === folder.id ? " active" : "");
+  li.style.setProperty("--folder-depth", depth);
+  li.innerHTML = `
+    <button class="folder-expander ${hasChildren ? "" : "empty"}" title="${hasChildren ? "Expandir/Recolher" : ""}">
+      ${hasChildren ? (isExpanded ? "-" : "+") : ""}
+    </button>
+    <span class="folder-icon">${hasChildren ? "#" : "."}</span>
+    <span class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
+    <button class="folder-rename" title="Renomear pasta">Nome</button>
+    <button class="folder-delete" title="Excluir pasta">×</button>`;
+
+  li.querySelector(".folder-expander").onclick = e => {
+    e.stopPropagation();
+    if (hasChildren) toggleFolderExpanded(folder.id);
+  };
+  li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
+  li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
+  li.onclick = () => dispatchNavigation("open", { folderId: folder.id });
+  attachFolderDrop(li, folder.id);
+  folderList.appendChild(li);
+
+  if (hasChildren && isExpanded) {
+    children.forEach(child => renderFolderTreeNode(child, depth + 1));
+  }
 }
 
 // ??? Folder breadcrumb (sidebar) ?????????????????????????
@@ -242,9 +319,10 @@ function populateFolderFilter() {
 function renderFolderBreadcrumb() {
   const bc = $("folderBreadcrumb");
   if (!bc) return;
-  if (folderPath.length === 0) { bc.innerHTML = ""; return; }
-  bc.innerHTML = folderPath.map((seg, i) => {
-    const isLast = i === folderPath.length - 1;
+  const path = syncLegacyFolderPath();
+  if (path.length === 0) { bc.innerHTML = ""; return; }
+  bc.innerHTML = path.map((seg, i) => {
+    const isLast = i === path.length - 1;
     return isLast
       ? `<span class="fbc-seg active">${esc(seg.name)}</span>`
       : `<span class="fbc-seg" data-idx="${i}">${esc(seg.name)}</span><span class="fbc-sep">></span>`;
@@ -252,30 +330,34 @@ function renderFolderBreadcrumb() {
   bc.querySelectorAll(".fbc-seg[data-idx]").forEach(el => {
     el.onclick = () => {
       const idx = parseInt(el.dataset.idx);
-      const seg = folderPath[idx];
-      folderPath = folderPath.slice(0, idx + 1);
-      navigateFolder(seg.id, seg.name, true);
+      const seg = path[idx];
+      dispatchNavigation("open", { folderId: seg.id });
     };
   });
 }
 
 // ??? Navigate ?????????????????????????????????????????????
-function navigateFolder(folderId, folderName, fromBreadcrumb = false) {
-  if (folderId === "root") {
-    currentFolder = "root";
-    folderPath    = [];
-  } else {
-    if (!fromBreadcrumb) {
-      // Push to path only if not already in path
-      const existing = folderPath.findIndex(p => p.id === folderId);
-      if (existing >= 0) {
-        folderPath = folderPath.slice(0, existing + 1);
-      } else {
-        folderPath.push({ id: folderId, name: folderName });
-      }
-    }
-    currentFolder = folderId;
-  }
+const NAV_COMMANDS = {
+  open: ({ folderId }) => setCurrentFolder(folderId),
+  root: () => setCurrentFolder(ROOT_ID),
+  up: () => setCurrentFolder(getParentFolderId(currentFolder)),
+  toggle: ({ folderId }) => toggleFolderExpanded(folderId),
+};
+
+function dispatchNavigation(command, payload = {}) {
+  const action = NAV_COMMANDS[command] || (() => {});
+  action(payload);
+}
+
+function getParentFolderId(folderId) {
+  if (normalizeFolderId(folderId) === ROOT_ID) return ROOT_ID;
+  return getFolder(folderId)?.parentId || ROOT_ID;
+}
+
+function setCurrentFolder(folderId) {
+  currentFolder = normalizeFolderId(folderId);
+  expandFolderPath(currentFolder);
+  syncLegacyFolderPath();
   renderBreadcrumb();
   renderFolderList();
   renderGrid();
@@ -284,15 +366,20 @@ function navigateFolder(folderId, folderName, fromBreadcrumb = false) {
   updateBulkBar();
 }
 
+function navigateFolder(folderId) {
+  dispatchNavigation("open", { folderId });
+}
+
 function renderBreadcrumb() {
-  if (currentFolder === "root") {
+  const path = syncLegacyFolderPath();
+  if (currentFolder === ROOT_ID) {
     breadcrumb.innerHTML = `<span>Todos os Arquivos</span>`;
     return;
   }
   let html = `<span class="bc-link" data-folder="root">Todos os Arquivos</span>`;
-  folderPath.forEach((seg, i) => {
+  path.forEach((seg, i) => {
     html += `<span class="bc-sep"> > </span>`;
-    if (i < folderPath.length - 1) {
+    if (i < path.length - 1) {
       html += `<span class="bc-link" data-folder="${seg.id}" data-idx="${i}">${esc(seg.name)}</span>`;
     } else {
       html += `<span>${esc(seg.name)}</span>`;
@@ -302,11 +389,10 @@ function renderBreadcrumb() {
   breadcrumb.querySelectorAll(".bc-link").forEach(el => {
     el.onclick = () => {
       if (el.dataset.folder === "root") {
-        navigateFolder("root");
+        dispatchNavigation("root");
       } else {
         const idx = parseInt(el.dataset.idx);
-        folderPath = folderPath.slice(0, idx + 1);
-        navigateFolder(el.dataset.folder, folderPath[idx].name, true);
+        dispatchNavigation("open", { folderId: path[idx].id });
       }
     };
   });
@@ -352,18 +438,17 @@ function renderGrid() {
       items.push(makeFileCard(f));
     });
   } else if (isFoldersView) {
-    const parentId = currentFolder === "root" ? null : currentFolder;
-    const visibleFolders = folders.filter(f => (f.parentId || null) === parentId && matchesSearch(f.name));
+    const visibleFolders = getFolderChildren(currentFolder).filter(f => matchesSearch(f.name));
     visibleFolders.forEach(folder => {
       const count = countFilesInFolder(folder.id);
       items.push(makeFolderCard(folder, count));
     });
   } else if (isTimelineView) {
-    const source = currentFolder === "root"
+    const source = currentFolder === ROOT_ID
       ? files.filter(f => !f.deletedAt)
       : files.filter(f => f.folderId === currentFolder && !f.deletedAt);
     renderTimelineItems(sortFiles(applyFilter(source)), items);
-  } else if (currentFolder === "root") {
+  } else if (currentFolder === ROOT_ID) {
     // "Todos os Arquivos" mostra uma visao plana dos arquivos, mesmo os organizados em pastas.
     sortFiles(applyFilter(files.filter(f => !f.deletedAt))).forEach(f => {
       lightboxFiles.push(f);
@@ -685,22 +770,13 @@ function makeFolderCard(folder, count) {
     </div>`;
   card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   card.querySelector(".folder-card-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
-  card.onclick = () => navigateFolder(folder.id, folder.name);
+  card.onclick = () => navigateFolder(folder.id);
   attachFolderDrop(card, folder.id);
   return card;
 }
 
 function getFolderPathLabel(folderId) {
-  if (!folderId) return "";
-  const names = [];
-  let cursor = folders.find(f => f.id === folderId);
-  const seen = new Set();
-  while (cursor && !seen.has(cursor.id)) {
-    seen.add(cursor.id);
-    names.unshift(cursor.name || "Pasta");
-    cursor = cursor.parentId ? folders.find(f => f.id === cursor.parentId) : null;
-  }
-  return names.join(" / ");
+  return getFolderPath(folderId).map(seg => seg.name).join(" / ");
 }
 
 function folderCoverUrl(file) {
@@ -749,9 +825,9 @@ async function renameFolder(folder) {
   try {
     await updateDoc(doc(db, "vault_folders", folder.id), { name: clean });
     addHistory(`Pasta renomeada: ${folder.name} -> ${clean}`);
-    const pathItem = folderPath.find(p => p.id === folder.id);
-    if (pathItem) pathItem.name = clean;
+    syncLegacyFolderPath();
     renderBreadcrumb();
+    renderFolderBreadcrumb();
     showToast("Pasta renomeada", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -1067,7 +1143,7 @@ async function createFolder() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
   const name = folderNameInput.value.trim();
   if (!name) return;
-  const parentId = currentFolder === "root" ? null : currentFolder;
+  const parentId = toFirestoreFolderId(currentFolder);
     await addDoc(collection(db, "vault_folders"), {
     name,
     parentId,   // subpasta!
@@ -1222,8 +1298,7 @@ async function deleteFolder(folderId, name) {
   // Excluir subpastas recursivo
   await deleteFolderRecursive(folderId);
   if (currentFolder === folderId) {
-    folderPath = folderPath.slice(0, -1);
-    navigateFolder(parentId || "root", folderPath[folderPath.length - 1]?.name || "root", true);
+    dispatchNavigation("open", { folderId: parentId || ROOT_ID });
   }
   showToast("Pasta excluida", "success");
   addHistory(`Pasta excluida: ${name}`);
@@ -1525,7 +1600,7 @@ function uploadOneFile(file) {
           height:        res.height || null,
           fileType:      getFileType(file),
           mimeType:      file.type,
-          folderId:      currentFolder === "root" ? null : currentFolder,
+          folderId:      toFirestoreFolderId(currentFolder),
           favorite:      false,
           tags:          [],
           description:   "",
@@ -1716,7 +1791,7 @@ folderList.firstElementChild.onclick = () => {
   isTimelineView = false;
   clearViewModeButtons();
   $("viewGrid").classList.add("active");
-  navigateFolder("root");
+  dispatchNavigation("root");
 };
 
 $("sidebarToggle").onclick = () => {
@@ -1782,7 +1857,7 @@ async function importFromUrl() {
       height: null,
       fileType,
       mimeType: "",
-      folderId: currentFolder === "root" ? null : currentFolder,
+      folderId: toFirestoreFolderId(currentFolder),
       favorite: false,
       tags: [],
       description: "Importado por URL",

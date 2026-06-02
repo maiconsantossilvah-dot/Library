@@ -173,8 +173,8 @@ html, body {
 .folder-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 7px 8px 7px calc(8px + (var(--folder-depth, 0) * 16px));
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 13px;
@@ -184,7 +184,7 @@ html, body {
   transition: all 0.15s;
   border: 1px solid transparent;
   position: relative;
-  word-break: break-word;
+  word-break: normal;
 }
 .folder-item:hover { background: var(--bg3); color: var(--text); }
 .folder-item.active {
@@ -192,7 +192,50 @@ html, body {
   border-color: rgba(125,211,252,0.2);
   color: var(--accent);
 }
-.folder-icon { font-size: 14px; flex-shrink: 0; }
+.tree-folder-item::before {
+  content: "";
+  position: absolute;
+  left: calc(15px + (var(--folder-depth, 0) * 16px));
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(125,211,252,0.08);
+  opacity: 0.75;
+}
+.folder-expander {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(125,211,252,0.16);
+  border-radius: 4px;
+  background: rgba(125,211,252,0.04);
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  z-index: 1;
+}
+.folder-expander:hover {
+  color: var(--accent);
+  border-color: rgba(125,211,252,0.38);
+}
+.folder-expander.empty {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+}
+.folder-icon { font-size: 12px; flex-shrink: 0; color: var(--text3); z-index: 1; }
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 1;
+}
 .folder-delete, .folder-rename {
   margin-left: auto;
   background: none;
@@ -206,6 +249,7 @@ html, body {
   opacity: 0;
   transition: all 0.15s;
   flex-shrink: 0;
+  z-index: 1;
 }
 .folder-rename { margin-left: 0; }
 .folder-item:hover .folder-delete,
