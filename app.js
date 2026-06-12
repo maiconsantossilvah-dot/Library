@@ -52,6 +52,8 @@ const $ = id => document.getElementById(id);
 const folderList      = $("folderList");
 const fileGrid        = $("fileGrid");
 const emptyState      = $("emptyState");
+const emptyTitle      = $("emptyTitle");
+const emptySub        = $("emptySub");
 const breadcrumb      = $("breadcrumb");
 const storageBar      = $("storageBar");
 const storageText     = $("storageText");
@@ -84,6 +86,10 @@ const advDateFrom = $("advDateFrom");
 const advDateTo = $("advDateTo");
 const infoModal = $("infoModal");
 const infoModalBody = $("infoModalBody");
+const filterPanel = $("filterPanel");
+const toolsPanel = $("toolsPanel");
+const trashActions = $("trashActions");
+const configError = $("configError");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -116,11 +122,23 @@ function prefillConfig(cfg) {
 function openConfigModal(canCancel = true) {
   configModal.style.display = "flex";
   $("cancelConfig").style.display = canCancel ? "inline-flex" : "none";
+  $("skipConfig").style.display = canCancel ? "none" : "inline-flex";
+  showConfigError("");
 }
 
 // Botao de configuracao na sidebar
 $("openConfigBtn").onclick = () => openConfigModal(true);
 $("cancelConfig").onclick  = () => { configModal.style.display = "none"; };
+$("skipConfig").onclick = () => {
+  configModal.style.display = "none";
+  showToast("Modo exploracao: conecte as credenciais para salvar arquivos");
+};
+
+function showConfigError(message) {
+  if (!configError) return;
+  configError.textContent = message || "";
+  configError.style.display = message ? "block" : "none";
+}
 
 async function initApp(cfg) {
   try {
@@ -139,6 +157,7 @@ async function initApp(cfg) {
     uploadPreset = cfg.uploadPreset;
 
     configModal.style.display = "none";
+    showConfigError("");
     showToast("Conectado com sucesso", "success");
 
     // Reset state
@@ -151,7 +170,10 @@ async function initApp(cfg) {
     listenFolders();
     listenFiles();
   } catch (e) {
-    showToast("Erro: " + e.message, "error");
+    const message = "Erro ao conectar: " + e.message;
+    openConfigModal(true);
+    showConfigError(message);
+    showToast(message, "error");
     console.error(e);
   }
 }
@@ -168,9 +190,11 @@ $("saveConfig").onclick = () => {
     uploadPreset:      $("cfg_uploadPreset").value.trim(),
   };
   if (!cfg.apiKey || !cfg.projectId || !cfg.cloudName || !cfg.uploadPreset) {
-    showToast("Preencha todos os campos obrigatorios", "error");
+    showConfigError("Preencha apiKey, projectId, Cloud Name e Upload Preset para conectar.");
+    showToast("Preencha os campos obrigatorios", "error");
     return;
   }
+  showConfigError("");
   saveConfig(cfg);
   initApp(cfg);
 };
@@ -187,6 +211,11 @@ function listenFolders() {
       renderFolderList();
       populateFolderFilter();
       renderGrid();
+    },
+    err => {
+      openConfigModal(true);
+      showConfigError("Nao foi possivel ler as pastas. Confira as credenciais e regras do Firestore.");
+      showToast("Erro ao carregar pastas: " + err.message, "error");
     }
   );
 }
@@ -200,6 +229,11 @@ function listenFiles() {
       updateStorageUI();
       updateDashboard();
       renderGrid();
+    },
+    err => {
+      openConfigModal(true);
+      showConfigError("Nao foi possivel ler os arquivos. Confira as credenciais e regras do Firestore.");
+      showToast("Erro ao carregar arquivos: " + err.message, "error");
     }
   );
 }
@@ -405,7 +439,13 @@ function renderGrid() {
   let items = [];
   lightboxFiles = [];
 
-  if (currentFilter === "trash") {
+  if (currentFilter === "duplicates") {
+    const duplicateFiles = sortFiles(applyFilter(getDuplicateFiles()));
+    duplicateFiles.forEach(f => {
+      lightboxFiles.push(f);
+      items.push(makeFileCard(f));
+    });
+  } else if (currentFilter === "trash") {
     const trashFiles = sortFiles(applyFilter(files.filter(f => f.deletedAt)));
     trashFiles.forEach(f => {
       lightboxFiles.push(f);
@@ -461,10 +501,32 @@ function renderGrid() {
     });
   }
 
-  emptyState.style.display = items.length === 0 ? "flex" : "none";
+  updateEmptyState(items.length);
   items.slice(0, visibleLimit).forEach(el => fileGrid.appendChild(el));
   loadMoreBtn.style.display = items.length > visibleLimit ? "inline-flex" : "none";
   loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, items.length - visibleLimit)})`;
+  updateContextualActions();
+  updateViewA11y();
+}
+
+function updateEmptyState(itemCount) {
+  emptyState.style.display = itemCount === 0 ? "flex" : "none";
+  const messages = {
+    trash: ["Lixeira vazia", "Itens enviados para a lixeira aparecem aqui."],
+    favorites: ["Sem favoritos", "Marque arquivos importantes com estrela para encontrá-los rapido."],
+    duplicates: ["Sem duplicados", "Arquivos com mesmo nome, tamanho e tipo apareceriam aqui."],
+    recent: ["Nada recente", "Seus envios mais recentes vao aparecer aqui."],
+    untagged: ["Tudo etiquetado", "Arquivos sem tags aparecem aqui para facilitar organizacao."],
+    largeVideos: ["Sem videos grandes", "Videos acima de 100 MB aparecem aqui."],
+    important: ["Nada importante", "Use prioridade importante ou critica para destacar arquivos."]
+  };
+  const [title, sub] = messages[currentFilter] || ["Cofre vazio", "Organize fotos, videos e documentos em pastas."];
+  emptyTitle.textContent = title;
+  emptySub.textContent = sub;
+}
+
+function updateContextualActions() {
+  if (trashActions) trashActions.hidden = currentFilter !== "trash";
 }
 
 function renderTimelineItems(list, items) {
@@ -544,15 +606,6 @@ function getDuplicateFiles() {
   return [...groups.values()].filter(group => group.length > 1).flat();
 }
 
-function duplicateSummary() {
-  const groups = new Map();
-  files.filter(f => !f.deletedAt).forEach(file => {
-    const key = `${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(file);
-  });
-  return [...groups.values()].filter(group => group.length > 1);
-}
 function isDuplicateFile(file) {
   if (!file || file.deletedAt) return false;
   const keyName = (file.name || "").toLowerCase();
@@ -590,7 +643,7 @@ function matchesSearch(text) {
 // ??? File Card ????????????????????????????????????????????
 function makeFileCard(file) {
   const card = document.createElement("div");
-  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (selectedIds.has(file.id) ? " selected" : "");
+  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (isDuplicateFile(file) ? " is-duplicate" : "") + (selectedIds.has(file.id) ? " selected" : "");
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
   const mediaLayout = getMediaLayout(file);
   if (mediaLayout.cardWidth) card.style.setProperty("--card-width", mediaLayout.cardWidth);
@@ -602,7 +655,7 @@ function makeFileCard(file) {
   } else if (file.fileType === "video") {
     const poster = cloudThumb(file.cloudPublicId, "video", 520, 360, file.coverTime);
     thumbHtml = `${poster ? `<img src="${poster}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon">VID</span>`}
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+      <div class="play-overlay">
         <div class="play-indicator">▶</div>
       </div>`;
   } else {
@@ -847,12 +900,12 @@ async function toggleFavorite(file) {
 // ??? Select mode ??????????????????????????????????????????
 function enterSelectMode() {
   isSelectMode = true;
+  isListView = false;
+  isGalleryView = false;
   isFoldersView = false;
+  isTimelineView = false;
+  clearViewModeButtons();
   $("viewSelect").classList.add("active");
-  $("viewGrid").classList.remove("active");
-  $("viewList").classList.remove("active");
-  $("viewGallery").classList.remove("active");
-  $("viewFolders").classList.remove("active");
   renderGrid();
 }
 function exitSelectMode() {
@@ -883,7 +936,7 @@ function updateBulkBar() {
 
 $("viewSelect").onclick = () => {
   if (isSelectMode) exitSelectMode();
-  else { isListView = false; enterSelectMode(); }
+  else enterSelectMode();
 };
 $("bulkCancelBtn").onclick = exitSelectMode;
 $("bulkSelectAllBtn").onclick = () => {
@@ -1073,7 +1126,7 @@ function renderMoveFolderList() {
   renderMoveTree(null, 0, currentFolderId);
 
   if (folders.length === 0) {
-    moveFolderList.innerHTML += `<p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);padding:12px 0;">Nenhuma pasta criada ainda.</p>`;
+    moveFolderList.innerHTML += `<p class="move-empty">Nenhuma pasta criada ainda.</p>`;
   }
 }
 
@@ -1348,52 +1401,35 @@ function openLightbox(file) {
     : "Raiz";
 
   const favLabel  = file.favorite ? "Favoritado" : "Favoritar";
-  const favStyle  = file.favorite
-    ? "color:#000;background:var(--accent);border:1px solid var(--accent);"
-    : "color:var(--accent);background:rgba(232,255,71,0.07);border:1px solid rgba(232,255,71,0.3);";
+  const videoActions = file.fileType === "video"
+    ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
+       <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>`
+    : "";
 
   lightboxInfo.innerHTML = `
-    <button class="lb-nav-btn" id="lbZoomOut">-</button>
-    <button class="lb-nav-btn" id="lbZoomIn">+</button>
-    <button class="lb-nav-btn" id="lbPrevBtn">Anterior</button>
-    <span>${esc(file.name)}</span>
-    <span style="color:var(--text3)">.</span>
-    <span>${fmtSize(file.size)}</span>
-    <span style="color:var(--text3)">.</span>
-    <span style="font-family:var(--font-mono);font-size:10px;color:var(--text2);">${esc(folderName)}</span>
-    <button id="lbFavBtn" style="${favStyle}padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">
-      ${favLabel}
-    </button>
-    <button onclick="openMoveModal(window.__lightboxFile)" style="
-      color:var(--accent);background:rgba(232,255,71,0.07);
-      border:1px solid rgba(232,255,71,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">
-      Mover
-    </button>
-    <button id="lbRenameBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
-      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Nome</button>
-    <button id="lbTagsBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
-      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Tags</button>
-    <button id="lbShareBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
-      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Copiar link</button>
-    ${file.fileType === "video" ? `<button id="lbSpeedBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
-      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Velocidade</button>
-    <button id="lbCoverBtn" style="color:var(--accent);background:rgba(125,211,252,0.07);
-      border:1px solid rgba(125,211,252,0.3);padding:4px 10px;border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;cursor:pointer;letter-spacing:1px;">Usar frame</button>` : ""}
-    <a href="${file.url}" target="_blank" style="color:var(--accent);text-decoration:none;
-      padding:4px 10px;border:1px solid var(--accent);border-radius:3px;
-      font-family:var(--font-mono);font-size:11px;">Baixar</a>
-    <button class="lb-nav-btn" id="lbNextBtn">Proximo</button>`;
+    <div class="lb-meta">
+      <strong>${esc(file.name)}</strong>
+      <span>${fmtSize(file.size)}</span>
+      <span>${esc(folderName)}</span>
+    </div>
+    <div class="lb-actions">
+      <button class="lb-nav-btn" id="lbPrevBtn" type="button">Anterior</button>
+      <button class="lb-nav-btn" id="lbNextBtn" type="button">Proximo</button>
+      <button class="lb-action-btn" id="lbZoomOut" type="button" aria-label="Diminuir zoom">-</button>
+      <button class="lb-action-btn" id="lbZoomIn" type="button" aria-label="Aumentar zoom">+</button>
+      <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${favLabel}</button>
+      <button class="lb-action-btn" id="lbMoveBtn" type="button">Mover</button>
+      <button class="lb-action-btn" id="lbRenameBtn" type="button">Nome</button>
+      <button class="lb-action-btn" id="lbTagsBtn" type="button">Tags</button>
+      <button class="lb-action-btn" id="lbShareBtn" type="button">Copiar link</button>
+      ${videoActions}
+      <a class="lb-action-btn lb-link" href="${file.url}" target="_blank" rel="noopener">Baixar</a>
+    </div>`;
 
   $("lbFavBtn").onclick = () => { toggleFavorite(file); closeLightbox(); };
   $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
   $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
+  $("lbMoveBtn").onclick = () => openMoveModal(file);
   $("lbRenameBtn").onclick = () => renameFile(file);
   $("lbTagsBtn").onclick = () => editTags(file);
   $("lbShareBtn").onclick = () => shareFile(file);
@@ -1406,9 +1442,6 @@ function openLightbox(file) {
   $("lbPrevBtn").disabled = lightboxIndex <= 0;
   $("lbNextBtn").disabled = lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
 
-  window.__lightboxFile = file;
-  window.openMoveModal  = openMoveModal;
-  window.deleteFileFromLightbox = async () => { await deleteFile(file); closeLightbox(); };
   lightbox.classList.add("active");
   lightboxZoom = 1;
   setLightboxZoom(1);
@@ -1483,9 +1516,10 @@ function showMissingLightbox(file) {
     <div class="missing-lightbox">
       <div class="missing-lightbox-title">Arquivo indisponivel</div>
       <p>Este item ainda existe no Firebase, mas o arquivo foi apagado ou movido no Cloudinary.</p>
-      <button onclick="deleteFileFromLightbox()">Remover registro do app</button>
+      <button id="removeMissingFile" type="button">Remover registro do app</button>
     </div>
   `;
+  $("removeMissingFile").onclick = async () => { await deleteFile(file); closeLightbox(); };
 }
 
 $("lightboxClose").onclick = closeLightbox;
@@ -1673,6 +1707,57 @@ function clearViewModeButtons() {
   $("viewTimeline").classList.remove("active");
 }
 
+function updateViewA11y() {
+  ["viewGrid", "viewList", "viewGallery", "viewFolders", "viewTimeline", "viewDensity", "viewSelect"].forEach(id => {
+    const btn = $(id);
+    if (btn) btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+  });
+}
+
+function setPanelOpen(panel, toggleBtn, open) {
+  if (!panel || !toggleBtn) return;
+  panel.hidden = !open;
+  panel.classList.toggle("active", open);
+  toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function togglePanel(panel, toggleBtn, otherPanel, otherToggle) {
+  const willOpen = panel.hidden;
+  setPanelOpen(panel, toggleBtn, willOpen);
+  if (willOpen) setPanelOpen(otherPanel, otherToggle, false);
+}
+
+function setActiveFilterChip(filterKey) {
+  document.querySelectorAll(".chip").forEach(chip => {
+    chip.classList.toggle("active", chip.dataset.filter === filterKey);
+  });
+}
+
+function setContentFilter(filterKey) {
+  currentFilter = filterKey;
+  setActiveFilterChip(filterKey);
+  setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+  setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+  sidebar.classList.remove("mobile-open");
+  if (isFoldersView || isTimelineView) {
+    isFoldersView = false;
+    isTimelineView = false;
+    clearViewModeButtons();
+    if (isGalleryView) $("viewGallery").classList.add("active");
+    else if (isListView) $("viewList").classList.add("active");
+    else $("viewGrid").classList.add("active");
+  }
+  visibleLimit = PAGE_SIZE;
+  isSelectMode = false;
+  selectedIds.clear();
+  $("viewSelect").classList.remove("active");
+  if (![ $("viewGrid"), $("viewList"), $("viewGallery"), $("viewFolders"), $("viewTimeline") ].some(btn => btn.classList.contains("active"))) {
+    $("viewGrid").classList.add("active");
+  }
+  updateBulkBar();
+  renderGrid();
+}
+
 $("viewGrid").onclick = () => {
   if (isSelectMode) exitSelectMode();
   isListView = false;
@@ -1755,15 +1840,7 @@ loadMoreBtn.onclick = () => {
 // ??? Filter chips ?????????????????????????????????????????
 document.querySelectorAll(".chip").forEach(chip => {
   chip.onclick = () => {
-    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
-    currentFilter = chip.dataset.filter;
-    isFoldersView = false;
-    $("viewFolders").classList.remove("active");
-    visibleLimit = PAGE_SIZE;
-    selectedIds.clear();
-    updateBulkBar();
-    renderGrid();
+    setContentFilter(chip.dataset.filter);
   };
 });
 
@@ -1789,6 +1866,8 @@ attachRootDrop();
 folderList.firstElementChild.onclick = () => {
   isFoldersView = false;
   isTimelineView = false;
+  currentFilter = "all";
+  setActiveFilterChip("all");
   clearViewModeButtons();
   $("viewGrid").classList.add("active");
   dispatchNavigation("root");
@@ -1812,19 +1891,17 @@ $("closePanel").onclick = () => {
 };
 $("btnCheckFiles").onclick = verifyFiles;
 $("bulkEditBtn").onclick = bulkEditSelected;
-$("btnFindDuplicates").onclick = () => {
-  currentFilter = "duplicates";
-  document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-  showToast(`${duplicateSummary().length} grupo(s) duplicado(s)`);
-  visibleLimit = PAGE_SIZE;
-  renderGrid();
-};
 $("btnEmptyTrash").onclick = emptyTrash;
 $("btnRestoreTrash").onclick = restoreTrash;
 $("exportJsonBtn").onclick = () => exportData("json");
 $("exportCsvBtn").onclick = () => exportData("csv");
 $("btnSlideshow").onclick = startSlideshow;
 $("closeInfoModal").onclick = () => infoModal.classList.remove("active");
+$("emptyNewFolderBtn").onclick = () => $("btnNewFolder").click();
+$("filterPanelToggle").onclick = () => togglePanel(filterPanel, $("filterPanelToggle"), toolsPanel, $("toolsPanelToggle"));
+$("toolsPanelToggle").onclick = () => togglePanel(toolsPanel, $("toolsPanelToggle"), filterPanel, $("filterPanelToggle"));
+$("closeFilterPanel").onclick = () => setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+$("closeToolsPanel").onclick = () => setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
 advFolderSelect.onchange = () => { advancedFilters.folderId = advFolderSelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
 advPrioritySelect.onchange = () => { advancedFilters.priority = advPrioritySelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
 advDateFrom.onchange = () => { advancedFilters.dateFrom = advDateFrom.value; visibleLimit = PAGE_SIZE; renderGrid(); };

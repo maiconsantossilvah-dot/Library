@@ -16,9 +16,9 @@
         <span class="logo-icon">V</span>
         <span class="logo-text">VAULT</span>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <button class="sidebar-cfg-btn" id="openConfigBtn" title="Configuracoes">⚙</button>
-        <button class="sidebar-toggle" id="sidebarToggle" title="Fechar menu">&#9776;</button>
+      <div class="sidebar-header-actions">
+        <button class="sidebar-cfg-btn" id="openConfigBtn" type="button" title="Configuracoes" aria-label="Abrir configuracoes">⚙</button>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Fechar menu" aria-label="Fechar menu">&#9776;</button>
       </div>
     </div>
 
@@ -28,8 +28,20 @@
       </button>
     </div>
 
+    <div class="sidebar-section filter-section">
+      <p class="sidebar-label">BIBLIOTECA</p>
+      <div class="filter-chips nav-chips">
+        <button class="chip active" data-filter="all">Todos</button>
+        <button class="chip" data-filter="recent">Recentes</button>
+        <button class="chip" data-filter="favorites">Favoritos</button>
+        <button class="chip" data-filter="important">Importantes</button>
+        <button class="chip" data-filter="duplicates">Duplicados</button>
+        <button class="chip" data-filter="trash">Lixeira</button>
+      </div>
+    </div>
+
     <div class="sidebar-section">
-      <p class="sidebar-label">NAVEGACAO</p>
+      <p class="sidebar-label">PASTAS</p>
       <!-- Breadcrumb trail inside sidebar -->
       <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
       <ul class="folder-list" id="folderList">
@@ -40,31 +52,21 @@
     </div>
 
     <div class="sidebar-section filter-section">
-      <p class="sidebar-label">FILTRAR POR TIPO</p>
+      <p class="sidebar-label">TIPOS</p>
       <div class="filter-chips">
-        <button class="chip active" data-filter="all">Tudo</button>
         <button class="chip" data-filter="media">Midia</button>
         <button class="chip" data-filter="image">IMG Imagens</button>
         <button class="chip" data-filter="video">VID Videos</button>
         <button class="chip" data-filter="document">DOC Docs</button>
-        <button class="chip" data-filter="favorites">* Favoritos</button>
-        <button class="chip" data-filter="trash">Lixeira</button>
-      </div>
-    </div>
-
-    <div class="sidebar-section filter-section">
-      <p class="sidebar-label">ALBUNS INTELIGENTES</p>
-      <div class="filter-chips">
-        <button class="chip" data-filter="recent">Recentes</button>
         <button class="chip" data-filter="untagged">Sem tags</button>
         <button class="chip" data-filter="largeVideos">Videos grandes</button>
-        <button class="chip" data-filter="important">Importantes</button>
       </div>
     </div>
 
-    <div class="sidebar-section">
+    <div class="sidebar-section maintenance-section">
+      <p class="sidebar-label">MANUTENCAO</p>
       <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
-      <p class="storage-text" style="margin-top:8px;">Marca itens que foram apagados no Cloudinary.</p>
+      <p class="storage-text helper-text">Marca itens que foram apagados no Cloudinary.</p>
     </div>
 
     <div class="sidebar-storage">
@@ -81,14 +83,13 @@
 
     <!-- TOPBAR -->
     <header class="topbar">
-      <button class="sidebar-open-btn" id="sidebarOpenBtn" title="Abrir menu">&#9776;</button>
+      <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" title="Abrir menu" aria-label="Abrir menu">&#9776;</button>
       <div class="topbar-shell">
         <div class="topbar-title-row">
           <div class="breadcrumb" id="breadcrumb">
             <span>Todos os Arquivos</span>
           </div>
           <div class="primary-actions">
-            <button class="action-btn action-ghost" id="btnSlideshow" type="button">Apresentar</button>
             <label class="action-btn action-primary" for="fileInput">
               <span>Upload</span>
               <input type="file" id="fileInput" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
@@ -98,53 +99,85 @@
 
         <div class="topbar-control-row">
           <div class="control-cluster search-cluster">
-            <input class="search-input" id="searchInput" placeholder="Buscar arquivo ou tag..." />
-            <select class="sort-select" id="sortSelect" title="Ordenar">
+            <label class="sr-only" for="searchInput">Buscar arquivo ou tag</label>
+            <input class="search-input" id="searchInput" placeholder="Buscar arquivo ou tag..." aria-label="Buscar arquivo ou tag" />
+            <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
+            <select class="sort-select" id="sortSelect" title="Ordenar" aria-label="Ordenar arquivos">
               <option value="newest">Mais recentes</option>
               <option value="oldest">Mais antigos</option>
               <option value="name">Nome A-Z</option>
               <option value="size">Tamanho</option>
               <option value="type">Tipo</option>
             </select>
-            <select class="sort-select" id="qualitySelect" title="Qualidade das miniaturas">
-              <option value="medium">Qualidade media</option>
-              <option value="low">Qualidade baixa</option>
-              <option value="high">Qualidade alta</option>
-            </select>
-          </div>
-
-          <div class="control-cluster filter-cluster">
-            <select class="sort-select adv-select" id="advFolderSelect" title="Filtrar por pasta">
-              <option value="">Todas as pastas</option>
-            </select>
-            <select class="sort-select adv-select" id="advPrioritySelect" title="Filtrar por prioridade">
-              <option value="">Prioridade</option>
-              <option value="normal">Normal</option>
-              <option value="important">Importante</option>
-              <option value="critical">Critico</option>
-            </select>
-            <input class="date-input adv-select" id="advDateFrom" type="date" title="Data inicial" />
-            <input class="date-input adv-select" id="advDateTo" type="date" title="Data final" />
-            <button class="utility-btn" id="clearAdvancedBtn" type="button" title="Limpar filtros avancados">Limpar</button>
           </div>
 
           <div class="view-toggle" aria-label="Modos de visualizacao">
-            <button class="view-btn active" id="viewGrid" title="Grade">▦</button>
-            <button class="view-btn" id="viewList" title="Lista">☰</button>
-            <button class="view-btn" id="viewGallery" title="Galeria">▣</button>
-            <button class="view-btn view-text" id="viewFolders" title="Mostrar apenas pastas">Pastas</button>
-            <button class="view-btn view-text" id="viewTimeline" title="Linha do tempo">Tempo</button>
-            <button class="view-btn" id="viewDensity" title="Alternar compacto/detalhado">D</button>
-            <button class="view-btn" id="viewSelect" title="Selecionar em lote">☑</button>
+            <button class="view-btn active" id="viewGrid" type="button" title="Grade" aria-label="Visualizar em grade" aria-pressed="true">▦</button>
+            <button class="view-btn" id="viewList" type="button" title="Lista" aria-label="Visualizar em lista" aria-pressed="false">☰</button>
+            <button class="view-btn" id="viewGallery" type="button" title="Galeria" aria-label="Visualizar galeria de midia" aria-pressed="false">▣</button>
+            <button class="view-btn view-text" id="viewFolders" type="button" title="Mostrar apenas pastas" aria-pressed="false">Pastas</button>
+            <button class="view-btn view-text" id="viewTimeline" type="button" title="Linha do tempo" aria-pressed="false">Tempo</button>
+            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Dens.</button>
+            <button class="view-btn" id="viewSelect" type="button" title="Selecionar em lote" aria-label="Selecionar em lote" aria-pressed="false">☑</button>
           </div>
 
-          <div class="secondary-actions">
-            <button class="utility-btn" id="btnFindDuplicates" type="button">Duplicados</button>
-            <button class="utility-btn" id="exportJsonBtn" type="button">JSON</button>
-            <button class="utility-btn" id="exportCsvBtn" type="button">CSV</button>
+          <div class="toolbar-actions">
+            <button class="utility-btn" id="filterPanelToggle" type="button" aria-expanded="false" aria-controls="filterPanel">Filtros</button>
+            <button class="utility-btn" id="toolsPanelToggle" type="button" aria-expanded="false" aria-controls="toolsPanel">Ferramentas</button>
+          </div>
+
+          <div class="trash-actions" id="trashActions" hidden>
             <button class="utility-btn" id="btnRestoreTrash" type="button">Restaurar</button>
             <button class="utility-btn danger-inline" id="btnEmptyTrash" type="button">Esvaziar</button>
-            <button class="utility-btn" id="importUrlBtn" type="button">URL</button>
+          </div>
+        </div>
+
+        <div class="topbar-panel filter-panel" id="filterPanel" hidden>
+          <div class="panel-heading">
+            <span>Filtros avancados</span>
+            <button class="panel-close" id="closeFilterPanel" type="button" aria-label="Fechar filtros">×</button>
+          </div>
+          <div class="panel-grid">
+            <label class="field-label" for="qualitySelect">Miniaturas
+              <select class="sort-select" id="qualitySelect" title="Qualidade das miniaturas">
+                <option value="medium">Qualidade media</option>
+                <option value="low">Qualidade baixa</option>
+                <option value="high">Qualidade alta</option>
+              </select>
+            </label>
+            <label class="field-label" for="advFolderSelect">Pasta
+              <select class="sort-select adv-select" id="advFolderSelect" title="Filtrar por pasta">
+                <option value="">Todas as pastas</option>
+              </select>
+            </label>
+            <label class="field-label" for="advPrioritySelect">Prioridade
+              <select class="sort-select adv-select" id="advPrioritySelect" title="Filtrar por prioridade">
+                <option value="">Qualquer prioridade</option>
+                <option value="normal">Normal</option>
+                <option value="important">Importante</option>
+                <option value="critical">Critico</option>
+              </select>
+            </label>
+            <label class="field-label" for="advDateFrom">De
+              <input class="date-input adv-select" id="advDateFrom" type="date" title="Data inicial" />
+            </label>
+            <label class="field-label" for="advDateTo">Ate
+              <input class="date-input adv-select" id="advDateTo" type="date" title="Data final" />
+            </label>
+            <button class="utility-btn panel-clear" id="clearAdvancedBtn" type="button" title="Limpar filtros avancados">Limpar filtros</button>
+          </div>
+        </div>
+
+        <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
+          <div class="panel-heading">
+            <span>Ferramentas</span>
+            <button class="panel-close" id="closeToolsPanel" type="button" aria-label="Fechar ferramentas">×</button>
+          </div>
+          <div class="tool-grid">
+            <button class="utility-btn" id="exportJsonBtn" type="button">Exportar JSON</button>
+            <button class="utility-btn" id="exportCsvBtn" type="button">Exportar CSV</button>
+            <button class="utility-btn" id="importUrlBtn" type="button">Importar URL</button>
+            <button class="utility-btn" id="btnSlideshow" type="button">Apresentar</button>
           </div>
         </div>
 
@@ -183,8 +216,12 @@
       </section>
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">VAULT</div>
-        <p class="empty-title">Cofre vazio</p>
-        <p class="empty-sub">Arraste arquivos ou clique em Upload para comecar</p>
+        <p class="empty-title" id="emptyTitle">Cofre vazio</p>
+        <p class="empty-sub" id="emptySub">Organize fotos, videos e documentos em pastas.</p>
+        <div class="empty-actions">
+          <label class="empty-action primary" for="fileInput">Enviar arquivos</label>
+          <button class="empty-action" id="emptyNewFolderBtn" type="button">Criar pasta</button>
+        </div>
       </div>
       <div class="grid" id="fileGrid"></div>
       <div class="load-more-wrap">
@@ -218,22 +255,31 @@
     <div class="modal config-modal">
       <div class="config-header">
         <span class="logo-icon">V</span>
-        <h2 class="modal-title">Configurar Firebase</h2>
+        <div>
+          <p class="modal-kicker">Primeiro uso</p>
+          <h2 class="modal-title">Conectar o VAULT</h2>
+        </div>
       </div>
-      <p class="config-desc">Cole suas credenciais do Firebase (Firestore) e do Cloudinary. Ficam salvas apenas no seu navegador.</p>
+      <p class="config-desc">Conecte os metadados no Firebase e os uploads no Cloudinary. As credenciais ficam salvas apenas neste navegador.</p>
       <div class="config-fields">
-        <p class="cfg-section-label">- FIREBASE FIRESTORE -</p>
-        <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" />
-        <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" />
-        <input class="modal-input" id="cfg_projectId" placeholder="projectId" />
-        <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" />
-        <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" />
-        <input class="modal-input" id="cfg_appId" placeholder="appId" />
-        <p class="cfg-section-label" style="margin-top:10px;">- CLOUDINARY (25 GB gratis) -</p>
-        <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" />
-        <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (modo Unsigned)" />
+        <section class="config-step">
+          <p class="cfg-section-label">1. Firebase Firestore</p>
+          <label class="field-label" for="cfg_apiKey">apiKey <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_authDomain">authDomain <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_projectId">projectId <input class="modal-input" id="cfg_projectId" placeholder="projectId" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_storageBucket">storageBucket <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_messagingSenderId">messagingSenderId <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_appId">appId <input class="modal-input" id="cfg_appId" placeholder="appId" autocomplete="off" /></label>
+        </section>
+        <section class="config-step">
+          <p class="cfg-section-label">2. Cloudinary</p>
+          <label class="field-label" for="cfg_cloudName">Cloud Name <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_uploadPreset">Upload Preset <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (modo Unsigned)" autocomplete="off" /></label>
+        </section>
       </div>
+      <p class="form-error" id="configError" role="alert"></p>
       <div class="modal-actions">
+        <button class="modal-btn cancel" id="skipConfig" style="display:none;">Explorar sem conectar</button>
         <button class="modal-btn cancel" id="cancelConfig" style="display:none;">Cancelar</button>
         <button class="modal-btn confirm" id="saveConfig">Salvar e Conectar</button>
       </div>
