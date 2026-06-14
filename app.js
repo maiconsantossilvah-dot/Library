@@ -40,6 +40,7 @@ let uploadPreset = "";
 // Move modal state
 let fileToMove    = null;
 let bulkMoveMode  = false;
+let fileToDescribe = null;
 let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
@@ -90,6 +91,9 @@ const filterPanel = $("filterPanel");
 const toolsPanel = $("toolsPanel");
 const trashActions = $("trashActions");
 const configError = $("configError");
+const descriptionModal = $("descriptionModal");
+const descriptionFileName = $("descriptionFileName");
+const descriptionInput = $("descriptionInput");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -107,6 +111,9 @@ if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
 else openConfigModal(false); // nao pode cancelar na primeira vez
 qualitySelect.value = thumbQuality;
 renderHistory();
+document.addEventListener("click", e => {
+  if (!e.target.closest(".file-actions")) closeActionMenus();
+});
 
 function prefillConfig(cfg) {
   $("cfg_apiKey").value            = cfg.apiKey            || "";
@@ -643,10 +650,17 @@ function matchesSearch(text) {
 // ??? File Card ????????????????????????????????????????????
 function makeFileCard(file) {
   const card = document.createElement("div");
-  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (isDuplicateFile(file) ? " is-duplicate" : "") + (selectedIds.has(file.id) ? " selected" : "");
   const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
   const mediaLayout = getMediaLayout(file);
-  if (mediaLayout.cardWidth) card.style.setProperty("--card-width", mediaLayout.cardWidth);
+  const isMedia = file.fileType === "image" || file.fileType === "video";
+  const description = String(file.description || "").trim();
+  const hasMediaDescription = isMedia;
+  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (isDuplicateFile(file) ? " is-duplicate" : "") + (selectedIds.has(file.id) ? " selected" : "") + (isMedia ? ` media-${mediaLayout.orientation}` : "") + (hasMediaDescription ? " has-media-description" : "");
+  if (hasMediaDescription && mediaLayout.orientation === "vertical") {
+    card.style.setProperty("--card-width", "min(100%, 390px)");
+  } else if (mediaLayout.cardWidth) {
+    card.style.setProperty("--card-width", mediaLayout.cardWidth);
+  }
 
   let thumbHtml = "";
   if (file.fileType === "image") {
@@ -669,21 +683,27 @@ function makeFileCard(file) {
   const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
   const folderLabel = getFolderPathLabel(file.folderId);
   const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
-
-  card.innerHTML = `
+  const mediaDescriptionText = description || "Adicionar descricao...";
+  const mediaDescriptionClass = description ? "" : " is-empty";
+  const mediaDescriptionTop = hasMediaDescription ? `<p class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
+  const mediaDescriptionSide = hasMediaDescription ? `<p class="media-description media-description-side${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
+  const thumbBlock = `
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
       <button class="${favClass}" title="${favTitle}">★</button>
       <div class="select-checkbox"><span class="chk">${selectedIds.has(file.id) ? "✓" : ""}</span></div>
-    </div>
+    </div>`;
+
+  card.innerHTML = `
+    ${isMedia ? `<div class="file-media-frame">${mediaDescriptionTop}${thumbBlock}${mediaDescriptionSide}</div>` : thumbBlock}
     <div class="file-info">
       <div class="file-meta">
         <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
         ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
         ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
-        ${file.description ? `<p class="file-description">${esc(file.description)}</p>` : ""}
+        ${!isMedia && description ? `<p class="file-description">${esc(description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
         ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
       </div>
@@ -691,26 +711,62 @@ function makeFileCard(file) {
       <div class="file-actions">
         ${isTrash
           ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
-             <button class="file-action-btn permanent-delete" title="Excluir definitivamente">×</button>`
-          : `<button class="file-action-btn rename-btn" title="Renomear">Nome</button>
-             <button class="file-action-btn info-btn" title="Descricao e prioridade">Info</button>
-             <button class="file-action-btn tags-btn" title="Editar tags">Tags</button>
-             <button class="file-action-btn share-btn" title="Copiar link">Link</button>
-             ${canUseAsCover ? `<button class="file-action-btn cover-btn" title="Usar como capa da pasta">Capa</button>` : ""}
-             <button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
-             <button class="file-action-btn file-delete" title="Enviar para lixeira">×</button>`}
+             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">...</button>
+             <div class="file-action-menu" role="menu">
+               <button class="file-menu-item permanent-delete" type="button" role="menuitem">Excluir definitivo</button>
+             </div>`
+          : `<button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
+             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">...</button>
+             <div class="file-action-menu" role="menu">
+               <button class="file-menu-item description-btn" type="button" role="menuitem">Descricao</button>
+               <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
+               <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
+               <button class="file-menu-item tags-btn" type="button" role="menuitem">Tags</button>
+               <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
+               ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
+               <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
+             </div>`}
       </div>
     </div>`;
 
-  card.querySelector(".file-delete")?.addEventListener("click", e => { e.stopPropagation(); deleteFile(file); });
-  card.querySelector(".move-btn")?.addEventListener("click", e => { e.stopPropagation(); openMoveModal(file); });
-  card.querySelector(".cover-btn")?.addEventListener("click", e => { e.stopPropagation(); setFolderCover(file); });
-  card.querySelector(".rename-btn")?.addEventListener("click", e => { e.stopPropagation(); renameFile(file); });
-  card.querySelector(".info-btn")?.addEventListener("click", e => { e.stopPropagation(); editFileInfo(file); });
-  card.querySelector(".tags-btn")?.addEventListener("click", e => { e.stopPropagation(); editTags(file); });
-  card.querySelector(".share-btn")?.addEventListener("click", e => { e.stopPropagation(); shareFile(file); });
-  card.querySelector(".restore-btn")?.addEventListener("click", e => { e.stopPropagation(); restoreFile(file); });
-  card.querySelector(".permanent-delete")?.addEventListener("click", e => { e.stopPropagation(); permanentlyDeleteFile(file); });
+  const actionMenuBtn = card.querySelector(".action-menu-btn");
+  const actionMenu = card.querySelector(".file-action-menu");
+  actionMenuBtn?.addEventListener("click", e => {
+    e.stopPropagation();
+    const shouldOpen = !actionMenu?.classList.contains("active");
+    closeActionMenus();
+    if (shouldOpen && actionMenu) {
+      actionMenu.classList.add("active");
+      card.classList.add("menu-open");
+      actionMenuBtn.setAttribute("aria-expanded", "true");
+    }
+  });
+  actionMenu?.addEventListener("click", e => e.stopPropagation());
+
+  const bindAction = (selector, handler) => {
+    card.querySelector(selector)?.addEventListener("click", e => {
+      e.stopPropagation();
+      closeActionMenus();
+      handler();
+    });
+  };
+  bindAction(".file-delete", () => deleteFile(file));
+  bindAction(".move-btn", () => openMoveModal(file));
+  bindAction(".cover-btn", () => setFolderCover(file));
+  bindAction(".rename-btn", () => renameFile(file));
+  bindAction(".description-btn", () => openDescriptionModal(file));
+  bindAction(".info-btn", () => editFileInfo(file));
+  bindAction(".tags-btn", () => editTags(file));
+  bindAction(".share-btn", () => shareFile(file));
+  bindAction(".restore-btn", () => restoreFile(file));
+  bindAction(".permanent-delete", () => permanentlyDeleteFile(file));
+  card.querySelectorAll(".media-description").forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      closeActionMenus();
+      openDescriptionModal(file);
+    });
+  });
 
   // Favorito
   card.querySelector(".fav-btn").onclick = e => {
@@ -748,6 +804,15 @@ function makeFileCard(file) {
   return card;
 }
 
+function closeActionMenus() {
+  document.querySelectorAll(".file-action-menu.active").forEach(menu => {
+    menu.classList.remove("active");
+    const card = menu.closest(".file-card");
+    card?.classList.remove("menu-open");
+    card?.querySelector(".action-menu-btn")?.setAttribute("aria-expanded", "false");
+  });
+}
+
 function markFileUnavailable(card) {
   const thumb = card.querySelector(".file-thumb");
   if (!thumb) return;
@@ -764,16 +829,17 @@ function markFileUnavailable(card) {
 function getMediaLayout(file) {
   const w = Number(file.width || file.mediaWidth);
   const h = Number(file.height || file.mediaHeight);
-  if (!w || !h) return { ratio: "", cardWidth: "" };
+  if (!w || !h) return { ratio: "", cardWidth: "", orientation: "horizontal" };
   return mediaLayoutFromSize(w, h);
 }
 
 function mediaLayoutFromSize(w, h) {
   const ratioValue = w / h;
+  const orientation = ratioValue < 1 ? "vertical" : "horizontal";
   let cardWidth = "";
   if (ratioValue < 0.62) cardWidth = "min(72%, 220px)";
   else if (ratioValue < 0.85) cardWidth = "min(82%, 250px)";
-  return { ratio: `${w} / ${h}`, cardWidth };
+  return { ratio: `${w} / ${h}`, cardWidth, orientation };
 }
 
 function applyLoadedMediaRatio(card, mediaEl) {
@@ -782,7 +848,19 @@ function applyLoadedMediaRatio(card, mediaEl) {
   if (!w || !h) return;
   const layout = mediaLayoutFromSize(w, h);
   card.querySelector(".file-thumb")?.style.setProperty("--media-ratio", layout.ratio);
-  if (layout.cardWidth) card.style.setProperty("--card-width", layout.cardWidth);
+  setMediaOrientationClass(card, layout.orientation);
+  if (card.classList.contains("has-media-description") && layout.orientation === "vertical") {
+    card.style.setProperty("--card-width", "min(100%, 390px)");
+  } else if (layout.cardWidth) {
+    card.style.setProperty("--card-width", layout.cardWidth);
+  } else {
+    card.style.removeProperty("--card-width");
+  }
+}
+
+function setMediaOrientationClass(card, orientation) {
+  card.classList.remove("media-horizontal", "media-vertical");
+  card.classList.add(orientation === "vertical" ? "media-vertical" : "media-horizontal");
 }
 
 function cloudThumb(publicId, resourceType, w, h, coverTime = null) {
@@ -1289,6 +1367,32 @@ async function editTags(file) {
   }
 }
 
+function openDescriptionModal(file) {
+  fileToDescribe = file;
+  descriptionFileName.textContent = file.name || "Arquivo";
+  descriptionInput.value = file.description || "";
+  descriptionModal.classList.add("active");
+  setTimeout(() => descriptionInput.focus(), 0);
+}
+
+function closeDescriptionModal() {
+  descriptionModal.classList.remove("active");
+  fileToDescribe = null;
+}
+
+async function saveFileDescription() {
+  if (!fileToDescribe) return;
+  const description = descriptionInput.value.trim();
+  try {
+    await updateDoc(doc(db, "vault_files", fileToDescribe.id), { description });
+    addHistory(`Descricao: ${fileToDescribe.name || "arquivo"}`);
+    showToast("Descricao salva", "success");
+    closeDescriptionModal();
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
 async function editFileInfo(file) {
   const description = prompt("Descricao do arquivo:", file.description || "");
   if (description === null) return;
@@ -1529,6 +1633,8 @@ document.onkeydown = e => {
     closeLightbox();
     folderModal.classList.remove("active");
     moveModal.classList.remove("active");
+    closeActionMenus();
+    closeDescriptionModal();
     if (configModal.style.display === "flex") {
       if ($("cancelConfig").style.display !== "none") configModal.style.display = "none";
     }
@@ -1897,6 +2003,12 @@ $("exportJsonBtn").onclick = () => exportData("json");
 $("exportCsvBtn").onclick = () => exportData("csv");
 $("btnSlideshow").onclick = startSlideshow;
 $("closeInfoModal").onclick = () => infoModal.classList.remove("active");
+$("cancelDescription").onclick = closeDescriptionModal;
+$("saveDescription").onclick = saveFileDescription;
+descriptionModal.onclick = e => { if (e.target === descriptionModal) closeDescriptionModal(); };
+descriptionInput.onkeydown = e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") saveFileDescription();
+};
 $("emptyNewFolderBtn").onclick = () => $("btnNewFolder").click();
 $("filterPanelToggle").onclick = () => togglePanel(filterPanel, $("filterPanelToggle"), toolsPanel, $("toolsPanelToggle"));
 $("toolsPanelToggle").onclick = () => togglePanel(toolsPanel, $("toolsPanelToggle"), filterPanel, $("filterPanelToggle"));
