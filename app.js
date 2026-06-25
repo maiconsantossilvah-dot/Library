@@ -6,22 +6,19 @@
 import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, deleteDoc,
-  doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc
+  doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { runLimitedQueue } from "./modules/async-queue.js";
+import { hashBrowserFile } from "./modules/file-hash.js";
+import { comparePageFiles } from "./modules/page-order.js";
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
 let db;
 const ROOT_ID = "root";
-let currentFolder  = ROOT_ID;   // ROOT_ID ou ID de pasta
-let currentFilter  = "all";
 let currentSearch  = "";
 let currentSort    = "newest";
 let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
-let isListView     = false;
-let isGalleryView  = false;
-let isFoldersView  = false;
-let isTimelineView = false;
 let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
@@ -31,8 +28,21 @@ let folders        = [];
 let files          = [];
 let unsubFiles     = null;
 let unsubFolders   = null;
-let folderPath     = [];       // legado: o caminho agora e calculado por getFolderPath()
-let expandedFolders = new Set([ROOT_ID]);
+const navState = {
+  folderId: ROOT_ID,
+  viewMode: "grid",
+  contentScope: "all",
+  expandedFolders: new Set([ROOT_ID]),
+};
+const VIEW_BUTTONS = {
+  grid: "viewGrid",
+  list: "viewList",
+  gallery: "viewGallery",
+  folders: "viewFolders",
+  timeline: "viewTimeline",
+};
+const UPLOAD_CONCURRENCY = 3;
+const uploadHashes = new WeakMap();
 
 let cloudName    = "";
 let uploadPreset = "";
@@ -45,6 +55,12 @@ let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
 let lightboxZoom = 1;
+let mangaState = {
+  pages: [],
+  index: 0,
+  mode: localStorage.getItem("vault_manga_mode") || "horizontal",
+  zoom: Number(localStorage.getItem("vault_manga_zoom") || "1"),
+};
 let visibleLimit = 60;
 const PAGE_SIZE = 60;
 
@@ -94,6 +110,28 @@ const configError = $("configError");
 const descriptionModal = $("descriptionModal");
 const descriptionFileName = $("descriptionFileName");
 const descriptionInput = $("descriptionInput");
+const formModal = $("formModal");
+const formModalTitle = $("formModalTitle");
+const formModalBody = $("formModalBody");
+const formModalCancel = $("formModalCancel");
+const formModalConfirm = $("formModalConfirm");
+const confirmModal = $("confirmModal");
+const confirmModalTitle = $("confirmModalTitle");
+const confirmModalMessage = $("confirmModalMessage");
+const confirmModalCancel = $("confirmModalCancel");
+const confirmModalConfirm = $("confirmModalConfirm");
+const backupInput = $("backupInput");
+const mangaReader = $("mangaReader");
+const mangaStage = $("mangaStage");
+const mangaTitle = $("mangaTitle");
+const mangaCounter = $("mangaCounter");
+const mangaModeHorizontal = $("mangaModeHorizontal");
+const mangaModeVertical = $("mangaModeVertical");
+const mangaPrev = $("mangaPrev");
+const mangaNext = $("mangaNext");
+const mangaZoomIn = $("mangaZoomIn");
+const mangaZoomOut = $("mangaZoomOut");
+const mangaClose = $("mangaClose");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -147,6 +185,117 @@ function showConfigError(message) {
   configError.style.display = message ? "block" : "none";
 }
 
+// ??? Reusable dialogs ?????????????????????????????????????
+let formDialogResolve = null;
+let formDialogFields = [];
+let confirmDialogResolve = null;
+
+function openFieldsDialog({ title, fields, confirmText = "Salvar" }) {
+  return new Promise(resolve => {
+    formDialogResolve = resolve;
+    formDialogFields = fields;
+    formModalTitle.textContent = title;
+    formModalConfirm.textContent = confirmText;
+    formModalBody.innerHTML = fields.map(renderDialogField).join("");
+    formModal.classList.add("active");
+    const first = formModalBody.querySelector("input, textarea, select");
+    setTimeout(() => first?.focus(), 0);
+  });
+}
+
+function renderDialogField(field) {
+  const value = esc(field.value ?? "");
+  const label = esc(field.label || field.name);
+  const placeholder = esc(field.placeholder || "");
+  const required = field.required ? " required" : "";
+  const maxLength = field.maxlength ? ` maxlength="${field.maxlength}"` : "";
+  const rows = field.rows || 4;
+
+  if (field.type === "textarea") {
+    return `<label class="field-label dialog-field">${label}<textarea class="modal-input" data-field="${esc(field.name)}" placeholder="${placeholder}" rows="${rows}"${maxLength}${required}>${value}</textarea></label>`;
+  }
+
+  if (field.type === "select") {
+    const options = (field.options || []).map(option => {
+      const selected = String(option.value) === String(field.value ?? "") ? " selected" : "";
+      return `<option value="${esc(option.value)}"${selected}>${esc(option.label)}</option>`;
+    }).join("");
+    return `<label class="field-label dialog-field">${label}<select class="modal-input" data-field="${esc(field.name)}"${required}>${options}</select></label>`;
+  }
+
+  const type = field.type || "text";
+  return `<label class="field-label dialog-field">${label}<input class="modal-input" data-field="${esc(field.name)}" type="${esc(type)}" value="${value}" placeholder="${placeholder}"${maxLength}${required} /></label>`;
+}
+
+function closeFieldsDialog(value) {
+  formModal.classList.remove("active");
+  const resolve = formDialogResolve;
+  formDialogResolve = null;
+  formDialogFields = [];
+  if (resolve) resolve(value);
+}
+
+function collectDialogValues() {
+  const values = {};
+  formDialogFields.forEach(field => {
+    const input = formModalBody.querySelector(`[data-field="${CSS.escape(field.name)}"]`);
+    values[field.name] = input?.value ?? "";
+  });
+  return values;
+}
+
+function openTextDialog(options) {
+  return openFieldsDialog({
+    title: options.title,
+    confirmText: options.confirmText || "Salvar",
+    fields: [{
+      name: "value",
+      label: options.label || options.title,
+      value: options.value || "",
+      placeholder: options.placeholder || "",
+      type: options.multiline ? "textarea" : "text",
+      maxlength: options.maxlength,
+      rows: options.rows,
+      required: options.required,
+    }],
+  }).then(result => result ? result.value : null);
+}
+
+function openConfirmDialog({ title = "Confirmar", message, confirmText = "Confirmar", danger = false }) {
+  return new Promise(resolve => {
+    confirmDialogResolve = resolve;
+    confirmModalTitle.textContent = title;
+    confirmModalMessage.textContent = message || "";
+    confirmModalConfirm.textContent = confirmText;
+    confirmModalConfirm.classList.toggle("danger", danger);
+    confirmModal.classList.add("active");
+    setTimeout(() => confirmModalConfirm.focus(), 0);
+  });
+}
+
+function closeConfirmDialog(value) {
+  confirmModal.classList.remove("active");
+  confirmModalConfirm.classList.remove("danger");
+  const resolve = confirmDialogResolve;
+  confirmDialogResolve = null;
+  if (resolve) resolve(value);
+}
+
+formModalCancel.onclick = () => closeFieldsDialog(null);
+formModalConfirm.onclick = () => closeFieldsDialog(collectDialogValues());
+formModal.onclick = e => { if (e.target === formModal) closeFieldsDialog(null); };
+formModal.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") closeFieldsDialog(collectDialogValues());
+  if (e.key === "Escape") closeFieldsDialog(null);
+});
+confirmModalCancel.onclick = () => closeConfirmDialog(false);
+confirmModalConfirm.onclick = () => closeConfirmDialog(true);
+confirmModal.onclick = e => { if (e.target === confirmModal) closeConfirmDialog(false); };
+confirmModal.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeConfirmDialog(false);
+  if (e.key === "Enter") closeConfirmDialog(true);
+});
+
 async function initApp(cfg) {
   try {
     // Se ja existe app "vault", destroi e recria (troca de conta)
@@ -168,9 +317,8 @@ async function initApp(cfg) {
     showToast("Conectado com sucesso", "success");
 
     // Reset state
-    currentFolder = ROOT_ID;
-    folderPath    = [];
-    expandedFolders = new Set([ROOT_ID]);
+    navState.folderId = ROOT_ID;
+    navState.expandedFolders = new Set([ROOT_ID]);
     selectedIds.clear();
     exitSelectMode();
 
@@ -260,9 +408,8 @@ function getFolder(folderId) {
 }
 
 function ensureCurrentFolderExists() {
-  if (currentFolder !== ROOT_ID && !getFolder(currentFolder)) {
-    currentFolder = ROOT_ID;
-    folderPath = [];
+  if (navState.folderId !== ROOT_ID && !getFolder(navState.folderId)) {
+    navState.folderId = ROOT_ID;
   }
 }
 
@@ -273,7 +420,7 @@ function getFolderChildren(parentId = ROOT_ID) {
     .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
 }
 
-function getFolderPath(folderId = currentFolder) {
+function getFolderPath(folderId = navState.folderId) {
   const normalizedId = normalizeFolderId(folderId);
   if (normalizedId === ROOT_ID) return [];
 
@@ -291,36 +438,35 @@ function getFolderPath(folderId = currentFolder) {
 }
 
 function syncLegacyFolderPath() {
-  folderPath = getFolderPath(currentFolder);
-  return folderPath;
+  return getFolderPath(navState.folderId);
 }
 
-function expandFolderPath(folderId = currentFolder) {
-  expandedFolders.add(ROOT_ID);
-  getFolderPath(folderId).forEach(seg => expandedFolders.add(seg.id));
+function expandFolderPath(folderId = navState.folderId) {
+  navState.expandedFolders.add(ROOT_ID);
+  getFolderPath(folderId).forEach(seg => navState.expandedFolders.add(seg.id));
 }
 
 function toggleFolderExpanded(folderId) {
-  if (expandedFolders.has(folderId)) expandedFolders.delete(folderId);
-  else expandedFolders.add(folderId);
+  if (navState.expandedFolders.has(folderId)) navState.expandedFolders.delete(folderId);
+  else navState.expandedFolders.add(folderId);
   renderFolderList();
 }
 
 function renderFolderList() {
   while (folderList.children.length > 1) folderList.removeChild(folderList.lastChild);
 
-  expandFolderPath(currentFolder);
+  expandFolderPath(navState.folderId);
   getFolderChildren(ROOT_ID).forEach(folder => renderFolderTreeNode(folder, 0));
-  folderList.firstElementChild.classList.toggle("active", currentFolder === ROOT_ID);
+  folderList.firstElementChild.classList.toggle("active", navState.folderId === ROOT_ID);
   renderFolderBreadcrumb();
 }
 
 function renderFolderTreeNode(folder, depth) {
   const children = getFolderChildren(folder.id);
   const hasChildren = children.length > 0;
-  const isExpanded = expandedFolders.has(folder.id);
+  const isExpanded = navState.expandedFolders.has(folder.id);
   const li = document.createElement("li");
-  li.className = "folder-item tree-folder-item" + (currentFolder === folder.id ? " active" : "");
+  li.className = "folder-item tree-folder-item" + (navState.folderId === folder.id ? " active" : "");
   li.style.setProperty("--folder-depth", depth);
   li.innerHTML = `
     <button class="folder-expander ${hasChildren ? "" : "empty"}" title="${hasChildren ? "Expandir/Recolher" : ""}">
@@ -328,7 +474,7 @@ function renderFolderTreeNode(folder, depth) {
     </button>
     <span class="folder-icon">${hasChildren ? "#" : "."}</span>
     <span class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
-    <button class="folder-rename" title="Renomear pasta">Nome</button>
+    <button class="folder-rename" title="Renomear pasta">Renomear</button>
     <button class="folder-delete" title="Excluir pasta">×</button>`;
 
   li.querySelector(".folder-expander").onclick = e => {
@@ -381,7 +527,7 @@ function renderFolderBreadcrumb() {
 const NAV_COMMANDS = {
   open: ({ folderId }) => setCurrentFolder(folderId),
   root: () => setCurrentFolder(ROOT_ID),
-  up: () => setCurrentFolder(getParentFolderId(currentFolder)),
+  up: () => setCurrentFolder(getParentFolderId(navState.folderId)),
   toggle: ({ folderId }) => toggleFolderExpanded(folderId),
 };
 
@@ -396,8 +542,8 @@ function getParentFolderId(folderId) {
 }
 
 function setCurrentFolder(folderId) {
-  currentFolder = normalizeFolderId(folderId);
-  expandFolderPath(currentFolder);
+  navState.folderId = normalizeFolderId(folderId);
+  expandFolderPath(navState.folderId);
   syncLegacyFolderPath();
   renderBreadcrumb();
   renderFolderList();
@@ -413,7 +559,7 @@ function navigateFolder(folderId) {
 
 function renderBreadcrumb() {
   const path = syncLegacyFolderPath();
-  if (currentFolder === ROOT_ID) {
+  if (navState.folderId === ROOT_ID) {
     breadcrumb.innerHTML = `<span>Todos os Arquivos</span>`;
     return;
   }
@@ -440,73 +586,36 @@ function renderBreadcrumb() {
 }
 
 // ??? Grid ?????????????????????????????????????????????????
+const CONTENT_STRATEGIES = {
+  all: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
+  media: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
+  image: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
+  video: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
+  document: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
+  duplicates: () => sortFiles(applyFilter(getDuplicateFiles())),
+  trash: () => sortFiles(applyFilter(files.filter(file => file.deletedAt))),
+  recent: () => sortFiles(applyFilter(files.filter(isActiveFile))).slice(0, 30),
+  untagged: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && normalizeTags(file.tags).length === 0))),
+  largeVideos: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && file.fileType === "video" && (file.size || 0) > 100 * 1024 * 1024))),
+  important: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && (file.priority === "important" || file.priority === "critical")))),
+  favorites: () => sortFiles(applyFilter(files.filter(file => file.favorite && isActiveFile(file)))),
+};
+
+const VIEW_RENDERERS = {
+  folders: renderFolderItems,
+  timeline: renderTimelineViewItems,
+  grid: renderFileItems,
+  list: renderFileItems,
+  gallery: renderFileItems,
+};
+
 function renderGrid() {
   fileGrid.innerHTML = "";
-  fileGrid.className = "grid" + (isListView ? " list-view" : "") + (isGalleryView ? " gallery-view" : "") + (isCompactView ? " compact-view" : "") + (isTimelineView ? " timeline-view" : "") + (isSelectMode ? " select-mode" : "");
-  let items = [];
+  fileGrid.className = getGridClassName();
   lightboxFiles = [];
 
-  if (currentFilter === "duplicates") {
-    const duplicateFiles = sortFiles(applyFilter(getDuplicateFiles()));
-    duplicateFiles.forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "trash") {
-    const trashFiles = sortFiles(applyFilter(files.filter(f => f.deletedAt)));
-    trashFiles.forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "recent") {
-    sortFiles(applyFilter(files.filter(f => !f.deletedAt))).slice(0, 30).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "untagged") {
-    sortFiles(applyFilter(files.filter(f => !f.deletedAt && normalizeTags(f.tags).length === 0))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "largeVideos") {
-    sortFiles(applyFilter(files.filter(f => !f.deletedAt && f.fileType === "video" && (f.size || 0) > 100 * 1024 * 1024))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "important") {
-    sortFiles(applyFilter(files.filter(f => !f.deletedAt && (f.priority === "important" || f.priority === "critical")))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (currentFilter === "favorites") {
-    // Mostrar todos os favoritos independente de pasta
-    sortFiles(applyFilter(files.filter(f => f.favorite && !f.deletedAt))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else if (isFoldersView) {
-    const visibleFolders = getFolderChildren(currentFolder).filter(f => matchesSearch(f.name));
-    visibleFolders.forEach(folder => {
-      const count = countFilesInFolder(folder.id);
-      items.push(makeFolderCard(folder, count));
-    });
-  } else if (isTimelineView) {
-    const source = currentFolder === ROOT_ID
-      ? files.filter(f => !f.deletedAt)
-      : files.filter(f => f.folderId === currentFolder && !f.deletedAt);
-    renderTimelineItems(sortFiles(applyFilter(source)), items);
-  } else if (currentFolder === ROOT_ID) {
-    // "Todos os Arquivos" mostra uma visao plana dos arquivos, mesmo os organizados em pastas.
-    sortFiles(applyFilter(files.filter(f => !f.deletedAt))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  } else {
-    sortFiles(applyFilter(files.filter(f => f.folderId === currentFolder && !f.deletedAt))).forEach(f => {
-      lightboxFiles.push(f);
-      items.push(makeFileCard(f));
-    });
-  }
+  const renderer = VIEW_RENDERERS[navState.viewMode] || VIEW_RENDERERS.grid;
+  const items = renderer();
 
   updateEmptyState(items.length);
   items.slice(0, visibleLimit).forEach(el => fileGrid.appendChild(el));
@@ -516,24 +625,71 @@ function renderGrid() {
   updateViewA11y();
 }
 
+function getGridClassName() {
+  return [
+    "grid",
+    navState.viewMode === "list" ? "list-view" : "",
+    navState.viewMode === "gallery" ? "gallery-view" : "",
+    navState.viewMode === "timeline" ? "timeline-view" : "",
+    isCompactView ? "compact-view" : "",
+    isSelectMode ? "select-mode" : "",
+  ].filter(Boolean).join(" ");
+}
+
+function renderFileItems() {
+  const contentFiles = getContentFiles();
+  lightboxFiles = contentFiles;
+  return contentFiles.map(makeFileCard);
+}
+
+function renderTimelineViewItems() {
+  const items = [];
+  renderTimelineItems(getContentFiles(), items);
+  return items;
+}
+
+function renderFolderItems() {
+  return getFolderChildren(navState.folderId)
+    .filter(folder => matchesSearch(folder.name))
+    .map(folder => makeFolderCard(folder, countFilesInFolder(folder.id)));
+}
+
+function getContentFiles() {
+  const strategy = CONTENT_STRATEGIES[navState.contentScope] || CONTENT_STRATEGIES.all;
+  return strategy();
+}
+
+function getFilesForCurrentFolder() {
+  if (navState.folderId === ROOT_ID) return files.filter(isActiveFile);
+  return files.filter(file => file.folderId === navState.folderId && isActiveFile(file));
+}
+
+function isActiveFile(file) {
+  return !file.deletedAt;
+}
+
 function updateEmptyState(itemCount) {
   emptyState.style.display = itemCount === 0 ? "flex" : "none";
-  const messages = {
+  const modeMessages = {
+    folders: ["Sem pastas aqui", "Crie uma pasta ou volte para Todos os Arquivos."],
+    timeline: ["Linha do tempo vazia", "Arquivos com data aparecem organizados aqui."],
+  };
+  const scopeMessages = {
     trash: ["Lixeira vazia", "Itens enviados para a lixeira aparecem aqui."],
-    favorites: ["Sem favoritos", "Marque arquivos importantes com estrela para encontrá-los rapido."],
-    duplicates: ["Sem duplicados", "Arquivos com mesmo nome, tamanho e tipo apareceriam aqui."],
+    favorites: ["Sem favoritos", "Marque arquivos importantes com estrela para encontra-los rapido."],
+    duplicates: ["Sem duplicados", "Arquivos iguais pelo hash ou pelo mesmo nome e tamanho aparecem aqui."],
     recent: ["Nada recente", "Seus envios mais recentes vao aparecer aqui."],
     untagged: ["Tudo etiquetado", "Arquivos sem tags aparecem aqui para facilitar organizacao."],
     largeVideos: ["Sem videos grandes", "Videos acima de 100 MB aparecem aqui."],
-    important: ["Nada importante", "Use prioridade importante ou critica para destacar arquivos."]
+    important: ["Nada importante", "Use prioridade importante ou critica para destacar arquivos."],
   };
-  const [title, sub] = messages[currentFilter] || ["Cofre vazio", "Organize fotos, videos e documentos em pastas."];
+  const [title, sub] = modeMessages[navState.viewMode] || scopeMessages[navState.contentScope] || ["Cofre vazio", "Organize fotos, videos e documentos em pastas."];
   emptyTitle.textContent = title;
   emptySub.textContent = sub;
 }
 
 function updateContextualActions() {
-  if (trashActions) trashActions.hidden = currentFilter !== "trash";
+  if (trashActions) trashActions.hidden = navState.contentScope !== "trash";
 }
 
 function renderTimelineItems(list, items) {
@@ -580,9 +736,9 @@ function countFilesInFolder(folderId) {
 
 function applyFilter(list) {
   let result = list;
-  if (isGalleryView || currentFilter === "media") result = result.filter(f => f.fileType === "image" || f.fileType === "video");
-  if (["image", "video", "document"].includes(currentFilter)) {
-    result = result.filter(f => f.fileType === currentFilter);
+  if (navState.viewMode === "gallery" || navState.contentScope === "media") result = result.filter(f => f.fileType === "image" || f.fileType === "video");
+  if (["image", "video", "document"].includes(navState.contentScope)) {
+    result = result.filter(f => f.fileType === navState.contentScope);
   }
   result = result.filter(matchesAdvancedFilters);
   return result.filter(fileMatchesSearch);
@@ -606,7 +762,9 @@ function matchesAdvancedFilters(file) {
 function getDuplicateFiles() {
   const groups = new Map();
   files.filter(f => !f.deletedAt).forEach(file => {
-    const key = `${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
+    const key = file.contentHash
+      ? `hash:${file.contentHash}`
+      : `meta:${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(file);
   });
@@ -615,6 +773,9 @@ function getDuplicateFiles() {
 
 function isDuplicateFile(file) {
   if (!file || file.deletedAt) return false;
+  if (file.contentHash) {
+    return files.filter(f => !f.deletedAt && f.contentHash === file.contentHash).length > 1;
+  }
   const keyName = (file.name || "").toLowerCase();
   return files.filter(f => !f.deletedAt && (f.name || "").toLowerCase() === keyName && (f.size || 0) === (file.size || 0) && (f.fileType || "") === (file.fileType || "")).length > 1;
 }
@@ -679,10 +840,11 @@ function makeFileCard(file) {
   const favClass = file.favorite ? "fav-btn active" : "fav-btn";
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
   const tags = normalizeTags(file.tags);
-  const isTrash = currentFilter === "trash" || file.deletedAt;
+  const isTrash = navState.contentScope === "trash" || file.deletedAt;
   const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
   const folderLabel = getFolderPathLabel(file.folderId);
   const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
+  const canReadAsManga = file.fileType === "image";
   const mediaDescriptionText = description || "Adicionar descricao...";
   const mediaDescriptionClass = description ? "" : " is-empty";
   const mediaDescriptionTop = hasMediaDescription ? `<p class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
@@ -723,6 +885,7 @@ function makeFileCard(file) {
                <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
                <button class="file-menu-item tags-btn" type="button" role="menuitem">Tags</button>
                <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
+               ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
                ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
                <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
              </div>`}
@@ -758,6 +921,7 @@ function makeFileCard(file) {
   bindAction(".info-btn", () => editFileInfo(file));
   bindAction(".tags-btn", () => editTags(file));
   bindAction(".share-btn", () => shareFile(file));
+  bindAction(".manga-btn-card", () => openMangaReader(file));
   bindAction(".restore-btn", () => restoreFile(file));
   bindAction(".permanent-delete", () => permanentlyDeleteFile(file));
   card.querySelectorAll(".media-description").forEach(el => {
@@ -896,7 +1060,7 @@ function makeFolderCard(folder, count) {
     <div class="folder-card-inner">
       <span class="folder-card-name">${esc(folder.name)}</span>
       <span class="folder-card-count">${count} arq.</span>
-      <button class="folder-card-rename" title="Renomear pasta">Nome</button>
+      <button class="folder-card-rename" title="Renomear pasta">Renomear</button>
       <button class="folder-card-delete" title="Excluir pasta">×</button>
     </div>`;
   card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
@@ -949,7 +1113,13 @@ function attachFolderDrop(el, folderId) {
 }
 
 async function renameFolder(folder) {
-  const name = prompt("Novo nome da pasta:", folder.name || "");
+  const name = await openTextDialog({
+    title: "Renomear pasta",
+    label: "Nome da pasta",
+    value: folder.name || "",
+    maxlength: 40,
+    required: true,
+  });
   if (name === null) return;
   const clean = name.trim();
   if (!clean) { showToast("Nome vazio", "error"); return; }
@@ -978,11 +1148,8 @@ async function toggleFavorite(file) {
 // ??? Select mode ??????????????????????????????????????????
 function enterSelectMode() {
   isSelectMode = true;
-  isListView = false;
-  isGalleryView = false;
-  isFoldersView = false;
-  isTimelineView = false;
-  clearViewModeButtons();
+  navState.viewMode = "grid";
+  setViewButtonState("grid");
   $("viewSelect").classList.add("active");
   renderGrid();
 }
@@ -1012,27 +1179,31 @@ function updateBulkBar() {
   bulkCount.textContent = `${n} selecionado${n > 1 ? "s" : ""}`;
 }
 
+function getVisibleSelectableFiles() {
+  return lightboxFiles.slice(0, visibleLimit).filter(f => !f.deletedAt);
+}
+
 $("viewSelect").onclick = () => {
   if (isSelectMode) exitSelectMode();
   else enterSelectMode();
 };
 $("bulkCancelBtn").onclick = exitSelectMode;
 $("bulkSelectAllBtn").onclick = () => {
-  lightboxFiles.filter(f => !f.deletedAt).forEach(f => selectedIds.add(f.id));
+  getVisibleSelectableFiles().forEach(f => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
 };
 
 $("bulkSelectMediaBtn").onclick = () => {
-  lightboxFiles.filter(f => !f.deletedAt && (f.fileType === "image" || f.fileType === "video")).forEach(f => selectedIds.add(f.id));
+  getVisibleSelectableFiles().filter(f => f.fileType === "image" || f.fileType === "video").forEach(f => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
 };
 $("bulkSelectMonthBtn").onclick = () => {
   const now = new Date();
-  lightboxFiles.filter(f => {
+  getVisibleSelectableFiles().filter(f => {
     const d = fileDate(f);
-    return !f.deletedAt && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   }).forEach(f => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
@@ -1046,7 +1217,13 @@ $("bulkDownloadBtn").onclick = () => {
 $("bulkDeleteBtn").onclick = async () => {
   const ids = [...selectedIds];
   if (!ids.length) return;
-  if (!confirm(`Mover ${ids.length} arquivo(s) para a lixeira?`)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Mover para lixeira",
+    message: `Mover ${ids.length} arquivo(s) para a lixeira?`,
+    confirmText: "Mover",
+    danger: true,
+  });
+  if (!confirmed) return;
   for (const id of ids) {
     try { await updateDoc(doc(db, "vault_files", id), { deletedAt: serverTimestamp() }); } catch {}
   }
@@ -1076,12 +1253,28 @@ $("bulkFavBtn").onclick = async () => {
 async function bulkEditSelected() {
   const ids = [...selectedIds];
   if (!ids.length) { showToast("Selecione arquivos primeiro", "error"); return; }
-  const tagsText = prompt("Adicionar tags aos selecionados (separe por virgula, opcional):", "");
-  if (tagsText === null) return;
-  const priority = prompt("Prioridade para todos: vazio, normal, important ou critical", "");
-  if (priority === null) return;
-  const description = prompt("Descricao para todos (vazio nao altera):", "");
-  if (description === null) return;
+  const values = await openFieldsDialog({
+    title: "Editar selecionados",
+    confirmText: "Aplicar",
+    fields: [
+      { name: "tagsText", label: "Adicionar tags", placeholder: "tag1, tag2" },
+      {
+        name: "priority",
+        label: "Prioridade",
+        type: "select",
+        value: "",
+        options: [
+          { value: "", label: "Nao alterar" },
+          { value: "normal", label: "Normal" },
+          { value: "important", label: "Importante" },
+          { value: "critical", label: "Critica" },
+        ],
+      },
+      { name: "description", label: "Descricao", type: "textarea", rows: 3, placeholder: "Vazio nao altera" },
+    ],
+  });
+  if (!values) return;
+  const { tagsText, priority, description } = values;
   const tagsToAdd = normalizeTags(tagsText);
   const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "";
   for (const id of ids) {
@@ -1118,11 +1311,37 @@ function showFileInfo(file) {
 }
 
 function exportData(format) {
-  const activeFolders = folders.map(f => ({ id: f.id, name: f.name, parentId: f.parentId || null, coverFileId: f.coverFileId || null }));
+  const activeFolders = folders.map(f => ({
+    id: f.id,
+    name: f.name,
+    parentId: f.parentId || null,
+    coverFileId: f.coverFileId || null,
+    createdAt: f.createdAt || null,
+  }));
   const activeFiles = files.map(f => ({
-    id: f.id, name: f.name, fileType: f.fileType, size: f.size || 0, folder: getFolderPathLabel(f.folderId) || "Raiz",
-    folderId: f.folderId || null, favorite: !!f.favorite, priority: f.priority || "normal", tags: normalizeTags(f.tags).join("; "),
-    description: f.description || "", url: f.url || "", deleted: !!f.deletedAt,
+    id: f.id,
+    name: f.name,
+    fileType: f.fileType,
+    mimeType: f.mimeType || "",
+    size: f.size || 0,
+    width: f.width || null,
+    height: f.height || null,
+    folder: getFolderPathLabel(f.folderId) || "Raiz",
+    folderId: f.folderId || null,
+    favorite: !!f.favorite,
+    priority: f.priority || "normal",
+    tags: normalizeTags(f.tags).join("; "),
+    description: f.description || "",
+    url: f.url || "",
+    cloudPublicId: f.cloudPublicId || "",
+    contentHash: f.contentHash || "",
+    eventDate: f.eventDate || "",
+    dueDate: f.dueDate || "",
+    customFields: f.customFields || {},
+    notes: normalizeNotes(f.notes),
+    deleted: !!f.deletedAt,
+    deletedAt: f.deletedAt || null,
+    createdAt: f.createdAt || null,
   }));
   if (format === "csv") {
     const rows = [["id","name","type","size","folder","favorite","priority","tags","description","url","deleted"], ...activeFiles.map(f => [f.id,f.name,f.fileType,f.size,f.folder,f.favorite,f.priority,f.tags,f.description,f.url,f.deleted])];
@@ -1274,7 +1493,7 @@ async function createFolder() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
   const name = folderNameInput.value.trim();
   if (!name) return;
-  const parentId = toFirestoreFolderId(currentFolder);
+  const parentId = toFirestoreFolderId(navState.folderId);
     await addDoc(collection(db, "vault_folders"), {
     name,
     parentId,   // subpasta!
@@ -1287,7 +1506,13 @@ async function createFolder() {
 
 // ??? Delete file ??????????????????????????????????????????
 async function deleteFile(file) {
-  if (!confirm(`Mover "${file.name}" para a lixeira?`)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Mover para lixeira",
+    message: `Mover "${file.name}" para a lixeira?`,
+    confirmText: "Mover",
+    danger: true,
+  });
+  if (!confirmed) return;
   try {
     await updateDoc(doc(db, "vault_files", file.id), { deletedAt: serverTimestamp() });
     addHistory(`Lixeira: ${file.name}`);
@@ -1300,7 +1525,13 @@ async function deleteFile(file) {
 async function emptyTrash() {
   const trashed = files.filter(f => f.deletedAt);
   if (!trashed.length) { showToast("Lixeira vazia"); return; }
-  if (!confirm(`Excluir definitivamente ${trashed.length} registro(s) da lixeira?`)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Esvaziar lixeira",
+    message: `Excluir definitivamente ${trashed.length} registro(s) da lixeira?`,
+    confirmText: "Esvaziar",
+    danger: true,
+  });
+  if (!confirmed) return;
   for (const file of trashed) {
     try { await deleteDoc(doc(db, "vault_files", file.id)); } catch {}
   }
@@ -1311,7 +1542,12 @@ async function emptyTrash() {
 async function restoreTrash() {
   const trashed = files.filter(f => f.deletedAt);
   if (!trashed.length) { showToast("Nada para restaurar"); return; }
-  if (!confirm(`Restaurar ${trashed.length} arquivo(s) da lixeira?`)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Restaurar lixeira",
+    message: `Restaurar ${trashed.length} arquivo(s) da lixeira?`,
+    confirmText: "Restaurar",
+  });
+  if (!confirmed) return;
   for (const file of trashed) {
     try { await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null }); } catch {}
   }
@@ -1329,7 +1565,13 @@ async function restoreFile(file) {
 }
 
 async function permanentlyDeleteFile(file) {
-  if (!confirm(`Excluir definitivamente "${file.name}" do app?\n\nIsso remove o registro do Firebase. Para apagar do Cloudinary com seguranca, use uma funcao de backend com a chave secreta.`)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Excluir definitivamente",
+    message: `Excluir definitivamente "${file.name}" do app?\n\nIsso remove apenas o registro do Firebase.`,
+    confirmText: "Excluir",
+    danger: true,
+  });
+  if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "vault_files", file.id));
     addHistory(`Removido: ${file.name}`);
@@ -1340,7 +1582,12 @@ async function permanentlyDeleteFile(file) {
 }
 
 async function renameFile(file) {
-  const name = prompt("Novo nome do arquivo:", file.name || "");
+  const name = await openTextDialog({
+    title: "Renomear arquivo",
+    label: "Nome do arquivo",
+    value: file.name || "",
+    required: true,
+  });
   if (name === null) return;
   const clean = name.trim();
   if (!clean) { showToast("Nome vazio", "error"); return; }
@@ -1355,7 +1602,12 @@ async function renameFile(file) {
 
 async function editTags(file) {
   const current = normalizeTags(file.tags).join(", ");
-  const value = prompt("Tags separadas por virgula:", current);
+  const value = await openTextDialog({
+    title: "Editar tags",
+    label: "Tags separadas por virgula",
+    value: current,
+    placeholder: "ex: trabalho, recibos, viagem",
+  });
   if (value === null) return;
   const tags = normalizeTags(value);
   try {
@@ -1394,18 +1646,30 @@ async function saveFileDescription() {
 }
 
 async function editFileInfo(file) {
-  const description = prompt("Descricao do arquivo:", file.description || "");
-  if (description === null) return;
-  const priority = prompt("Prioridade: normal, important ou critical", file.priority || "normal");
-  if (priority === null) return;
-  const eventDate = prompt("Data do arquivo/evento (AAAA-MM-DD, opcional):", file.eventDate || "");
-  if (eventDate === null) return;
-  const dueDate = prompt("Data limite (AAAA-MM-DD, opcional):", file.dueDate || "");
-  if (dueDate === null) return;
-  const fields = prompt("Campos personalizados em formato chave: valor, separados por virgula:", customFieldsToText(file.customFields));
-  if (fields === null) return;
-  const note = prompt("Adicionar anotacao/comentario (opcional):", "");
-  if (note === null) return;
+  const values = await openFieldsDialog({
+    title: "Informacoes do arquivo",
+    confirmText: "Salvar",
+    fields: [
+      { name: "description", label: "Descricao", type: "textarea", value: file.description || "", rows: 4 },
+      {
+        name: "priority",
+        label: "Prioridade",
+        type: "select",
+        value: file.priority || "normal",
+        options: [
+          { value: "normal", label: "Normal" },
+          { value: "important", label: "Importante" },
+          { value: "critical", label: "Critica" },
+        ],
+      },
+      { name: "eventDate", label: "Data do arquivo/evento", type: "date", value: file.eventDate || "" },
+      { name: "dueDate", label: "Data limite", type: "date", value: file.dueDate || "" },
+      { name: "fields", label: "Campos personalizados", value: customFieldsToText(file.customFields), placeholder: "chave: valor, outra: valor" },
+      { name: "note", label: "Adicionar anotacao", type: "textarea", value: "", rows: 3 },
+    ],
+  });
+  if (!values) return;
+  const { description, priority, eventDate, dueDate, fields, note } = values;
   const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "normal";
   const notes = normalizeNotes(file.notes);
   if (note.trim()) notes.unshift({ text: note.trim(), at: new Date().toLocaleString() });
@@ -1432,7 +1696,11 @@ async function shareFile(file) {
     await navigator.clipboard.writeText(url);
     showToast("Link copiado", "success");
   } catch {
-    prompt("Copie o link:", url);
+    await openTextDialog({
+      title: "Copiar link",
+      label: "Link do arquivo",
+      value: url,
+    });
   }
 }
 
@@ -1445,7 +1713,13 @@ async function deleteFolder(folderId, name) {
   let msg = `Excluir a pasta "${name}"?`;
   if (count > 0) msg += `\n${count} arquivo(s) voltarao para a pasta pai.`;
   if (subCount > 0) msg += `\n${subCount} subpasta(s) tambem serao excluidas.`;
-  if (!confirm(msg)) return;
+  const confirmed = await openConfirmDialog({
+    title: "Excluir pasta",
+    message: msg,
+    confirmText: "Excluir",
+    danger: true,
+  });
+  if (!confirmed) return;
 
   // Move todos os arquivos da pasta e das subpastas para o pai.
   const parentId = folders.find(f => f.id === folderId)?.parentId || null;
@@ -1454,7 +1728,7 @@ async function deleteFolder(folderId, name) {
   }
   // Excluir subpastas recursivo
   await deleteFolderRecursive(folderId);
-  if (currentFolder === folderId) {
+  if (navState.folderId === folderId) {
     dispatchNavigation("open", { folderId: parentId || ROOT_ID });
   }
   showToast("Pasta excluida", "success");
@@ -1505,6 +1779,9 @@ function openLightbox(file) {
     : "Raiz";
 
   const favLabel  = file.favorite ? "Favoritado" : "Favoritar";
+  const imageActions = file.fileType === "image"
+    ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
+    : "";
   const videoActions = file.fileType === "video"
     ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
        <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>`
@@ -1523,9 +1800,10 @@ function openLightbox(file) {
       <button class="lb-action-btn" id="lbZoomIn" type="button" aria-label="Aumentar zoom">+</button>
       <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${favLabel}</button>
       <button class="lb-action-btn" id="lbMoveBtn" type="button">Mover</button>
-      <button class="lb-action-btn" id="lbRenameBtn" type="button">Nome</button>
+      <button class="lb-action-btn" id="lbRenameBtn" type="button">Renomear</button>
       <button class="lb-action-btn" id="lbTagsBtn" type="button">Tags</button>
       <button class="lb-action-btn" id="lbShareBtn" type="button">Copiar link</button>
+      ${imageActions}
       ${videoActions}
       <a class="lb-action-btn lb-link" href="${file.url}" target="_blank" rel="noopener">Baixar</a>
     </div>`;
@@ -1537,6 +1815,12 @@ function openLightbox(file) {
   $("lbRenameBtn").onclick = () => renameFile(file);
   $("lbTagsBtn").onclick = () => editTags(file);
   $("lbShareBtn").onclick = () => shareFile(file);
+  if (file.fileType === "image") {
+    $("lbMangaBtn").onclick = () => {
+      closeLightbox();
+      openMangaReader(file);
+    };
+  }
   if (file.fileType === "video") {
     $("lbSpeedBtn").onclick = () => cycleVideoSpeed();
     $("lbCoverBtn").onclick = () => saveCurrentVideoFrame(file);
@@ -1629,6 +1913,22 @@ function showMissingLightbox(file) {
 $("lightboxClose").onclick = closeLightbox;
 lightbox.onclick = e => { if (e.target === lightbox) closeLightbox(); };
 document.onkeydown = e => {
+  if (mangaReader.classList.contains("active")) {
+    if (e.key === "Escape") {
+      closeMangaReader();
+      return;
+    }
+    if (["ArrowRight", "ArrowDown", " "].includes(e.key)) {
+      e.preventDefault();
+      navigateManga(1);
+      return;
+    }
+    if (["ArrowLeft", "ArrowUp"].includes(e.key)) {
+      e.preventDefault();
+      navigateManga(-1);
+      return;
+    }
+  }
   if (e.key === "Escape") {
     closeLightbox();
     folderModal.classList.remove("active");
@@ -1648,6 +1948,122 @@ function closeLightbox() {
   if (vid) vid.pause();
 }
 
+// ??? Manga reader ?????????????????????????????????????????
+function openMangaReader(startFile = null) {
+  const folderId = startFile ? normalizeFolderId(startFile.folderId) : navState.folderId;
+  const pages = getMangaPages(folderId);
+  if (!pages.length) {
+    showToast("Esta pasta nao tem imagens para leitura", "error");
+    return;
+  }
+
+  mangaState.pages = pages;
+  mangaState.index = startFile ? Math.max(0, pages.findIndex(page => page.id === startFile.id)) : 0;
+  if (mangaState.index < 0) mangaState.index = 0;
+  mangaTitle.textContent = getFolderPathLabel(folderId) || "Raiz";
+  mangaReader.classList.add("active");
+  $("viewManga")?.classList.add("active");
+  renderMangaReader();
+}
+
+function getMangaPages(folderId) {
+  const firestoreFolderId = toFirestoreFolderId(folderId);
+  return files
+    .filter(file => isActiveFile(file) && file.fileType === "image" && (file.folderId || null) === firestoreFolderId)
+    .sort(comparePageFiles);
+}
+
+function renderMangaReader() {
+  mangaStage.className = `manga-stage ${mangaState.mode}`;
+  mangaReader.style.setProperty("--manga-zoom", String(mangaState.zoom));
+  mangaModeHorizontal.classList.toggle("active", mangaState.mode === "horizontal");
+  mangaModeVertical.classList.toggle("active", mangaState.mode === "vertical");
+
+  if (mangaState.mode === "vertical") {
+    mangaStage.innerHTML = mangaState.pages.map((page, index) => `
+      <figure class="manga-page-stack" data-index="${index}">
+        <img src="${page.url}" alt="${esc(page.name)}" loading="${index < 2 ? "eager" : "lazy"}" />
+        <figcaption>${index + 1}. ${esc(page.name)}</figcaption>
+      </figure>
+    `).join("");
+    mangaPrev.disabled = true;
+    mangaNext.disabled = true;
+    requestAnimationFrame(() => {
+      const current = mangaStage.querySelector(`[data-index="${mangaState.index}"]`);
+      current?.scrollIntoView({ block: "start" });
+    });
+  } else {
+    const page = mangaState.pages[mangaState.index];
+    mangaStage.innerHTML = `
+      <figure class="manga-page-single">
+        <img src="${page.url}" alt="${esc(page.name)}" />
+        <figcaption>${esc(page.name)}</figcaption>
+      </figure>`;
+    mangaPrev.disabled = mangaState.index <= 0;
+    mangaNext.disabled = mangaState.index >= mangaState.pages.length - 1;
+  }
+
+  updateMangaCounter();
+}
+
+function updateMangaCounter() {
+  mangaCounter.textContent = `${mangaState.index + 1} / ${mangaState.pages.length}`;
+}
+
+function setMangaMode(mode) {
+  mangaState.mode = mode;
+  localStorage.setItem("vault_manga_mode", mode);
+  renderMangaReader();
+}
+
+function navigateManga(direction) {
+  if (mangaState.mode === "vertical") {
+    mangaStage.scrollBy({ top: direction * Math.max(320, mangaStage.clientHeight * 0.82), behavior: "smooth" });
+    return;
+  }
+  const next = mangaState.index + direction;
+  if (next < 0 || next >= mangaState.pages.length) return;
+  mangaState.index = next;
+  renderMangaReader();
+}
+
+function setMangaZoom(nextZoom) {
+  mangaState.zoom = Math.max(0.7, Math.min(2.2, nextZoom));
+  localStorage.setItem("vault_manga_zoom", String(mangaState.zoom));
+  mangaReader.style.setProperty("--manga-zoom", String(mangaState.zoom));
+}
+
+function updateMangaIndexFromScroll() {
+  if (mangaState.mode !== "vertical") return;
+  const pages = [...mangaStage.querySelectorAll(".manga-page-stack")];
+  let closestIndex = mangaState.index;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  pages.forEach(page => {
+    const distance = Math.abs(page.getBoundingClientRect().top - mangaStage.getBoundingClientRect().top);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = Number(page.dataset.index || 0);
+    }
+  });
+  mangaState.index = closestIndex;
+  updateMangaCounter();
+}
+
+function closeMangaReader() {
+  mangaReader.classList.remove("active");
+  $("viewManga")?.classList.remove("active");
+  mangaStage.innerHTML = "";
+}
+
+mangaModeHorizontal.onclick = () => setMangaMode("horizontal");
+mangaModeVertical.onclick = () => setMangaMode("vertical");
+mangaPrev.onclick = () => navigateManga(-1);
+mangaNext.onclick = () => navigateManga(1);
+mangaZoomOut.onclick = () => setMangaZoom(mangaState.zoom - 0.1);
+mangaZoomIn.onclick = () => setMangaZoom(mangaState.zoom + 0.1);
+mangaClose.onclick = closeMangaReader;
+mangaStage.addEventListener("scroll", updateMangaIndexFromScroll);
+
 // ??? Upload ???????????????????????????????????????????????
 fileInput.onchange = e => handleFiles(Array.from(e.target.files));
 
@@ -1655,19 +2071,48 @@ async function handleFiles(fileList) {
   if (!db || !cloudName || !uploadPreset) { showToast("Configure as credenciais primeiro", "error"); return; }
   if (!fileList.length) return;
   const uniqueFiles = [];
+  showToast("Analisando arquivos...");
   for (const file of fileList) {
-    if (isUploadDuplicate(file) && !confirm(`Ja existe um arquivo chamado "${file.name}" com o mesmo tamanho. Enviar mesmo assim?`)) continue;
+    const contentHash = await getOrComputeUploadHash(file);
+    if (isUploadDuplicate(file, contentHash)) {
+      const confirmed = await openConfirmDialog({
+        title: "Possivel duplicado",
+        message: `Ja existe um arquivo igual ou muito parecido com "${file.name}". Enviar mesmo assim?`,
+        confirmText: "Enviar",
+      });
+      if (!confirmed) continue;
+    }
     uniqueFiles.push(file);
   }
   if (!uniqueFiles.length) return;
   uploadPanel.style.display = "block";
   uploadList.innerHTML = "";
-  await Promise.all(uniqueFiles.map(file => uploadOneFile(file)));
+  await runLimitedQueue(uniqueFiles, uploadOneFile, UPLOAD_CONCURRENCY);
   fileInput.value = "";
+  showToast(`${uniqueFiles.length} upload(s) processado(s)`, "success");
 }
 
-function isUploadDuplicate(file) {
-  return files.some(f => !f.deletedAt && (f.name || "").toLowerCase() === file.name.toLowerCase() && (f.size || 0) === file.size);
+async function getOrComputeUploadHash(file) {
+  if (uploadHashes.has(file)) return uploadHashes.get(file);
+  try {
+    const hash = await hashBrowserFile(file);
+    uploadHashes.set(file, hash);
+    return hash;
+  } catch (e) {
+    console.warn("Nao foi possivel calcular hash", e);
+    uploadHashes.set(file, "");
+    return "";
+  }
+}
+
+function isUploadDuplicate(file, contentHash = "") {
+  return files.some(existing => {
+    if (existing.deletedAt) return false;
+    if (contentHash && existing.contentHash === contentHash) return true;
+    return (existing.name || "").toLowerCase() === file.name.toLowerCase()
+      && (existing.size || 0) === file.size
+      && (existing.fileType || "") === getFileType(file);
+  });
 }
 
 function scheduleUploadItemRemoval(itemEl, delay = 2200) {
@@ -1731,16 +2176,18 @@ function uploadOneFile(file) {
     xhr.onload = async () => {
       if (xhr.status === 200) {
         const res = JSON.parse(xhr.responseText);
+        const contentHash = uploadHashes.get(file) || "";
         await addDoc(collection(db, "vault_files"), {
           name:          file.name,
           url:           res.secure_url,
           cloudPublicId: res.public_id,
+          contentHash,
           size:          file.size,
           width:         res.width || null,
           height:        res.height || null,
           fileType:      getFileType(file),
           mimeType:      file.type,
-          folderId:      toFirestoreFolderId(currentFolder),
+          folderId:      toFirestoreFolderId(navState.folderId),
           favorite:      false,
           tags:          [],
           description:   "",
@@ -1806,15 +2253,32 @@ window.addEventListener("drop", e => {
 
 // ??? View toggle ??????????????????????????????????????????
 function clearViewModeButtons() {
-  $("viewGrid").classList.remove("active");
-  $("viewList").classList.remove("active");
-  $("viewGallery").classList.remove("active");
-  $("viewFolders").classList.remove("active");
-  $("viewTimeline").classList.remove("active");
+  Object.values(VIEW_BUTTONS).forEach(id => $(id)?.classList.remove("active"));
+}
+
+function setViewButtonState(mode) {
+  clearViewModeButtons();
+  const buttonId = VIEW_BUTTONS[mode] || VIEW_BUTTONS.grid;
+  $(buttonId)?.classList.add("active");
+}
+
+function setViewMode(mode) {
+  if (!VIEW_BUTTONS[mode]) return;
+  if (mangaReader.classList.contains("active")) closeMangaReader();
+  navState.viewMode = mode;
+  visibleLimit = PAGE_SIZE;
+  if (isSelectMode) {
+    isSelectMode = false;
+    selectedIds.clear();
+    $("viewSelect").classList.remove("active");
+    updateBulkBar();
+  }
+  setViewButtonState(mode);
+  renderGrid();
 }
 
 function updateViewA11y() {
-  ["viewGrid", "viewList", "viewGallery", "viewFolders", "viewTimeline", "viewDensity", "viewSelect"].forEach(id => {
+  ["viewGrid", "viewList", "viewGallery", "viewFolders", "viewTimeline", "viewManga", "viewDensity", "viewSelect"].forEach(id => {
     const btn = $(id);
     if (btn) btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
   });
@@ -1840,82 +2304,27 @@ function setActiveFilterChip(filterKey) {
 }
 
 function setContentFilter(filterKey) {
-  currentFilter = filterKey;
+  navState.contentScope = filterKey;
   setActiveFilterChip(filterKey);
   setPanelOpen(filterPanel, $("filterPanelToggle"), false);
   setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
   sidebar.classList.remove("mobile-open");
-  if (isFoldersView || isTimelineView) {
-    isFoldersView = false;
-    isTimelineView = false;
-    clearViewModeButtons();
-    if (isGalleryView) $("viewGallery").classList.add("active");
-    else if (isListView) $("viewList").classList.add("active");
-    else $("viewGrid").classList.add("active");
-  }
+  if (navState.viewMode === "folders" || navState.viewMode === "timeline") navState.viewMode = "grid";
   visibleLimit = PAGE_SIZE;
   isSelectMode = false;
   selectedIds.clear();
   $("viewSelect").classList.remove("active");
-  if (![ $("viewGrid"), $("viewList"), $("viewGallery"), $("viewFolders"), $("viewTimeline") ].some(btn => btn.classList.contains("active"))) {
-    $("viewGrid").classList.add("active");
-  }
+  setViewButtonState(navState.viewMode);
   updateBulkBar();
   renderGrid();
 }
 
-$("viewGrid").onclick = () => {
-  if (isSelectMode) exitSelectMode();
-  isListView = false;
-  isGalleryView = false;
-  isFoldersView = false;
-  isTimelineView = false;
-  clearViewModeButtons();
-  $("viewGrid").classList.add("active");
-  renderGrid();
-};
-$("viewList").onclick = () => {
-  if (isSelectMode) exitSelectMode();
-  isListView = true;
-  isGalleryView = false;
-  isFoldersView = false;
-  isTimelineView = false;
-  clearViewModeButtons();
-  $("viewList").classList.add("active");
-  renderGrid();
-};
-$("viewGallery").onclick = () => {
-  if (isSelectMode) exitSelectMode();
-  isListView = false;
-  isGalleryView = true;
-  isFoldersView = false;
-  isTimelineView = false;
-  clearViewModeButtons();
-  $("viewGallery").classList.add("active");
-  renderGrid();
-};
-$("viewFolders").onclick = () => {
-  if (isSelectMode) exitSelectMode();
-  isListView = false;
-  isGalleryView = false;
-  isFoldersView = true;
-  isTimelineView = false;
-  clearViewModeButtons();
-  $("viewFolders").classList.add("active");
-  visibleLimit = PAGE_SIZE;
-  renderGrid();
-};
-$("viewTimeline").onclick = () => {
-  if (isSelectMode) exitSelectMode();
-  isListView = false;
-  isGalleryView = false;
-  isFoldersView = false;
-  isTimelineView = true;
-  clearViewModeButtons();
-  $("viewTimeline").classList.add("active");
-  visibleLimit = PAGE_SIZE;
-  renderGrid();
-};
+$("viewGrid").onclick = () => setViewMode("grid");
+$("viewList").onclick = () => setViewMode("list");
+$("viewGallery").onclick = () => setViewMode("gallery");
+$("viewFolders").onclick = () => setViewMode("folders");
+$("viewTimeline").onclick = () => setViewMode("timeline");
+$("viewManga").onclick = () => openMangaReader();
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
   $("viewDensity").classList.toggle("active", isCompactView);
@@ -1970,12 +2379,10 @@ function attachRootDrop() {
 attachRootDrop();
 // ??? Sidebar ??????????????????????????????????????????????
 folderList.firstElementChild.onclick = () => {
-  isFoldersView = false;
-  isTimelineView = false;
-  currentFilter = "all";
+  navState.viewMode = "grid";
+  navState.contentScope = "all";
   setActiveFilterChip("all");
-  clearViewModeButtons();
-  $("viewGrid").classList.add("active");
+  setViewButtonState("grid");
   dispatchNavigation("root");
 };
 
@@ -2028,12 +2435,26 @@ $("clearAdvancedBtn").onclick = () => {
   renderGrid();
 };
 $("importUrlBtn").onclick = importFromUrl;
+$("importJsonBtn").onclick = () => backupInput.click();
+backupInput.onchange = e => {
+  const file = e.target.files?.[0];
+  if (file) importBackupJson(file);
+  backupInput.value = "";
+};
 
 async function importFromUrl() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
-  const url = prompt("Cole a URL do arquivo:");
-  if (!url) return;
-  const name = prompt("Nome para salvar:", url.split("/").pop()?.split("?")[0] || "arquivo-url");
+  const values = await openFieldsDialog({
+    title: "Importar URL",
+    confirmText: "Importar",
+    fields: [
+      { name: "url", label: "URL do arquivo", placeholder: "https://..." },
+      { name: "name", label: "Nome para salvar", placeholder: "arquivo-url" },
+    ],
+  });
+  if (!values?.url) return;
+  const url = values.url.trim();
+  const name = (values.name || url.split("/").pop()?.split("?")[0] || "arquivo-url").trim();
   if (!name) return;
   const fileType = guessFileTypeFromUrl(url);
   try {
@@ -2041,12 +2462,13 @@ async function importFromUrl() {
       name: name.trim(),
       url: url.trim(),
       cloudPublicId: "",
+      contentHash: "",
       size: 0,
       width: null,
       height: null,
       fileType,
       mimeType: "",
-      folderId: toFirestoreFolderId(currentFolder),
+      folderId: toFirestoreFolderId(navState.folderId),
       favorite: false,
       tags: [],
       description: "Importado por URL",
@@ -2062,6 +2484,76 @@ async function importFromUrl() {
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
+}
+
+async function importBackupJson(file) {
+  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch {
+    showToast("JSON invalido", "error");
+    return;
+  }
+  const foldersToImport = Array.isArray(backup.folders) ? backup.folders : [];
+  const filesToImport = Array.isArray(backup.files) ? backup.files : [];
+  if (!foldersToImport.length && !filesToImport.length) {
+    showToast("Backup sem pastas ou arquivos", "error");
+    return;
+  }
+  const confirmed = await openConfirmDialog({
+    title: "Restaurar backup",
+    message: `Restaurar ${foldersToImport.length} pasta(s) e ${filesToImport.length} arquivo(s)? Registros com o mesmo ID serao atualizados.`,
+    confirmText: "Restaurar",
+  });
+  if (!confirmed) return;
+
+  try {
+    for (const folder of foldersToImport) {
+      if (!folder.id) continue;
+      await setDoc(doc(db, "vault_folders", folder.id), {
+        name: folder.name || "Pasta",
+        parentId: folder.parentId || null,
+        coverFileId: folder.coverFileId || null,
+        createdAt: folder.createdAt || serverTimestamp(),
+      }, { merge: true });
+    }
+
+    for (const fileRecord of filesToImport) {
+      if (!fileRecord.id || !fileRecord.url) continue;
+      await setDoc(doc(db, "vault_files", fileRecord.id), normalizeBackupFile(fileRecord), { merge: true });
+    }
+
+    addHistory(`Backup restaurado: ${foldersToImport.length} pasta(s), ${filesToImport.length} arquivo(s)`);
+    showToast("Backup restaurado", "success");
+  } catch (e) {
+    showToast("Erro ao restaurar: " + e.message, "error");
+  }
+}
+
+function normalizeBackupFile(fileRecord) {
+  return {
+    name: fileRecord.name || "Arquivo",
+    url: fileRecord.url || "",
+    cloudPublicId: fileRecord.cloudPublicId || "",
+    contentHash: fileRecord.contentHash || "",
+    size: Number(fileRecord.size || 0),
+    width: fileRecord.width || null,
+    height: fileRecord.height || null,
+    fileType: fileRecord.fileType || guessFileTypeFromUrl(fileRecord.url || fileRecord.name || ""),
+    mimeType: fileRecord.mimeType || "",
+    folderId: fileRecord.folderId || null,
+    favorite: !!fileRecord.favorite,
+    tags: normalizeTags(fileRecord.tags),
+    description: fileRecord.description || "",
+    priority: ["normal", "important", "critical"].includes(fileRecord.priority) ? fileRecord.priority : "normal",
+    eventDate: fileRecord.eventDate || "",
+    dueDate: fileRecord.dueDate || "",
+    customFields: fileRecord.customFields || {},
+    notes: normalizeNotes(fileRecord.notes),
+    deletedAt: fileRecord.deletedAt || null,
+    createdAt: fileRecord.createdAt || serverTimestamp(),
+  };
 }
 
 function guessFileTypeFromUrl(url) {
@@ -2164,7 +2656,7 @@ function esc(str) {
 }
 function normalizeTags(value) {
   if (Array.isArray(value)) return [...new Set(value.map(t => String(t).trim()).filter(Boolean))].slice(0, 12);
-  return [...new Set(String(value || "").split(",").map(t => t.trim()).filter(Boolean))].slice(0, 12);
+  return [...new Set(String(value || "").split(/[,;]/).map(t => t.trim()).filter(Boolean))].slice(0, 12);
 }
 function parseCustomFields(value) {
   const fields = {};

@@ -70,6 +70,7 @@ vault/
 ├── index.html   → estrutura HTML + modais
 ├── style.css    → tema escuro industrial
 ├── app.js       → lógica + Cloudinary + Firestore
+├── modules/     → fila de upload, hash e ordenação de páginas
 └── README.md    → este guia
 ```
 
@@ -84,9 +85,12 @@ vault/
 - Pastas para organizar arquivos
 - Filtro por tipo (imagem, vídeo, documento)
 - Vista em grade grande ou lista
+- Leitor de mangá por pasta, com modo horizontal e vertical
 - Deletar arquivos e pastas
 - Indicador de uso dos 25 GB
-- Progresso de upload em tempo real
+- Progresso de upload em tempo real com fila limitada
+- Detecção de duplicados por hash nos novos uploads
+- Exportar e restaurar backup JSON dos metadados
 - Credenciais salvas localmente no navegador
 
 ---

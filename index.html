@@ -117,7 +117,8 @@
             <button class="view-btn" id="viewGallery" type="button" title="Galeria" aria-label="Visualizar galeria de midia" aria-pressed="false">▣</button>
             <button class="view-btn view-text" id="viewFolders" type="button" title="Mostrar apenas pastas" aria-pressed="false">Pastas</button>
             <button class="view-btn view-text" id="viewTimeline" type="button" title="Linha do tempo" aria-pressed="false">Tempo</button>
-            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Dens.</button>
+            <button class="view-btn view-text" id="viewManga" type="button" title="Ler imagens da pasta como mangá" aria-pressed="false">Mangá</button>
+            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Compacto</button>
             <button class="view-btn" id="viewSelect" type="button" title="Selecionar em lote" aria-label="Selecionar em lote" aria-pressed="false">☑</button>
           </div>
 
@@ -176,8 +177,10 @@
           <div class="tool-grid">
             <button class="utility-btn" id="exportJsonBtn" type="button">Exportar JSON</button>
             <button class="utility-btn" id="exportCsvBtn" type="button">Exportar CSV</button>
+            <button class="utility-btn" id="importJsonBtn" type="button">Restaurar JSON</button>
             <button class="utility-btn" id="importUrlBtn" type="button">Importar URL</button>
             <button class="utility-btn" id="btnSlideshow" type="button">Apresentar</button>
+            <input id="backupInput" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
 
@@ -312,6 +315,52 @@
       </div>
     </div>
   </div>
+
+  <!-- MODAL: formulario reutilizavel -->
+  <div class="modal-overlay" id="formModal">
+    <div class="modal form-modal">
+      <h2 class="modal-title" id="formModalTitle">Editar</h2>
+      <div class="form-modal-body" id="formModalBody"></div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="formModalCancel" type="button">Cancelar</button>
+        <button class="modal-btn confirm" id="formModalConfirm" type="button">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: confirmacao reutilizavel -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal confirm-modal">
+      <h2 class="modal-title" id="confirmModalTitle">Confirmar</h2>
+      <p class="confirm-message" id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="confirmModalCancel" type="button">Cancelar</button>
+        <button class="modal-btn confirm" id="confirmModalConfirm" type="button">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEITOR DE MANGA -->
+  <div class="manga-reader" id="mangaReader">
+    <div class="manga-toolbar">
+      <div class="manga-title-wrap">
+        <span class="manga-kicker">Leitor de mangá</span>
+        <strong id="mangaTitle">Pasta</strong>
+        <span id="mangaCounter">0 / 0</span>
+      </div>
+      <div class="manga-actions">
+        <button class="manga-btn active" id="mangaModeHorizontal" type="button">Horizontal</button>
+        <button class="manga-btn" id="mangaModeVertical" type="button">Vertical</button>
+        <button class="manga-btn" id="mangaZoomOut" type="button" title="Diminuir">-</button>
+        <button class="manga-btn" id="mangaZoomIn" type="button" title="Aumentar">+</button>
+        <button class="manga-btn" id="mangaClose" type="button">Fechar</button>
+      </div>
+    </div>
+    <button class="manga-nav manga-prev" id="mangaPrev" type="button" aria-label="Pagina anterior">‹</button>
+    <div class="manga-stage horizontal" id="mangaStage"></div>
+    <button class="manga-nav manga-next" id="mangaNext" type="button" aria-label="Proxima pagina">›</button>
+  </div>
+
   <!-- MODAL: Mover arquivo / lote -->
   <div class="modal-overlay" id="moveModal">
     <div class="modal move-modal">
