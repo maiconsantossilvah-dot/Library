@@ -51,6 +51,7 @@ let uploadPreset = "";
 let fileToMove    = null;
 let bulkMoveMode  = false;
 let fileToDescribe = null;
+let folderToCover = null;
 let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
@@ -120,6 +121,12 @@ const confirmModalTitle = $("confirmModalTitle");
 const confirmModalMessage = $("confirmModalMessage");
 const confirmModalCancel = $("confirmModalCancel");
 const confirmModalConfirm = $("confirmModalConfirm");
+const coverModal = $("coverModal");
+const coverModalTitle = $("coverModalTitle");
+const coverModalSub = $("coverModalSub");
+const coverPickerGrid = $("coverPickerGrid");
+const closeCoverModal = $("closeCoverModal");
+const clearFolderCoverBtn = $("clearFolderCover");
 const backupInput = $("backupInput");
 const mangaReader = $("mangaReader");
 const mangaStage = $("mangaStage");
@@ -1064,16 +1071,23 @@ function makeFolderCard(folder, count) {
   const hasChildren = folders.some(f => f.parentId === folder.id);
   const coverFile = folder.coverFileId ? files.find(f => f.id === folder.coverFileId && !f.deletedAt) : null;
   const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
+  const subCount = getDescendantFolderIds(folder.id).length;
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
       ${coverUrl ? `<img src="${coverUrl}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
+      <button class="folder-card-cover-btn" type="button" title="Escolher capa do album">Capa</button>
     </div>
     <div class="folder-card-inner">
-      <span class="folder-card-name">${esc(folder.name)}</span>
-      <span class="folder-card-count">${count} arq.</span>
-      <button class="folder-card-rename" title="Renomear pasta">Renomear</button>
-      <button class="folder-card-delete" title="Excluir pasta">×</button>
+      <div class="folder-card-main">
+        <span class="folder-card-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
+        <span class="folder-card-count">${count} arquivo${count === 1 ? "" : "s"}${subCount ? ` · ${subCount} subpasta${subCount === 1 ? "" : "s"}` : ""}</span>
+      </div>
+      <div class="folder-card-actions">
+        <button class="folder-card-rename" title="Renomear pasta">Renomear</button>
+        <button class="folder-card-delete" title="Excluir pasta">Excluir</button>
+      </div>
     </div>`;
+  card.querySelector(".folder-card-cover-btn").onclick = e => { e.stopPropagation(); openFolderCoverPicker(folder); };
   card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   card.querySelector(".folder-card-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
   card.onclick = () => navigateFolder(folder.id);
@@ -1102,6 +1116,75 @@ async function setFolderCover(file) {
     showToast("Erro: " + e.message, "error");
   }
 }
+
+function openFolderCoverPicker(folder) {
+  folderToCover = folder;
+  const imageFiles = getImagesForFolderTree(folder.id);
+  coverModalTitle.textContent = `Capa de ${folder.name || "pasta"}`;
+  coverModalSub.textContent = imageFiles.length
+    ? "Escolha uma imagem desta pasta ou de qualquer subpasta."
+    : "Nenhuma imagem encontrada nesta pasta ou nas subpastas.";
+  clearFolderCoverBtn.hidden = !folder.coverFileId;
+  coverPickerGrid.innerHTML = imageFiles.length
+    ? imageFiles.map(file => {
+      const thumb = folderCoverUrl(file) || file.url || "";
+      const active = folder.coverFileId === file.id ? " active" : "";
+      const path = getFolderPathLabel(file.folderId) || "Raiz";
+      return `
+        <button class="cover-option${active}" type="button" data-file-id="${esc(file.id)}">
+          <span class="cover-option-thumb">${thumb ? `<img src="${thumb}" alt="${esc(file.name)}" loading="lazy" />` : "IMG"}</span>
+          <span class="cover-option-name">${esc(file.name)}</span>
+          <span class="cover-option-path">${esc(path)}</span>
+        </button>`;
+    }).join("")
+    : `<div class="cover-empty">Envie imagens para esta pasta ou subpasta para usar como capa.</div>`;
+  coverPickerGrid.querySelectorAll(".cover-option").forEach(button => {
+    button.onclick = () => applyFolderCover(button.dataset.fileId);
+  });
+  coverModal.classList.add("active");
+}
+
+function getImagesForFolderTree(folderId) {
+  const folderIds = [folderId, ...getDescendantFolderIds(folderId)];
+  return files
+    .filter(file => !file.deletedAt && file.fileType === "image" && folderIds.includes(file.folderId))
+    .sort(comparePageFiles);
+}
+
+async function applyFolderCover(fileId) {
+  if (!folderToCover || !fileId) return;
+  const file = files.find(item => item.id === fileId);
+  try {
+    await updateDoc(doc(db, "vault_folders", folderToCover.id), { coverFileId: fileId });
+    addHistory(`Capa do album: ${folderToCover.name}`);
+    showToast(file ? `Capa definida: ${file.name}` : "Capa definida", "success");
+    closeFolderCoverPicker();
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+async function clearFolderCover() {
+  if (!folderToCover) return;
+  try {
+    await updateDoc(doc(db, "vault_folders", folderToCover.id), { coverFileId: null });
+    addHistory(`Capa removida: ${folderToCover.name}`);
+    showToast("Capa removida", "success");
+    closeFolderCoverPicker();
+  } catch (e) {
+    showToast("Erro: " + e.message, "error");
+  }
+}
+
+function closeFolderCoverPicker() {
+  coverModal.classList.remove("active");
+  coverPickerGrid.innerHTML = "";
+  folderToCover = null;
+}
+
+closeCoverModal.onclick = closeFolderCoverPicker;
+clearFolderCoverBtn.onclick = clearFolderCover;
+coverModal.onclick = e => { if (e.target === coverModal) closeFolderCoverPicker(); };
 function attachFolderDrop(el, folderId) {
   el.addEventListener("dragover", e => {
     e.preventDefault();
@@ -1946,6 +2029,7 @@ document.onkeydown = e => {
     moveModal.classList.remove("active");
     closeActionMenus();
     closeDescriptionModal();
+    closeFolderCoverPicker();
     if (configModal.style.display === "flex") {
       if ($("cancelConfig").style.display !== "none") configModal.style.display = "none";
     }
