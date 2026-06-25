@@ -145,10 +145,12 @@ function clearConfig()   { localStorage.removeItem(CFG_KEY); }
 
 // ??? Bootstrap ????????????????????????????????????????????
 const savedCfg = loadConfig();
-if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
-else openConfigModal(false); // nao pode cancelar na primeira vez
-qualitySelect.value = thumbQuality;
-renderHistory();
+queueMicrotask(() => {
+  if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
+  else openConfigModal(false); // nao pode cancelar na primeira vez
+  qualitySelect.value = thumbQuality;
+  renderHistory();
+});
 document.addEventListener("click", e => {
   if (!e.target.closest(".file-actions")) closeActionMenus();
 });
@@ -441,9 +443,12 @@ function syncLegacyFolderPath() {
   return getFolderPath(navState.folderId);
 }
 
-function expandFolderPath(folderId = navState.folderId) {
+function expandFolderPath(folderId = navState.folderId, options = {}) {
   navState.expandedFolders.add(ROOT_ID);
-  getFolderPath(folderId).forEach(seg => navState.expandedFolders.add(seg.id));
+  const { includeCurrent = true } = options;
+  const path = getFolderPath(folderId);
+  const segments = includeCurrent ? path : path.slice(0, -1);
+  segments.forEach(seg => navState.expandedFolders.add(seg.id));
 }
 
 function toggleFolderExpanded(folderId) {
@@ -455,7 +460,7 @@ function toggleFolderExpanded(folderId) {
 function renderFolderList() {
   while (folderList.children.length > 1) folderList.removeChild(folderList.lastChild);
 
-  expandFolderPath(navState.folderId);
+  expandFolderPath(navState.folderId, { includeCurrent: false });
   getFolderChildren(ROOT_ID).forEach(folder => renderFolderTreeNode(folder, 0));
   folderList.firstElementChild.classList.toggle("active", navState.folderId === ROOT_ID);
   renderFolderBreadcrumb();
@@ -483,7 +488,13 @@ function renderFolderTreeNode(folder, depth) {
   };
   li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
-  li.onclick = () => dispatchNavigation("open", { folderId: folder.id });
+  li.onclick = () => {
+    if (navState.folderId === folder.id) {
+      if (hasChildren) toggleFolderExpanded(folder.id);
+      return;
+    }
+    dispatchNavigation("open", { folderId: folder.id });
+  };
   attachFolderDrop(li, folder.id);
   folderList.appendChild(li);
 
