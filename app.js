@@ -52,6 +52,7 @@ let fileToMove    = null;
 let bulkMoveMode  = false;
 let fileToDescribe = null;
 let folderToCover = null;
+let folderForActions = null;
 let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
@@ -127,6 +128,11 @@ const coverModalSub = $("coverModalSub");
 const coverPickerGrid = $("coverPickerGrid");
 const closeCoverModal = $("closeCoverModal");
 const clearFolderCoverBtn = $("clearFolderCover");
+const folderActionsModal = $("folderActionsModal");
+const folderActionsTitle = $("folderActionsTitle");
+const folderActionRename = $("folderActionRename");
+const folderActionDelete = $("folderActionDelete");
+const folderActionsClose = $("folderActionsClose");
 const backupInput = $("backupInput");
 const mangaReader = $("mangaReader");
 const mangaStage = $("mangaStage");
@@ -1071,7 +1077,9 @@ function makeFolderCard(folder, count) {
   const hasChildren = folders.some(f => f.parentId === folder.id);
   const coverFile = folder.coverFileId ? files.find(f => f.id === folder.coverFileId && !f.deletedAt) : null;
   const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
+  const coverRatio = coverFile?.width && coverFile?.height ? `${coverFile.width} / ${coverFile.height}` : "16 / 9";
   const subCount = getDescendantFolderIds(folder.id).length;
+  card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
       ${coverUrl ? `<img src="${coverUrl}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
@@ -1082,17 +1090,27 @@ function makeFolderCard(folder, count) {
         <span class="folder-card-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
         <span class="folder-card-count">${count} arquivo${count === 1 ? "" : "s"}${subCount ? ` · ${subCount} subpasta${subCount === 1 ? "" : "s"}` : ""}</span>
       </div>
-      <div class="folder-card-actions">
-        <button class="folder-card-rename" title="Renomear pasta">Renomear</button>
-        <button class="folder-card-delete" title="Excluir pasta">Excluir</button>
-      </div>
+      <button class="folder-card-menu-btn" type="button" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false">...</button>
     </div>`;
   card.querySelector(".folder-card-cover-btn").onclick = e => { e.stopPropagation(); openFolderCoverPicker(folder); };
-  card.querySelector(".folder-card-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
-  card.querySelector(".folder-card-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
+  card.querySelector(".folder-card-menu-btn").onclick = e => {
+    e.stopPropagation();
+    openFolderActionsModal(folder);
+  };
   card.onclick = () => navigateFolder(folder.id);
   attachFolderDrop(card, folder.id);
   return card;
+}
+
+function openFolderActionsModal(folder) {
+  folderForActions = folder;
+  folderActionsTitle.textContent = folder.name || "Pasta";
+  folderActionsModal.classList.add("active");
+}
+
+function closeFolderActionsModal() {
+  folderActionsModal.classList.remove("active");
+  folderForActions = null;
 }
 
 function getFolderPathLabel(folderId) {
@@ -1185,6 +1203,18 @@ function closeFolderCoverPicker() {
 closeCoverModal.onclick = closeFolderCoverPicker;
 clearFolderCoverBtn.onclick = clearFolderCover;
 coverModal.onclick = e => { if (e.target === coverModal) closeFolderCoverPicker(); };
+folderActionsClose.onclick = closeFolderActionsModal;
+folderActionRename.onclick = async () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder) await renameFolder(folder);
+};
+folderActionDelete.onclick = async () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder) await deleteFolder(folder.id, folder.name);
+};
+folderActionsModal.onclick = e => { if (e.target === folderActionsModal) closeFolderActionsModal(); };
 function attachFolderDrop(el, folderId) {
   el.addEventListener("dragover", e => {
     e.preventDefault();
@@ -2030,6 +2060,7 @@ document.onkeydown = e => {
     closeActionMenus();
     closeDescriptionModal();
     closeFolderCoverPicker();
+    closeFolderActionsModal();
     if (configModal.style.display === "flex") {
       if ($("cancelConfig").style.display !== "none") configModal.style.display = "none";
     }
