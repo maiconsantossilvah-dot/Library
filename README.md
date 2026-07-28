@@ -94,6 +94,7 @@ vault/
 - Credenciais salvas localmente no navegador
 - Instalavel como aplicativo (PWA), com interface disponivel offline apos a primeira abertura
 - Busca local por conteudo de TXT, imagens e PDFs; imagens e PDFs escaneados usam OCR no proprio navegador
+- Fotos JPEG leem automaticamente a data EXIF, sugerem albuns por mes, identificam capturas de tela e alimentam o painel "Neste dia"
 
 ---
 
@@ -105,3 +106,4 @@ vault/
 - Para instalar o VAULT, abra-o pelo GitHub Pages em um navegador compativel e use a opcao **Instalar aplicativo** do navegador.
 - Em **Ferramentas → Indexar busca local**, o texto de imagens, PDFs e TXT e salvo apenas no navegador atual. O primeiro OCR precisa de internet para baixar o mecanismo; depois, busque normalmente pelo campo superior.
 - **Limpar indice local** remove somente os textos extraidos daquele navegador, nunca os arquivos enviados ao VAULT.
+- Em **Ferramentas → Analisar fotos**, fotos que ja estavam no VAULT recebem a mesma classificacao. A leitura nao move arquivos nem cria pastas automaticamente; sugestoes de album permanecem reversiveis.

@@ -12,6 +12,7 @@ import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
 import { createLocalTextSearch, extractSearchText } from "./modules/local-text-search.js";
+import { readPhotoMetadata } from "./modules/photo-metadata.js";
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
@@ -46,6 +47,7 @@ const UPLOAD_CONCURRENCY = 3;
 const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
+const photoMetadataCache = new WeakMap();
 
 let cloudName    = "";
 let uploadPreset = "";
@@ -662,6 +664,7 @@ const CONTENT_STRATEGIES = {
   video: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
   document: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
   duplicates: () => sortFiles(applyFilter(getDuplicateFiles())),
+  screenshots: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && file.isScreenshot))),
   trash: () => sortFiles(applyFilter(files.filter(file => file.deletedAt))),
   recent: () => sortFiles(applyFilter(files.filter(isActiveFile))).slice(0, 30),
   untagged: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && normalizeTags(file.tags).length === 0))),
@@ -898,6 +901,77 @@ function indexSourceKey(file) {
   return file.contentHash || `${file.url || ""}|${file.size || 0}|${file.name || ""}`;
 }
 
+function albumForPhoto(capturedAt, isScreenshot) {
+  if (!capturedAt) return { key: "", label: "" };
+  const date = new Date(`${capturedAt}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return { key: "", label: "" };
+  const month = date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const prefix = isScreenshot ? "Capturas de tela" : "Fotos";
+  return { key: `${isScreenshot ? "screens" : "photos"}-${capturedAt.slice(0, 7)}`, label: `${prefix} de ${month}` };
+}
+
+async function getPhotoInsights(file) {
+  if (!file.type.startsWith("image/")) return { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+  if (photoMetadataCache.has(file)) return photoMetadataCache.get(file);
+  const metadata = await readPhotoMetadata(file);
+  const album = albumForPhoto(metadata.capturedAt, metadata.isScreenshot);
+  const insights = { ...metadata, albumKey: album.key, albumLabel: album.label };
+  photoMetadataCache.set(file, insights);
+  return insights;
+}
+
+function photoMetadataUpdate(file, insights) {
+  const tags = normalizeTags(file.tags);
+  if (insights.isScreenshot && !tags.includes("captura-de-tela")) tags.push("captura-de-tela");
+  return {
+    eventDate: file.eventDate || insights.capturedAt || "",
+    photoDateSource: file.eventDate ? (file.photoDateSource || "manual") : insights.dateSource || "",
+    isScreenshot: !!insights.isScreenshot,
+    suggestedAlbumKey: insights.albumKey || "",
+    suggestedAlbumLabel: insights.albumLabel || "",
+    photoMetadataStatus: "processed",
+    tags,
+  };
+}
+
+async function analyzeExistingPhotos() {
+  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  const pending = files.filter(file => isActiveFile(file) && file.fileType === "image" && file.photoMetadataStatus !== "processed");
+  if (!pending.length) { showToast("Todas as imagens atuais ja foram analisadas"); return; }
+  const confirmed = await openConfirmDialog({
+    title: "Analisar fotos",
+    message: `Ler data EXIF e identificar capturas de tela em ${pending.length} imagem(ns)? A leitura ocorre neste navegador.`,
+    confirmText: "Analisar",
+  });
+  if (!confirmed) return;
+  const button = $("analyzePhotosBtn");
+  button.disabled = true;
+  let processed = 0;
+  let failed = 0;
+  try {
+    for (let index = 0; index < pending.length; index += 1) {
+      const file = pending[index];
+      button.textContent = `Analisando ${index + 1}/${pending.length}`;
+      try {
+        const response = await fetch(file.url);
+        if (!response.ok) throw new Error("Download indisponivel");
+        const source = new File([await response.blob()], file.name || "foto", { type: file.mimeType || "image/jpeg" });
+        const insights = await getPhotoInsights(source);
+        await updateDoc(doc(db, "vault_files", file.id), photoMetadataUpdate(file, insights));
+        processed += 1;
+      } catch (error) {
+        console.warn("Nao foi possivel analisar a foto", file.name, error);
+        failed += 1;
+      }
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analisar fotos";
+  }
+  addHistory(`Fotos analisadas: ${processed}`);
+  showToast(failed ? `${processed} foto(s) analisada(s), ${failed} com erro` : `${processed} foto(s) analisada(s)`, failed ? "error" : "success");
+}
+
 async function resolveIndexSource(file, sourceFile = null) {
   if (sourceFile) return sourceFile;
   const response = await fetch(file.url);
@@ -1027,6 +1101,10 @@ function makeFileCard(file) {
   const isTrash = navState.contentScope === "trash" || file.deletedAt;
   const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
   const folderLabel = getFolderPathLabel(file.folderId);
+  const automaticLabels = [
+    file.isScreenshot ? "Captura de tela" : "",
+    file.suggestedAlbumLabel || "",
+  ].filter(Boolean);
   const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
   const canReadAsManga = file.fileType === "image";
   const mediaDescriptionText = description || "Adicionar descricao...";
@@ -1049,6 +1127,7 @@ function makeFileCard(file) {
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
         ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
         ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
+        ${automaticLabels.map(label => `<span class="auto-badge">${esc(label)}</span>`).join("")}
         ${!isMedia && description ? `<p class="file-description">${esc(description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
         ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -1620,6 +1699,11 @@ function exportData(format) {
     cloudPublicId: f.cloudPublicId || "",
     contentHash: f.contentHash || "",
     eventDate: f.eventDate || "",
+    photoDateSource: f.photoDateSource || "",
+    isScreenshot: !!f.isScreenshot,
+    suggestedAlbumKey: f.suggestedAlbumKey || "",
+    suggestedAlbumLabel: f.suggestedAlbumLabel || "",
+    photoMetadataStatus: f.photoMetadataStatus || "",
     dueDate: f.dueDate || "",
     customFields: f.customFields || {},
     notes: normalizeNotes(f.notes),
@@ -2363,6 +2447,7 @@ async function handleFiles(fileList) {
   const uniqueFiles = [];
   showToast("Analisando arquivos...");
   for (const file of fileList) {
+    if (file.type.startsWith("image/")) await getPhotoInsights(file);
     const contentHash = await getOrComputeUploadHash(file);
     if (isUploadDuplicate(file, contentHash)) {
       const confirmed = await openConfirmDialog({
@@ -2467,6 +2552,8 @@ function uploadOneFile(file) {
       if (xhr.status === 200) {
         const res = JSON.parse(xhr.responseText);
         const contentHash = uploadHashes.get(file) || "";
+        const photoInsights = photoMetadataCache.get(file) || { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+        const initialTags = photoInsights.isScreenshot ? ["captura-de-tela"] : [];
         const savedFile = await addDoc(collection(db, "vault_files"), {
           name:          file.name,
           url:           res.secure_url,
@@ -2479,10 +2566,15 @@ function uploadOneFile(file) {
           mimeType:      file.type,
           folderId:      toFirestoreFolderId(navState.folderId),
           favorite:      false,
-          tags:          [],
+          tags:          initialTags,
           description:   "",
           priority:      "normal",
-          eventDate:     "",
+          eventDate:     photoInsights.capturedAt || "",
+          photoDateSource: photoInsights.dateSource || "",
+          isScreenshot: photoInsights.isScreenshot,
+          suggestedAlbumKey: photoInsights.albumKey || "",
+          suggestedAlbumLabel: photoInsights.albumLabel || "",
+          photoMetadataStatus: file.type.startsWith("image/") ? "processed" : "",
           dueDate:       "",
           customFields:  {},
           notes:         [],
@@ -2739,6 +2831,9 @@ $("indexSearchBtn").onclick = indexSearchLibrary;
 $("clearSearchIndexBtn").onclick = () => {
   clearLocalSearchIndex().catch(error => showToast("Erro ao limpar indice: " + error.message, "error"));
 };
+$("analyzePhotosBtn").onclick = () => {
+  analyzeExistingPhotos().catch(error => showToast("Erro ao analisar fotos: " + error.message, "error"));
+};
 backupInput.onchange = e => {
   const file = e.target.files?.[0];
   if (file) importBackupJson(file);
@@ -2851,6 +2946,11 @@ function normalizeBackupFile(fileRecord) {
     description: fileRecord.description || "",
     priority: ["normal", "important", "critical"].includes(fileRecord.priority) ? fileRecord.priority : "normal",
     eventDate: fileRecord.eventDate || "",
+    photoDateSource: fileRecord.photoDateSource || "",
+    isScreenshot: !!fileRecord.isScreenshot,
+    suggestedAlbumKey: fileRecord.suggestedAlbumKey || "",
+    suggestedAlbumLabel: fileRecord.suggestedAlbumLabel || "",
+    photoMetadataStatus: fileRecord.photoMetadataStatus || "",
     dueDate: fileRecord.dueDate || "",
     customFields: fileRecord.customFields || {},
     notes: normalizeNotes(fileRecord.notes),
@@ -2923,6 +3023,67 @@ function updateDashboard() {
   $("dashVideos").textContent = active.filter(f => f.fileType === "video").length;
   $("dashDocs").textContent = active.filter(f => f.fileType === "document").length;
   renderHistory();
+  renderPhotoDashboard(active);
+}
+
+function renderPhotoDashboard(active) {
+  const memoriesEl = $("dashMemories");
+  const albumsEl = $("dashAlbumSuggestions");
+  if (!memoriesEl || !albumsEl) return;
+  const today = new Date();
+  const memories = active
+    .filter(file => file.fileType === "image" && file.eventDate)
+    .filter(file => {
+      const date = fileDate(file);
+      return date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+    })
+    .sort((a, b) => fileDate(b) - fileDate(a))
+    .slice(0, 3);
+  memoriesEl.innerHTML = memories.length
+    ? memories.map(file => `<span class="dash-memory-item"><em>${fileDate(file).getFullYear()}</em> · ${esc(file.name)}</span>`).join("")
+    : "Sem memorias nesta data";
+
+  const albums = new Map();
+  active.filter(file => file.fileType === "image" && file.suggestedAlbumKey && !file.isScreenshot).forEach(file => {
+    const current = albums.get(file.suggestedAlbumKey) || { label: file.suggestedAlbumLabel, count: 0 };
+    current.count += 1;
+    albums.set(file.suggestedAlbumKey, current);
+  });
+  const monthSuggestions = [...albums.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 2)
+    .map(([, album]) => `${album.label} · ${album.count}`);
+  const travelSuggestions = getTravelSuggestions(active).slice(0, 1);
+  const suggestions = [...travelSuggestions, ...monthSuggestions].slice(0, 3);
+  albumsEl.innerHTML = suggestions.length
+    ? suggestions.map(item => `<span class="dash-memory-item">${esc(item)}</span>`).join("")
+    : "Analise fotos para receber sugestoes";
+}
+
+function getTravelSuggestions(active) {
+  const photos = active
+    .filter(file => file.fileType === "image" && file.eventDate && !file.isScreenshot)
+    .sort((a, b) => fileDate(a) - fileDate(b));
+  const groups = [];
+  let current = [];
+  photos.forEach(photo => {
+    const previous = current[current.length - 1];
+    const gapDays = previous ? Math.round((fileDate(photo) - fileDate(previous)) / 86400000) : 0;
+    if (previous && gapDays > 3) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(photo);
+  });
+  if (current.length) groups.push(current);
+  return groups
+    .filter(group => group.length >= 6 && Math.round((fileDate(group[group.length - 1]) - fileDate(group[0])) / 86400000) >= 2)
+    .sort((a, b) => fileDate(b[b.length - 1]) - fileDate(a[a.length - 1]))
+    .map(group => {
+      const start = fileDate(group[0]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+      const end = fileDate(group[group.length - 1]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+      return `Possivel viagem · ${start}–${end} · ${group.length} fotos`;
+    });
 }
 
 function historyItems() {

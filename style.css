@@ -695,6 +695,26 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.memory-card { min-width: min(280px, 100%); }
+.dash-memory-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-memory-item em {
+  color: var(--accent);
+  font-style: normal;
+}
+.auto-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 6px;
+  border: 1px solid rgba(125,211,252,0.28);
+  border-radius: 999px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
 
 /* EMPTY STATE */
 .empty-state {

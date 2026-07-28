@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./modules/file-hash.js",
   "./modules/page-order.js",
   "./modules/local-text-search.js",
+  "./modules/photo-metadata.js",
   "./manifest.webmanifest",
   "./icons/vault-icon.svg",
 ];

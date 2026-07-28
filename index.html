@@ -41,6 +41,7 @@
         <button class="chip" data-filter="favorites">Favoritos</button>
         <button class="chip" data-filter="important">Importantes</button>
         <button class="chip" data-filter="duplicates">Duplicados</button>
+        <button class="chip" data-filter="screenshots">Capturas</button>
         <button class="chip" data-filter="trash">Lixeira</button>
       </div>
     </div>
@@ -188,6 +189,7 @@
             <button class="utility-btn" id="btnSlideshow" type="button">Apresentar</button>
             <button class="utility-btn" id="indexSearchBtn" type="button" title="Extrai texto localmente de imagens, PDFs e TXT">Indexar busca local</button>
             <button class="utility-btn" id="clearSearchIndexBtn" type="button" title="Remove apenas os textos extraídos deste navegador">Limpar índice local</button>
+            <button class="utility-btn" id="analyzePhotosBtn" type="button" title="Lê a data EXIF e identifica capturas de tela">Analisar fotos</button>
             <input id="backupInput" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
@@ -224,6 +226,8 @@
         <div class="dash-card"><span class="dash-label">Videos</span><strong id="dashVideos">0</strong></div>
         <div class="dash-card"><span class="dash-label">Docs</span><strong id="dashDocs">0</strong></div>
         <div class="dash-card wide"><span class="dash-label">Ultimas acoes</span><div id="dashHistory" class="dash-history">Sem historico</div></div>
+        <div class="dash-card wide memory-card"><span class="dash-label">Neste dia</span><div id="dashMemories" class="dash-history">Sem memorias nesta data</div></div>
+        <div class="dash-card wide memory-card"><span class="dash-label">Albuns sugeridos</span><div id="dashAlbumSuggestions" class="dash-history">As sugestoes aparecerao nas fotos analisadas</div></div>
       </section>
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">VAULT</div>
