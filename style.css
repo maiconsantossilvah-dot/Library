@@ -381,6 +381,33 @@ html, body {
 .topbar-title-row { justify-content: space-between; }
 .topbar-control-row { flex-wrap: wrap; }
 
+.connection-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(125,211,252,0.25);
+  border-radius: 999px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.connection-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+}
+
+.connection-status[data-state="online"]::before { background: var(--accent); }
+.connection-status[data-state="offline"] { border-color: rgba(255,184,77,0.45); color: #ffb84d; }
+.connection-status[data-state="offline"]::before { background: #ffb84d; }
+
 /* Breadcrumb with clickable segments */
 .breadcrumb {
   font-family: var(--font-display);

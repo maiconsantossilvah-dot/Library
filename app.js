@@ -6,11 +6,12 @@
 import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, deleteDoc,
-  doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc
+  doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc, enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
+import { createLocalTextSearch, extractSearchText } from "./modules/local-text-search.js";
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
@@ -43,6 +44,8 @@ const VIEW_BUTTONS = {
 };
 const UPLOAD_CONCURRENCY = 3;
 const uploadHashes = new WeakMap();
+const localTextSearch = createLocalTextSearch();
+let searchIndexQueue = Promise.resolve();
 
 let cloudName    = "";
 let uploadPreset = "";
@@ -145,6 +148,7 @@ const mangaNext = $("mangaNext");
 const mangaZoomIn = $("mangaZoomIn");
 const mangaZoomOut = $("mangaZoomOut");
 const mangaClose = $("mangaClose");
+const connectionStatus = $("connectionStatus");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -158,11 +162,18 @@ function clearConfig()   { localStorage.removeItem(CFG_KEY); }
 
 // ??? Bootstrap ????????????????????????????????????????????
 const savedCfg = loadConfig();
-queueMicrotask(() => {
+queueMicrotask(async () => {
+  try {
+    await localTextSearch.hydrate();
+  } catch (e) {
+    console.warn("Indice local indisponivel", e);
+  }
   if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
   else openConfigModal(false); // nao pode cancelar na primeira vez
   qualitySelect.value = thumbQuality;
   renderHistory();
+  updateConnectionStatus();
+  registerPwa();
 });
 document.addEventListener("click", e => {
   if (!e.target.closest(".file-actions")) closeActionMenus();
@@ -199,6 +210,36 @@ function showConfigError(message) {
   configError.textContent = message || "";
   configError.style.display = message ? "block" : "none";
 }
+
+function updateConnectionStatus() {
+  if (!connectionStatus) return;
+  const online = navigator.onLine;
+  connectionStatus.dataset.state = online ? "online" : "offline";
+  connectionStatus.textContent = online ? "Online" : "Sem conexao";
+}
+
+function registerPwa() {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(new URL("./sw.js", import.meta.url));
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            showToast("Uma atualizacao sera usada na proxima abertura");
+          }
+        });
+      });
+    } catch (e) {
+      console.warn("PWA nao pode ser registrado", e);
+    }
+  }, { once: true });
+}
+
+window.addEventListener("online", updateConnectionStatus);
+window.addEventListener("offline", updateConnectionStatus);
 
 // ??? Reusable dialogs ?????????????????????????????????????
 let formDialogResolve = null;
@@ -324,6 +365,10 @@ async function initApp(cfg) {
     }, "vault");
 
     db           = getFirestore(firebaseApp);
+    enableIndexedDbPersistence(db).catch(error => {
+      // O cache pode estar ocupado por outra aba ou bloqueado pelo navegador.
+      console.warn("Cache offline do Firestore indisponivel", error.code || error);
+    });
     cloudName    = cfg.cloudName;
     uploadPreset = cfg.uploadPreset;
 
@@ -824,12 +869,127 @@ function dateValue(value) {
 function fileMatchesSearch(file) {
   if (!currentSearch) return true;
   const tags = normalizeTags(file.tags).join(" ");
-  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)}`);
+  const indexedText = localTextSearch.get(file.id)?.text || "";
+  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)} ${indexedText}`);
 }
 
 function matchesSearch(text) {
   if (!currentSearch) return true;
-  return (text || "").toLowerCase().includes(currentSearch);
+  return normalizeSearchText(text).includes(currentSearch);
+}
+
+function normalizeSearchText(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+}
+
+function supportsLocalIndex(file) {
+  const name = file.name || "";
+  const mime = file.mimeType || file.type || "";
+  return file.fileType === "image"
+    || mime === "text/plain"
+    || /\.(pdf|txt)$/i.test(name)
+    || mime === "application/pdf";
+}
+
+function indexSourceKey(file) {
+  return file.contentHash || `${file.url || ""}|${file.size || 0}|${file.name || ""}`;
+}
+
+async function resolveIndexSource(file, sourceFile = null) {
+  if (sourceFile) return sourceFile;
+  const response = await fetch(file.url);
+  if (!response.ok) throw new Error("Nao foi possivel baixar o arquivo para indexar");
+  const blob = await response.blob();
+  return new File([blob], file.name || "arquivo", { type: file.mimeType || blob.type });
+}
+
+async function indexFileLocally(file, sourceFile = null, onProgress = null) {
+  if (!supportsLocalIndex(file)) return { status: "unsupported" };
+  const sourceKey = indexSourceKey(file);
+  const existing = localTextSearch.get(file.id);
+  if (existing?.sourceKey === sourceKey) return { status: "already" };
+  const source = await resolveIndexSource(file, sourceFile);
+  const extracted = await extractSearchText(source, onProgress);
+  await localTextSearch.put({
+    id: file.id,
+    text: extracted.text || "",
+    method: extracted.method,
+    sourceKey,
+    truncated: !!extracted.truncated,
+    indexedAt: new Date().toISOString(),
+  });
+  return { status: "indexed", ...extracted };
+}
+
+function scheduleLocalIndex(file, sourceFile = null) {
+  searchIndexQueue = searchIndexQueue
+    .then(() => indexFileLocally(file, sourceFile))
+    .then(result => {
+      if (result.status === "indexed") renderGrid();
+      return result;
+    })
+    .catch(error => {
+      console.warn("Nao foi possivel indexar arquivo", error);
+      return { status: "failed", error };
+    });
+  return searchIndexQueue;
+}
+
+async function indexSearchLibrary() {
+  const candidates = files.filter(file => isActiveFile(file) && supportsLocalIndex(file));
+  const pending = candidates.filter(file => localTextSearch.get(file.id)?.sourceKey !== indexSourceKey(file));
+  if (!pending.length) {
+    showToast(candidates.length ? "Todos os arquivos compativeis ja foram indexados" : "Nenhum arquivo compativel para indexar");
+    return;
+  }
+  const confirmed = await openConfirmDialog({
+    title: "Indexar busca local",
+    message: `Extrair texto de ${pending.length} arquivo(s) neste navegador? PDFs escaneados usam OCR e podem levar alguns minutos.`,
+    confirmText: "Indexar",
+  });
+  if (!confirmed) return;
+
+  const button = $("indexSearchBtn");
+  button.disabled = true;
+  let indexed = 0;
+  let failed = 0;
+  try {
+    for (let index = 0; index < pending.length; index += 1) {
+      const file = pending[index];
+      button.textContent = `Indexando ${index + 1}/${pending.length}`;
+      showToast(`Indexando ${index + 1}/${pending.length}: ${file.name}`);
+      try {
+        const result = await scheduleLocalIndex(file, null);
+        if (result.status === "indexed") indexed += 1;
+        if (result.status === "failed") failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = "Indexar busca local";
+  }
+  renderGrid();
+  showToast(failed ? `${indexed} indexado(s), ${failed} com erro` : `${indexed} arquivo(s) indexado(s)`, failed ? "error" : "success");
+}
+
+async function clearLocalSearchIndex() {
+  const count = localTextSearch.count();
+  if (!count) { showToast("O indice local ja esta vazio"); return; }
+  const confirmed = await openConfirmDialog({
+    title: "Limpar indice local",
+    message: `Remover o texto extraido de ${count} arquivo(s) somente deste navegador? Os arquivos originais nao serao afetados.`,
+    confirmText: "Limpar",
+    danger: true,
+  });
+  if (!confirmed) return;
+  await localTextSearch.clear();
+  renderGrid();
+  showToast("Indice local removido", "success");
 }
 
 // ??? File Card ????????????????????????????????????????????
@@ -1657,7 +1817,10 @@ async function emptyTrash() {
   });
   if (!confirmed) return;
   for (const file of trashed) {
-    try { await deleteDoc(doc(db, "vault_files", file.id)); } catch {}
+    try {
+      await deleteDoc(doc(db, "vault_files", file.id));
+      await localTextSearch.remove(file.id);
+    } catch {}
   }
   addHistory(`Lixeira esvaziada: ${trashed.length} item(s)`);
   showToast("Lixeira esvaziada", "success");
@@ -1698,6 +1861,7 @@ async function permanentlyDeleteFile(file) {
   if (!confirmed) return;
   try {
     await deleteDoc(doc(db, "vault_files", file.id));
+    await localTextSearch.remove(file.id);
     addHistory(`Removido: ${file.name}`);
     showToast("Registro removido definitivamente", "success");
   } catch (e) {
@@ -2303,7 +2467,7 @@ function uploadOneFile(file) {
       if (xhr.status === 200) {
         const res = JSON.parse(xhr.responseText);
         const contentHash = uploadHashes.get(file) || "";
-        await addDoc(collection(db, "vault_files"), {
+        const savedFile = await addDoc(collection(db, "vault_files"), {
           name:          file.name,
           url:           res.secure_url,
           cloudPublicId: res.public_id,
@@ -2324,6 +2488,15 @@ function uploadOneFile(file) {
           notes:         [],
           createdAt:     serverTimestamp(),
         });
+        scheduleLocalIndex({
+          id: savedFile.id,
+          name: file.name,
+          url: res.secure_url,
+          contentHash,
+          size: file.size,
+          fileType: getFileType(file),
+          mimeType: file.type,
+        }, file);
         addHistory(`Upload: ${file.name}`);
         status.textContent = "Concluido";
         status.style.color = "var(--accent)";
@@ -2458,7 +2631,7 @@ $("viewDensity").onclick = () => {
 };
 
 searchInput.oninput = () => {
-  currentSearch = searchInput.value.trim().toLowerCase();
+  currentSearch = normalizeSearchText(searchInput.value.trim());
   visibleLimit = PAGE_SIZE;
   renderFolderList();
   renderGrid();
@@ -2562,6 +2735,10 @@ $("clearAdvancedBtn").onclick = () => {
 };
 $("importUrlBtn").onclick = importFromUrl;
 $("importJsonBtn").onclick = () => backupInput.click();
+$("indexSearchBtn").onclick = indexSearchLibrary;
+$("clearSearchIndexBtn").onclick = () => {
+  clearLocalSearchIndex().catch(error => showToast("Erro ao limpar indice: " + error.message, "error"));
+};
 backupInput.onchange = e => {
   const file = e.target.files?.[0];
   if (file) importBackupJson(file);

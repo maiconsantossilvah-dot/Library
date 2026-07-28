@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VAULT - Seu Cofre Digital</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
 </head>
@@ -89,6 +94,7 @@
           <div class="breadcrumb" id="breadcrumb">
             <span>Todos os Arquivos</span>
           </div>
+          <span class="connection-status" id="connectionStatus" role="status" aria-live="polite">Verificando conexao</span>
           <div class="primary-actions">
             <label class="action-btn action-primary" for="fileInput">
               <span>Upload</span>
@@ -99,8 +105,8 @@
 
         <div class="topbar-control-row">
           <div class="control-cluster search-cluster">
-            <label class="sr-only" for="searchInput">Buscar arquivo ou tag</label>
-            <input class="search-input" id="searchInput" placeholder="Buscar arquivo ou tag..." aria-label="Buscar arquivo ou tag" />
+            <label class="sr-only" for="searchInput">Buscar arquivo, tag ou conteúdo indexado</label>
+            <input class="search-input" id="searchInput" placeholder="Buscar arquivo, tag ou conteúdo..." aria-label="Buscar arquivo, tag ou conteúdo indexado" />
             <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
             <select class="sort-select" id="sortSelect" title="Ordenar" aria-label="Ordenar arquivos">
               <option value="newest">Mais recentes</option>
@@ -180,6 +186,8 @@
             <button class="utility-btn" id="importJsonBtn" type="button">Restaurar JSON</button>
             <button class="utility-btn" id="importUrlBtn" type="button">Importar URL</button>
             <button class="utility-btn" id="btnSlideshow" type="button">Apresentar</button>
+            <button class="utility-btn" id="indexSearchBtn" type="button" title="Extrai texto localmente de imagens, PDFs e TXT">Indexar busca local</button>
+            <button class="utility-btn" id="clearSearchIndexBtn" type="button" title="Remove apenas os textos extraídos deste navegador">Limpar índice local</button>
             <input id="backupInput" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
