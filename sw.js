@@ -1,8 +1,9 @@
-const CACHE_NAME = "vault-shell-v1";
+const CACHE_NAME = "vault-shell-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css",
+  "./layout.css",
   "./app.js",
   "./modules/async-queue.js",
   "./modules/file-hash.js",

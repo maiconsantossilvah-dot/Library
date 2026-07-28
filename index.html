@@ -3,111 +3,131 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0d1117" />
+  <meta name="theme-color" content="#f3f0e8" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>VAULT - Seu Cofre Digital</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="layout.css" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
 </head>
-<body>
-
-  <!-- SIDEBAR -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <div class="logo">
-        <span class="logo-icon">V</span>
-        <span class="logo-text">VAULT</span>
+<body class="vault-reimagined">
+  <div class="app-frame">
+    <!-- NAVEGAÇÃO DO ACERVO -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">V</span>
+          <span class="brand-copy"><span class="logo-text">VAULT</span><small>arquivo pessoal</small></span>
+        </div>
+        <div class="sidebar-header-actions">
+          <button class="sidebar-cfg-btn" id="openConfigBtn" type="button" title="Configuracoes" aria-label="Abrir configuracoes">⚙</button>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Fechar menu" aria-label="Fechar menu">&#9776;</button>
+        </div>
       </div>
-      <div class="sidebar-header-actions">
-        <button class="sidebar-cfg-btn" id="openConfigBtn" type="button" title="Configuracoes" aria-label="Abrir configuracoes">⚙</button>
-        <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Fechar menu" aria-label="Fechar menu">&#9776;</button>
-      </div>
-    </div>
 
-    <div class="sidebar-section">
-      <button class="btn-new-folder" id="btnNewFolder">
-        <span>+</span> Nova Pasta
-      </button>
-    </div>
-
-    <div class="sidebar-section filter-section">
-      <p class="sidebar-label">BIBLIOTECA</p>
-      <div class="filter-chips nav-chips">
-        <button class="chip active" data-filter="all">Todos</button>
-        <button class="chip" data-filter="recent">Recentes</button>
-        <button class="chip" data-filter="favorites">Favoritos</button>
-        <button class="chip" data-filter="important">Importantes</button>
-        <button class="chip" data-filter="duplicates">Duplicados</button>
-        <button class="chip" data-filter="screenshots">Capturas</button>
-        <button class="chip" data-filter="trash">Lixeira</button>
-      </div>
-    </div>
-
-    <div class="sidebar-section">
-      <p class="sidebar-label">PASTAS</p>
-      <!-- Breadcrumb trail inside sidebar -->
-      <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
-      <ul class="folder-list" id="folderList">
-        <li class="folder-item active" data-folder="root">
-          <span class="folder-icon">#</span> Todos os Arquivos
-        </li>
-      </ul>
-    </div>
-
-    <div class="sidebar-section filter-section">
-      <p class="sidebar-label">TIPOS</p>
-      <div class="filter-chips">
-        <button class="chip" data-filter="media">Midia</button>
-        <button class="chip" data-filter="image">IMG Imagens</button>
-        <button class="chip" data-filter="video">VID Videos</button>
-        <button class="chip" data-filter="document">DOC Docs</button>
-        <button class="chip" data-filter="untagged">Sem tags</button>
-        <button class="chip" data-filter="largeVideos">Videos grandes</button>
-      </div>
-    </div>
-
-    <div class="sidebar-section maintenance-section">
-      <p class="sidebar-label">MANUTENCAO</p>
-      <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
-      <p class="storage-text helper-text">Marca itens que foram apagados no Cloudinary.</p>
-    </div>
-
-    <div class="sidebar-storage">
-      <p class="sidebar-label">ARMAZENAMENTO</p>
-      <div class="storage-bar-wrap">
-        <div class="storage-bar" id="storageBar" style="width:0%"></div>
-      </div>
-      <p class="storage-text" id="storageText">0 MB usados</p>
-    </div>
-  </aside>
-
-  <!-- MAIN -->
-  <main class="main" id="main">
-
-    <!-- TOPBAR -->
-    <header class="topbar">
-      <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" title="Abrir menu" aria-label="Abrir menu">&#9776;</button>
-      <div class="topbar-shell">
-        <div class="topbar-title-row">
-          <div class="breadcrumb" id="breadcrumb">
-            <span>Todos os Arquivos</span>
+      <div class="sidebar-scroll">
+        <nav class="sidebar-section sidebar-library-section" aria-label="Navegação principal">
+          <p class="sidebar-label">Sua biblioteca</p>
+          <div class="filter-chips nav-chips">
+            <button class="chip active" data-filter="all"><span class="nav-chip-icon">◈</span><span>Biblioteca</span></button>
+            <button class="chip" data-filter="recent"><span class="nav-chip-icon">◷</span><span>Recentes</span></button>
+            <button class="chip" data-filter="favorites"><span class="nav-chip-icon">♥</span><span>Favoritos</span></button>
+            <button class="chip" data-filter="important"><span class="nav-chip-icon">!</span><span>Importantes</span></button>
+            <button class="chip" data-filter="duplicates"><span class="nav-chip-icon">≋</span><span>Duplicados</span></button>
+            <button class="chip" data-filter="screenshots"><span class="nav-chip-icon">▣</span><span>Capturas</span></button>
+            <button class="chip" data-filter="trash"><span class="nav-chip-icon">⌫</span><span>Lixeira</span></button>
           </div>
-          <span class="connection-status" id="connectionStatus" role="status" aria-live="polite">Verificando conexao</span>
-          <div class="primary-actions">
-            <label class="action-btn action-primary" for="fileInput">
-              <span>Upload</span>
-              <input type="file" id="fileInput" multiple accept="image/*,.heic,.heif,.avif,.webp,.tif,.tiff,.dng,.cr2,.cr3,.arw,.nef,.orf,.raf,.rw2,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
-            </label>
+        </nav>
+
+        <section class="sidebar-section sidebar-collections">
+          <div class="sidebar-section-title">
+            <p class="sidebar-label">Coleções</p>
+            <button class="collection-add" id="btnNewFolder" type="button" title="Criar coleção" aria-label="Criar coleção">+</button>
+          </div>
+          <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
+          <ul class="folder-list" id="folderList">
+            <li class="folder-item active" data-folder="root">
+              <span class="folder-icon">#</span> Todos os Arquivos
+            </li>
+          </ul>
+        </section>
+
+        <section class="sidebar-section filter-section sidebar-file-types">
+          <p class="sidebar-label">Por tipo</p>
+          <div class="filter-chips type-chips">
+            <button class="chip" data-filter="media">Mídia</button>
+            <button class="chip" data-filter="image">Imagens</button>
+            <button class="chip" data-filter="video">Vídeos</button>
+            <button class="chip" data-filter="document">Documentos</button>
+            <button class="chip" data-filter="untagged">Sem tags</button>
+            <button class="chip" data-filter="largeVideos">Vídeos grandes</button>
+          </div>
+        </section>
+      </div>
+
+      <footer class="sidebar-footer">
+        <section class="sidebar-section maintenance-section">
+          <p class="sidebar-label">Cuidado do acervo</p>
+          <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
+          <p class="storage-text helper-text">Marca itens que foram apagados no Cloudinary.</p>
+        </section>
+        <div class="sidebar-storage">
+          <p class="sidebar-label">Espaço do acervo</p>
+          <div class="storage-bar-wrap">
+            <div class="storage-bar" id="storageBar" style="width:0%"></div>
+          </div>
+          <p class="storage-text" id="storageText">0 MB usados</p>
+        </div>
+      </footer>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL -->
+    <main class="main" id="main">
+      <header class="topbar">
+        <div class="workspace-masthead">
+          <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" title="Abrir menu" aria-label="Abrir menu">&#9776;</button>
+          <div class="topbar-context">
+            <span class="topbar-kicker">MEU ARQUIVO</span>
+            <div class="breadcrumb" id="breadcrumb">
+              <span>Todos os Arquivos</span>
+            </div>
+          </div>
+
+          <div class="global-search">
+            <label class="sr-only" for="searchInput">Buscar arquivo, tag ou conteúdo indexado</label>
+            <span class="search-symbol" aria-hidden="true">⌕</span>
+            <input class="search-input" id="searchInput" placeholder="Buscar no seu acervo..." aria-label="Buscar arquivo, tag ou conteúdo indexado" />
+          </div>
+
+          <div class="masthead-actions">
+            <span class="connection-status" id="connectionStatus" role="status" aria-live="polite">Verificando conexao</span>
+            <div class="primary-actions">
+              <label class="action-btn action-primary" for="fileInput">
+                <span>Adicionar</span><span aria-hidden="true">+</span>
+                <input type="file" id="fileInput" multiple accept="image/*,.heic,.heif,.avif,.webp,.tif,.tiff,.dng,.cr2,.cr3,.arw,.nef,.orf,.raf,.rw2,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
+              </label>
+            </div>
           </div>
         </div>
 
-        <div class="topbar-control-row">
-          <div class="control-cluster search-cluster">
-            <label class="sr-only" for="searchInput">Buscar arquivo, tag ou conteúdo indexado</label>
-            <input class="search-input" id="searchInput" placeholder="Buscar arquivo, tag ou conteúdo..." aria-label="Buscar arquivo, tag ou conteúdo indexado" />
+        <div class="workspace-toolbar">
+          <div class="view-toggle" aria-label="Modos de visualizacao">
+            <span class="toolbar-label">Visualizar</span>
+            <button class="view-btn active" id="viewGrid" type="button" title="Grade" aria-label="Visualizar em grade" aria-pressed="true">▦</button>
+            <button class="view-btn" id="viewList" type="button" title="Lista" aria-label="Visualizar em lista" aria-pressed="false">☰</button>
+            <button class="view-btn" id="viewGallery" type="button" title="Galeria" aria-label="Visualizar galeria de midia" aria-pressed="false">▣</button>
+            <button class="view-btn view-text" id="viewFolders" type="button" title="Mostrar apenas pastas" aria-pressed="false">Coleções</button>
+            <button class="view-btn view-text" id="viewTimeline" type="button" title="Linha do tempo" aria-pressed="false">Linha do tempo</button>
+            <button class="view-btn view-text" id="viewManga" type="button" title="Ler imagens da pasta como mangá" aria-pressed="false">Mangá</button>
+            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Compacto</button>
+            <button class="view-btn" id="viewSelect" type="button" title="Selecionar em lote" aria-label="Selecionar em lote" aria-pressed="false">☑</button>
+          </div>
+
+          <div class="toolbar-spacer"></div>
+          <div class="control-cluster sort-cluster">
             <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
             <select class="sort-select" id="sortSelect" title="Ordenar" aria-label="Ordenar arquivos">
               <option value="newest">Mais recentes</option>
@@ -117,23 +137,10 @@
               <option value="type">Tipo</option>
             </select>
           </div>
-
-          <div class="view-toggle" aria-label="Modos de visualizacao">
-            <button class="view-btn active" id="viewGrid" type="button" title="Grade" aria-label="Visualizar em grade" aria-pressed="true">▦</button>
-            <button class="view-btn" id="viewList" type="button" title="Lista" aria-label="Visualizar em lista" aria-pressed="false">☰</button>
-            <button class="view-btn" id="viewGallery" type="button" title="Galeria" aria-label="Visualizar galeria de midia" aria-pressed="false">▣</button>
-            <button class="view-btn view-text" id="viewFolders" type="button" title="Mostrar apenas pastas" aria-pressed="false">Pastas</button>
-            <button class="view-btn view-text" id="viewTimeline" type="button" title="Linha do tempo" aria-pressed="false">Tempo</button>
-            <button class="view-btn view-text" id="viewManga" type="button" title="Ler imagens da pasta como mangá" aria-pressed="false">Mangá</button>
-            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Compacto</button>
-            <button class="view-btn" id="viewSelect" type="button" title="Selecionar em lote" aria-label="Selecionar em lote" aria-pressed="false">☑</button>
-          </div>
-
           <div class="toolbar-actions">
             <button class="utility-btn" id="filterPanelToggle" type="button" aria-expanded="false" aria-controls="filterPanel">Filtros</button>
-            <button class="utility-btn" id="toolsPanelToggle" type="button" aria-expanded="false" aria-controls="toolsPanel">Ferramentas</button>
+            <button class="utility-btn" id="toolsPanelToggle" type="button" aria-expanded="false" aria-controls="toolsPanel">Mais</button>
           </div>
-
           <div class="trash-actions" id="trashActions" hidden>
             <button class="utility-btn" id="btnRestoreTrash" type="button">Restaurar</button>
             <button class="utility-btn danger-inline" id="btnEmptyTrash" type="button">Esvaziar</button>
@@ -142,20 +149,20 @@
 
         <div class="topbar-panel filter-panel" id="filterPanel" hidden>
           <div class="panel-heading">
-            <span>Filtros avancados</span>
+            <span>Organizar a visualização</span>
             <button class="panel-close" id="closeFilterPanel" type="button" aria-label="Fechar filtros">×</button>
           </div>
           <div class="panel-grid">
             <label class="field-label" for="qualitySelect">Miniaturas
               <select class="sort-select" id="qualitySelect" title="Qualidade das miniaturas">
-                <option value="medium">Qualidade media</option>
+                <option value="medium">Qualidade média</option>
                 <option value="low">Qualidade baixa</option>
                 <option value="high">Qualidade alta</option>
               </select>
             </label>
-            <label class="field-label" for="advFolderSelect">Pasta
+            <label class="field-label" for="advFolderSelect">Coleção
               <select class="sort-select adv-select" id="advFolderSelect" title="Filtrar por pasta">
-                <option value="">Todas as pastas</option>
+                <option value="">Todas as coleções</option>
               </select>
             </label>
             <label class="field-label" for="advPrioritySelect">Prioridade
@@ -163,13 +170,13 @@
                 <option value="">Qualquer prioridade</option>
                 <option value="normal">Normal</option>
                 <option value="important">Importante</option>
-                <option value="critical">Critico</option>
+                <option value="critical">Crítico</option>
               </select>
             </label>
-            <label class="field-label" for="advDateFrom">De
+            <label class="field-label" for="advDateFrom">A partir de
               <input class="date-input adv-select" id="advDateFrom" type="date" title="Data inicial" />
             </label>
-            <label class="field-label" for="advDateTo">Ate
+            <label class="field-label" for="advDateTo">Até
               <input class="date-input adv-select" id="advDateTo" type="date" title="Data final" />
             </label>
             <button class="utility-btn panel-clear" id="clearAdvancedBtn" type="button" title="Limpar filtros avancados">Limpar filtros</button>
@@ -178,7 +185,7 @@
 
         <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
           <div class="panel-heading">
-            <span>Ferramentas</span>
+            <span>Seu acervo</span>
             <button class="panel-close" id="closeToolsPanel" type="button" aria-label="Fechar ferramentas">×</button>
           </div>
           <div class="tool-grid">
@@ -194,7 +201,6 @@
           </div>
         </div>
 
-        <!-- Bulk actions bar (hidden when nothing selected) -->
         <div class="bulk-bar" id="bulkBar" style="display:none;">
           <span class="bulk-count" id="bulkCount">0 selecionados</span>
           <button class="bulk-btn" id="bulkSelectAllBtn" title="Selecionar todos visiveis">Todos</button>
@@ -203,12 +209,11 @@
           <button class="bulk-btn" id="bulkDownloadBtn" title="Baixar selecionados">Baixar</button>
           <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
           <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
-          <button class="bulk-btn" id="bulkSelectMediaBtn" title="Selecionar fotos e videos visiveis">Midia</button>
-          <button class="bulk-btn" id="bulkSelectMonthBtn" title="Selecionar itens deste mes">Mes</button>
+          <button class="bulk-btn" id="bulkSelectMediaBtn" title="Selecionar fotos e videos visiveis">Mídia</button>
+          <button class="bulk-btn" id="bulkSelectMonthBtn" title="Selecionar itens deste mes">Mês</button>
           <button class="bulk-btn cancel" id="bulkCancelBtn" title="Cancelar selecao">Cancelar</button>
         </div>
-      </div>
-    </header>
+      </header>
 
     <!-- DROP ZONE OVERLAY -->
     <div class="drop-overlay" id="dropOverlay">
@@ -278,7 +283,8 @@
       </div>
     </div>
 
-  </main>
+    </main>
+  </div>
 
   <!-- MODAL: Nova Pasta -->
   <div class="modal-overlay" id="folderModal">
