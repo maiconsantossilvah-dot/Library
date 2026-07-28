@@ -683,6 +683,7 @@ const VIEW_RENDERERS = {
 };
 
 function renderGrid() {
+  renderDashboardVisibility();
   fileGrid.innerHTML = "";
   fileGrid.className = getGridClassName();
   lightboxFiles = [];
@@ -696,6 +697,19 @@ function renderGrid() {
   loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, items.length - visibleLimit)})`;
   updateContextualActions();
   updateViewA11y();
+}
+
+function renderDashboardVisibility() {
+  if (!dashboard) return;
+  const isHome = navState.folderId === ROOT_ID
+    && navState.contentScope === "all"
+    && navState.viewMode === "grid"
+    && !currentSearch
+    && !advancedFilters.folderId
+    && !advancedFilters.priority
+    && !advancedFilters.dateFrom
+    && !advancedFilters.dateTo;
+  dashboard.hidden = !isHome;
 }
 
 function getGridClassName() {
@@ -2721,6 +2735,20 @@ $("viewGallery").onclick = () => setViewMode("gallery");
 $("viewFolders").onclick = () => setViewMode("folders");
 $("viewTimeline").onclick = () => setViewMode("timeline");
 $("viewManga").onclick = () => openMangaReader();
+$("dashboardTimelineBtn").onclick = () => {
+  setContentFilter("all");
+  setViewMode("timeline");
+};
+$("dashboardAllFilesBtn").onclick = () => {
+  advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
+  advFolderSelect.value = "";
+  advPrioritySelect.value = "";
+  advDateFrom.value = "";
+  advDateTo.value = "";
+  navigateFolder(ROOT_ID);
+  setContentFilter("all");
+  setViewMode("grid");
+};
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
   $("viewDensity").classList.toggle("active", isCompactView);
@@ -3027,8 +3055,16 @@ function updateDashboard() {
   $("dashImages").textContent = active.filter(f => f.fileType === "image").length;
   $("dashVideos").textContent = active.filter(f => f.fileType === "video").length;
   $("dashDocs").textContent = active.filter(f => f.fileType === "document").length;
+  const used = active.reduce((total, file) => total + (file.size || 0), 0);
+  $("dashStorageSummary").textContent = fmtSize(used);
+  const hour = new Date().getHours();
+  $("dashGreeting").textContent = hour < 12 ? "Bom dia." : hour < 18 ? "Boa tarde." : "Boa noite.";
+  $("dashHeroText").textContent = active.length
+    ? `${active.length} arquivo(s) prontos para você revisitar.`
+    : "Comece guardando fotos, vídeos e documentos que importam.";
   renderHistory();
   renderPhotoDashboard(active);
+  renderDashboardHighlights(active);
 }
 
 function renderPhotoDashboard(active) {
@@ -3044,25 +3080,91 @@ function renderPhotoDashboard(active) {
     })
     .sort((a, b) => fileDate(b) - fileDate(a))
     .slice(0, 3);
-  memoriesEl.innerHTML = memories.length
-    ? memories.map(file => `<span class="dash-memory-item"><em>${fileDate(file).getFullYear()}</em> · ${esc(file.name)}</span>`).join("")
-    : "Sem memorias nesta data";
+  const memory = memories[0];
+  if (memory) {
+    const thumb = dashboardThumb(memory, 900, 620);
+    memoriesEl.innerHTML = `
+      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" alt="${esc(memory.name)}" />` : ""}</div>
+      <div class="memory-copy"><em>${fileDate(memory).getFullYear()} · ${memories.length} memoria(s) hoje</em><strong>${esc(memory.name)}</strong><span>Uma lembrança registrada neste mesmo dia, em outro ano.</span></div>`;
+    memoriesEl.onclick = () => openLightbox(memory);
+    memoriesEl.style.cursor = "pointer";
+  } else {
+    memoriesEl.innerHTML = `<div class="memory-copy"><em>SEM MEMÓRIAS HOJE</em><strong>Seu próximo momento começa agora.</strong><span>Fotos com data de captura aparecerão aqui quando a data voltar a chegar.</span></div>`;
+    memoriesEl.onclick = null;
+    memoriesEl.style.cursor = "default";
+  }
 
   const albums = new Map();
   active.filter(file => file.fileType === "image" && file.suggestedAlbumKey && !file.isScreenshot).forEach(file => {
-    const current = albums.get(file.suggestedAlbumKey) || { label: file.suggestedAlbumLabel, count: 0 };
+    const current = albums.get(file.suggestedAlbumKey) || { key: file.suggestedAlbumKey, label: file.suggestedAlbumLabel, count: 0, cover: file };
     current.count += 1;
     albums.set(file.suggestedAlbumKey, current);
   });
-  const monthSuggestions = [...albums.entries()]
-    .sort(([a], [b]) => b.localeCompare(a))
+  const monthSuggestions = [...albums.values()]
+    .sort((a, b) => b.key.localeCompare(a.key))
     .slice(0, 2)
-    .map(([, album]) => `${album.label} · ${album.count}`);
-  const travelSuggestions = getTravelSuggestions(active).slice(0, 1);
+  const travelSuggestions = getTravelSuggestions(active).slice(0, 1).map(trip => ({ ...trip, cover: monthSuggestions[0]?.cover || null, key: "" }));
   const suggestions = [...travelSuggestions, ...monthSuggestions].slice(0, 3);
   albumsEl.innerHTML = suggestions.length
-    ? suggestions.map(item => `<span class="dash-memory-item">${esc(item)}</span>`).join("")
-    : "Analise fotos para receber sugestoes";
+    ? suggestions.map(album => {
+      const thumb = album.cover ? dashboardThumb(album.cover, 360, 220) : "";
+      return `<button class="home-album-card" type="button" data-album-key="${esc(album.key || "")}" data-date-from="${esc(album.dateFrom || "")}" data-date-to="${esc(album.dateTo || "")}">
+        <span class="home-album-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" />` : ""}</span>
+        <strong>${esc(album.label)}</strong><span>${album.count ? `${album.count} fotos` : "Sugestão automática"}</span>
+      </button>`;
+    }).join("")
+    : `<span class="dash-memory-item">Analise fotos para receber sugestões</span>`;
+  albumsEl.querySelectorAll(".home-album-card").forEach(button => {
+    button.onclick = () => {
+      if (button.dataset.dateFrom && button.dataset.dateTo) openSuggestedDateRange(button.dataset.dateFrom, button.dataset.dateTo);
+      else openSuggestedAlbum(button.dataset.albumKey);
+    };
+  });
+}
+
+function dashboardThumb(file, width, height) {
+  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", width, height) || file.url;
+  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", width, height, file.coverTime) || "";
+  return "";
+}
+
+function openSuggestedAlbum(key) {
+  const match = String(key || "").match(/(\d{4}-\d{2})$/);
+  if (!match) return;
+  const [year, month] = match[1].split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  openSuggestedDateRange(`${match[1]}-01`, `${match[1]}-${String(lastDay).padStart(2, "0")}`);
+}
+
+function openSuggestedDateRange(dateFrom, dateTo) {
+  advancedFilters = { ...advancedFilters, dateFrom, dateTo };
+  advDateFrom.value = dateFrom;
+  advDateTo.value = dateTo;
+  navigateFolder(ROOT_ID);
+  setContentFilter("all");
+  setViewMode("timeline");
+}
+
+function renderDashboardHighlights(active) {
+  const element = $("dashHighlights");
+  if (!element) return;
+  const preferred = active.filter(file => (file.favorite || ["important", "critical"].includes(file.priority)) && ["image", "video"].includes(file.fileType));
+  const fallback = active.filter(file => ["image", "video"].includes(file.fileType));
+  const highlights = [...preferred, ...fallback.filter(file => !preferred.some(item => item.id === file.id))].slice(0, 3);
+  element.innerHTML = highlights.length
+    ? highlights.map(file => {
+      const thumb = dashboardThumb(file, 160, 160);
+      const label = file.favorite ? "Favorito" : file.priority === "critical" ? "Muito importante" : file.priority === "important" ? "Importante" : monthLabel(file);
+      return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
+        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" />` : ""}</span>
+        <span class="home-highlight-copy"><strong>${esc(file.name)}</strong><span>${esc(label)}</span></span>
+      </button>`;
+    }).join("")
+    : `<span class="dash-memory-item">Marque fotos ou vídeos como favoritos para vê-los aqui.</span>`;
+  element.querySelectorAll(".home-highlight-item").forEach(button => {
+    const file = files.find(item => item.id === button.dataset.fileId);
+    if (file) button.onclick = () => openLightbox(file);
+  });
 }
 
 function getTravelSuggestions(active) {
@@ -3087,7 +3189,12 @@ function getTravelSuggestions(active) {
     .map(group => {
       const start = fileDate(group[0]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
       const end = fileDate(group[group.length - 1]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-      return `Possivel viagem · ${start}–${end} · ${group.length} fotos`;
+      return {
+        label: `Possivel viagem · ${start}–${end}`,
+        count: group.length,
+        dateFrom: fileDate(group[0]).toISOString().slice(0, 10),
+        dateTo: fileDate(group[group.length - 1]).toISOString().slice(0, 10),
+      };
     });
 }
 

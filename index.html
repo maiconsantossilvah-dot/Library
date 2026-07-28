@@ -220,14 +220,48 @@
 
     <!-- CONTENT AREA -->
     <div class="content" id="content">
-      <section class="dashboard" id="dashboard">
-        <div class="dash-card"><span class="dash-label">Arquivos</span><strong id="dashTotal">0</strong></div>
-        <div class="dash-card"><span class="dash-label">Imagens</span><strong id="dashImages">0</strong></div>
-        <div class="dash-card"><span class="dash-label">Videos</span><strong id="dashVideos">0</strong></div>
-        <div class="dash-card"><span class="dash-label">Docs</span><strong id="dashDocs">0</strong></div>
-        <div class="dash-card wide"><span class="dash-label">Ultimas acoes</span><div id="dashHistory" class="dash-history">Sem historico</div></div>
-        <div class="dash-card wide memory-card"><span class="dash-label">Neste dia</span><div id="dashMemories" class="dash-history">Sem memorias nesta data</div></div>
-        <div class="dash-card wide memory-card"><span class="dash-label">Albuns sugeridos</span><div id="dashAlbumSuggestions" class="dash-history">As sugestoes aparecerao nas fotos analisadas</div></div>
+      <section class="dashboard dashboard-home" id="dashboard">
+        <header class="dashboard-hero">
+          <div class="dashboard-hero-copy">
+            <span class="eyebrow">SEU ARQUIVO PESSOAL</span>
+            <h1 id="dashGreeting">Bem-vindo de volta.</h1>
+            <p id="dashHeroText">Tudo que importa, organizado em um só lugar.</p>
+          </div>
+          <div class="dashboard-hero-actions">
+            <label class="home-primary-action" for="fileInput">Adicionar arquivos <span>+</span></label>
+            <button class="home-secondary-action" id="dashboardTimelineBtn" type="button">Ver linha do tempo</button>
+          </div>
+        </header>
+
+        <section class="dashboard-stat-grid" aria-label="Resumo da biblioteca">
+          <article class="dash-card"><span class="dash-label">Arquivos</span><strong id="dashTotal">0</strong><span class="dash-foot">na biblioteca</span></article>
+          <article class="dash-card"><span class="dash-label">Imagens</span><strong id="dashImages">0</strong><span class="dash-foot">fotos e capturas</span></article>
+          <article class="dash-card"><span class="dash-label">Videos</span><strong id="dashVideos">0</strong><span class="dash-foot">para assistir</span></article>
+          <article class="dash-card"><span class="dash-label">Documentos</span><strong id="dashDocs">0</strong><span class="dash-foot">para consultar</span></article>
+          <article class="dash-card storage-card"><span class="dash-label">Armazenamento</span><strong id="dashStorageSummary">0 B</strong><span class="dash-foot">do seu cofre</span></article>
+        </section>
+
+        <section class="dashboard-feature-grid">
+          <article class="home-panel memory-spotlight-panel">
+            <div class="home-panel-head"><span class="eyebrow">NESTE DIA</span><span class="panel-kicker">MEMÓRIAS</span></div>
+            <div id="dashMemories" class="memory-spotlight">Sem memórias nesta data</div>
+          </article>
+          <article class="home-panel highlights-panel">
+            <div class="home-panel-head"><span class="eyebrow">DESTAQUES</span><button class="text-panel-action" id="dashboardAllFilesBtn" type="button">Ver arquivos</button></div>
+            <div id="dashHighlights" class="home-highlight-list">Nenhum destaque ainda</div>
+          </article>
+        </section>
+
+        <section class="dashboard-lower-grid">
+          <article class="home-panel albums-panel">
+            <div class="home-panel-head"><span class="eyebrow">ÁLBUNS</span><span class="panel-kicker">SUGERIDOS</span></div>
+            <div id="dashAlbumSuggestions" class="home-album-grid">As sugestões aparecerão nas fotos analisadas</div>
+          </article>
+          <article class="home-panel activity-panel">
+            <div class="home-panel-head"><span class="eyebrow">ATIVIDADE RECENTE</span><span class="panel-kicker">ÚLTIMAS AÇÕES</span></div>
+            <div id="dashHistory" class="dash-history">Sem histórico</div>
+          </article>
+        </section>
       </section>
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">VAULT</div>
