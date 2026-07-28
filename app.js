@@ -48,6 +48,7 @@ const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
 const photoMetadataCache = new WeakMap();
+const PHOTO_EXTENSION_PATTERN = /\.(?:arw|avif|bmp|cr2|cr3|dng|gif|heic|heif|iiq|jpe?g|jfif|jp2|jxl|nef|orf|pef|png|psd|qoi|raf|raw|rw2|svg|tga|tif?f|webp)$/i;
 
 let cloudName    = "";
 let uploadPreset = "";
@@ -910,10 +911,14 @@ function albumForPhoto(capturedAt, isScreenshot) {
   return { key: `${isScreenshot ? "screens" : "photos"}-${capturedAt.slice(0, 7)}`, label: `${prefix} de ${month}` };
 }
 
-async function getPhotoInsights(file) {
-  if (!file.type.startsWith("image/")) return { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+function isPhotoFile(file) {
+  return (file.type || "").startsWith("image/") || PHOTO_EXTENSION_PATTERN.test(file.name || "");
+}
+
+async function getPhotoInsights(file, options = {}) {
+  if (!isPhotoFile(file)) return { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
   if (photoMetadataCache.has(file)) return photoMetadataCache.get(file);
-  const metadata = await readPhotoMetadata(file);
+  const metadata = await readPhotoMetadata(file, options);
   const album = albumForPhoto(metadata.capturedAt, metadata.isScreenshot);
   const insights = { ...metadata, albumKey: album.key, albumLabel: album.label };
   photoMetadataCache.set(file, insights);
@@ -956,7 +961,7 @@ async function analyzeExistingPhotos() {
         const response = await fetch(file.url);
         if (!response.ok) throw new Error("Download indisponivel");
         const source = new File([await response.blob()], file.name || "foto", { type: file.mimeType || "image/jpeg" });
-        const insights = await getPhotoInsights(source);
+        const insights = await getPhotoInsights(source, { allowFileDateFallback: false });
         await updateDoc(doc(db, "vault_files", file.id), photoMetadataUpdate(file, insights));
         processed += 1;
       } catch (error) {
@@ -2447,7 +2452,7 @@ async function handleFiles(fileList) {
   const uniqueFiles = [];
   showToast("Analisando arquivos...");
   for (const file of fileList) {
-    if (file.type.startsWith("image/")) await getPhotoInsights(file);
+    if (isPhotoFile(file)) await getPhotoInsights(file);
     const contentHash = await getOrComputeUploadHash(file);
     if (isUploadDuplicate(file, contentHash)) {
       const confirmed = await openConfirmDialog({
@@ -2520,7 +2525,7 @@ function uploadOneFile(file) {
     const cancelBtn = itemEl.querySelector(".upload-cancel");
 
     const resourceType = file.type.startsWith("video/") ? "video"
-                       : file.type.startsWith("image/") ? "image" : "raw";
+                       : isPhotoFile(file) ? "image" : "raw";
 
     const url  = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
     const form = new FormData();
@@ -2574,7 +2579,7 @@ function uploadOneFile(file) {
           isScreenshot: photoInsights.isScreenshot,
           suggestedAlbumKey: photoInsights.albumKey || "",
           suggestedAlbumLabel: photoInsights.albumLabel || "",
-          photoMetadataStatus: file.type.startsWith("image/") ? "processed" : "",
+          photoMetadataStatus: isPhotoFile(file) ? "processed" : "",
           dueDate:       "",
           customFields:  {},
           notes:         [],
@@ -2624,7 +2629,7 @@ function uploadOneFile(file) {
 }
 
 function getFileType(file) {
-  if (file.type.startsWith("image/")) return "image";
+  if (isPhotoFile(file)) return "image";
   if (file.type.startsWith("video/")) return "video";
   return "document";
 }

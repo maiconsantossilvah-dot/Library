@@ -1,80 +1,47 @@
 const SCREENSHOT_PATTERN = /(?:screenshot|screen[ _-]?shot|captura(?: de)? tela|captura_de_tela|print[_ -]?screen)/i;
+const EXIFR_URL = "https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs";
+let exifrLoader = null;
 
-function readUint16(view, offset, littleEndian) {
-  return view.getUint16(offset, littleEndian);
+function loadExifReader() {
+  if (!exifrLoader) exifrLoader = import(EXIFR_URL);
+  return exifrLoader;
 }
 
-function readUint32(view, offset, littleEndian) {
-  return view.getUint32(offset, littleEndian);
-}
-
-function readExifDate(view, offset, length) {
-  const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, Math.max(0, length - 1));
-  const raw = new TextDecoder().decode(bytes).trim();
-  const match = raw.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
-}
-
-function parseIfd(view, tiffStart, ifdOffset, littleEndian) {
-  const start = tiffStart + ifdOffset;
-  if (start + 2 > view.byteLength) return [];
-  const count = readUint16(view, start, littleEndian);
-  const entries = [];
-  for (let index = 0; index < count; index += 1) {
-    const offset = start + 2 + index * 12;
-    if (offset + 12 > view.byteLength) break;
-    entries.push({
-      tag: readUint16(view, offset, littleEndian),
-      type: readUint16(view, offset + 2, littleEndian),
-      count: readUint32(view, offset + 4, littleEndian),
-      valueOffset: offset + 8,
-      value: readUint32(view, offset + 8, littleEndian),
-    });
+function toDateInput(value) {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const exact = value.match(/^(\d{4})[:/-](\d{2})[:/-](\d{2})/);
+    if (exact) return `${exact[1]}-${exact[2]}-${exact[3]}`;
   }
-  return entries;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function dateFromExif(view) {
-  if (view.getUint16(0) !== 0xffd8) return "";
-  let cursor = 2;
-  while (cursor + 4 < view.byteLength) {
-    if (view.getUint8(cursor) !== 0xff) { cursor += 1; continue; }
-    const marker = view.getUint8(cursor + 1);
-    const size = view.getUint16(cursor + 2, false);
-    if (marker === 0xe1 && size >= 10) {
-      const exifStart = cursor + 4;
-      if (String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + exifStart, 4)) !== "Exif") {
-        cursor += size + 2;
-        continue;
-      }
-      const tiffStart = exifStart + 6;
-      const order = String.fromCharCode(view.getUint8(tiffStart), view.getUint8(tiffStart + 1));
-      const littleEndian = order === "II";
-      if (!littleEndian && order !== "MM") return "";
-      const ifd0 = parseIfd(view, tiffStart, readUint32(view, tiffStart + 4, littleEndian), littleEndian);
-      const exifPointer = ifd0.find(entry => entry.tag === 0x8769);
-      const exifIfd = exifPointer ? parseIfd(view, tiffStart, exifPointer.value, littleEndian) : [];
-      const dateEntry = exifIfd.find(entry => entry.tag === 0x9003 || entry.tag === 0x9004)
-        || ifd0.find(entry => entry.tag === 0x0132);
-      if (!dateEntry || dateEntry.type !== 2) return "";
-      const dateOffset = dateEntry.count <= 4 ? dateEntry.valueOffset : tiffStart + dateEntry.value;
-      return readExifDate(view, dateOffset, dateEntry.count);
-    }
-    if (size < 2) break;
-    cursor += size + 2;
-  }
-  return "";
+function fileModifiedDate(file) {
+  if (!Number.isFinite(file.lastModified) || file.lastModified <= 0) return "";
+  return toDateInput(new Date(file.lastModified));
 }
 
-export async function readPhotoMetadata(file) {
+export async function readPhotoMetadata(file, { allowFileDateFallback = true } = {}) {
   const isScreenshot = SCREENSHOT_PATTERN.test(file.name || "");
-  const isJpeg = file.type === "image/jpeg" || /\.jpe?g$/i.test(file.name || "");
-  if (!isJpeg) return { capturedAt: "", dateSource: "", isScreenshot };
   try {
-    const prefix = await file.slice(0, 512 * 1024).arrayBuffer();
-    const capturedAt = dateFromExif(new DataView(prefix));
-    return { capturedAt, dateSource: capturedAt ? "exif" : "", isScreenshot };
-  } catch {
-    return { capturedAt: "", dateSource: "", isScreenshot };
+    const exifr = await loadExifReader();
+    const metadata = await exifr.parse(file, [
+      "DateTimeOriginal", "CreateDate", "ModifyDate", "DateTime", "MediaCreateDate",
+    ]);
+    const capturedAt = toDateInput(
+      metadata?.DateTimeOriginal
+      || metadata?.CreateDate
+      || metadata?.MediaCreateDate
+      || metadata?.DateTime
+      || metadata?.ModifyDate
+    );
+    if (capturedAt) return { capturedAt, dateSource: "metadata", isScreenshot };
+  } catch (error) {
+    // Alguns formatos de imagem nao carregam metadados ou nao sao suportados pelo navegador.
+    console.warn("Metadados da foto indisponiveis", file.name, error);
   }
+  const fallback = allowFileDateFallback ? fileModifiedDate(file) : "";
+  return { capturedAt: fallback, dateSource: fallback ? "arquivo" : "", isScreenshot };
 }

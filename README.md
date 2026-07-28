@@ -94,7 +94,7 @@ vault/
 - Credenciais salvas localmente no navegador
 - Instalavel como aplicativo (PWA), com interface disponivel offline apos a primeira abertura
 - Busca local por conteudo de TXT, imagens e PDFs; imagens e PDFs escaneados usam OCR no proprio navegador
-- Fotos JPEG leem automaticamente a data EXIF, sugerem albuns por mes, identificam capturas de tela e alimentam o painel "Neste dia"
+- Fotos leem automaticamente metadados de JPEG, TIFF, PNG, HEIC/HEIF, AVIF e outros formatos compativeis; quando nao houver data embutida, usam a data do arquivo como identificada na importacao. Elas sugerem albuns por mes, identificam capturas de tela e alimentam o painel "Neste dia"
 
 ---
 
