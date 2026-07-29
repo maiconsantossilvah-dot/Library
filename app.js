@@ -740,6 +740,8 @@ function syncSectionUI() {
   document.body.dataset.section = navState.section;
   dashboard.hidden = !isHome;
   filesWorkspace.hidden = isHome;
+  dashboard.setAttribute("aria-hidden", isHome ? "false" : "true");
+  filesWorkspace.setAttribute("aria-hidden", isHome ? "true" : "false");
   navHome?.classList.toggle("active", isHome);
   navFiles?.classList.toggle("active", !isHome);
   navHome?.setAttribute("aria-current", isHome ? "page" : "false");

@@ -54,6 +54,8 @@
 
 .vault-reimagined[data-section="home"] .workspace-toolbar { display: none; }
 .vault-reimagined[data-section="home"] .topbar { border-bottom-color: transparent; }
+.vault-reimagined[data-section="files"] #dashboard { display: none !important; }
+.vault-reimagined[data-section="home"] #filesWorkspace { display: none !important; }
 
 .vault-reimagined .files-workspace {
   width: min(1440px, 100%);
