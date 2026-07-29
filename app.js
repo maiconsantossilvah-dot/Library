@@ -30,7 +30,18 @@ let folders        = [];
 let files          = [];
 let unsubFiles     = null;
 let unsubFolders   = null;
+let folderById = new Map();
+let folderChildrenByParent = new Map();
+let fileById = new Map();
+let activeFileCountByFolder = new Map();
+let descendantFileCountByFolder = new Map();
+let descendantFolderCountByFolder = new Map();
+let duplicateFileIds = new Set();
+let dashboardRenderFrame = 0;
+let dashboardRenderTimer = null;
+let searchRenderTimer = null;
 const navState = {
+  section: "home",
   folderId: ROOT_ID,
   viewMode: "grid",
   contentScope: "all",
@@ -59,6 +70,7 @@ let bulkMoveMode  = false;
 let fileToDescribe = null;
 let folderToCover = null;
 let folderForActions = null;
+let pendingFolderParentId = ROOT_ID;
 let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
@@ -104,6 +116,20 @@ const searchInput     = $("searchInput");
 const sortSelect      = $("sortSelect");
 const qualitySelect   = $("qualitySelect");
 const dashboard       = $("dashboard");
+const filesWorkspace  = $("filesWorkspace");
+const folderChildrenSection = $("folderChildrenSection");
+const folderChildrenGrid = $("folderChildrenGrid");
+const folderChildrenCount = $("folderChildrenCount");
+const currentFolderTitle = $("currentFolderTitle");
+const currentFolderMeta = $("currentFolderMeta");
+const createSubfolderBtn = $("createSubfolderBtn");
+const createSubfolderLabel = $("createSubfolderLabel");
+const folderModalTitle = $("folderModalTitle");
+const folderModalContext = $("folderModalContext");
+const navHome = $("navHome");
+const navFiles = $("navFiles");
+const themeToggle = $("themeToggle");
+const themeToggleText = $("themeToggleText");
 const loadMoreBtn     = $("loadMoreBtn");
 const advFolderSelect = $("advFolderSelect");
 const advPrioritySelect = $("advPrioritySelect");
@@ -155,6 +181,32 @@ const connectionStatus = $("connectionStatus");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
+const THEME_KEY = "vault_theme";
+
+function preferredTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme, options = {}) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  const isDark = nextTheme === "dark";
+  document.body.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme;
+  if (options.persist !== false) localStorage.setItem(THEME_KEY, nextTheme);
+  themeToggle?.setAttribute("aria-label", isDark ? "Ativar modo claro" : "Ativar modo escuro");
+  themeToggle?.setAttribute("title", isDark ? "Ativar modo claro" : "Ativar modo escuro");
+  themeToggle?.setAttribute("aria-pressed", isDark ? "true" : "false");
+  if (themeToggleText) themeToggleText.textContent = isDark ? "Ativar modo claro" : "Ativar modo escuro";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isDark ? "#151b18" : "#f3f0e8");
+}
+
+themeToggle?.addEventListener("click", () => {
+  applyTheme(document.body.dataset.theme === "dark" ? "light" : "dark");
+});
+applyTheme(preferredTheme(), { persist: false });
+syncSectionUI();
 
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem(CFG_KEY)) || null; }
@@ -424,6 +476,7 @@ function listenFolders() {
     query(collection(db, "vault_folders"), orderBy("createdAt", "asc")),
     snap => {
       folders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rebuildFolderIndexes();
       ensureCurrentFolderExists();
       renderBreadcrumb();
       renderFolderList();
@@ -444,8 +497,9 @@ function listenFiles() {
     query(collection(db, "vault_files"), orderBy("createdAt", "desc")),
     snap => {
       files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rebuildFileIndexes();
       updateStorageUI();
-      updateDashboard();
+      scheduleDashboardUpdate();
       renderGrid();
     },
     err => {
@@ -466,8 +520,82 @@ function toFirestoreFolderId(folderId) {
   return normalizeFolderId(folderId) === ROOT_ID ? null : folderId;
 }
 
+function rebuildFolderIndexes() {
+  folderById = new Map(folders.map(folder => [folder.id, folder]));
+  folderChildrenByParent = new Map();
+  folders.forEach(folder => {
+    const parentId = normalizeFolderId(folder.parentId);
+    const children = folderChildrenByParent.get(parentId) || [];
+    children.push(folder);
+    folderChildrenByParent.set(parentId, children);
+  });
+  folderChildrenByParent.forEach(children => {
+    children.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+  });
+  rebuildDescendantFolderCounts();
+  rebuildDescendantFileCounts();
+}
+
+function rebuildFileIndexes() {
+  fileById = new Map(files.map(file => [file.id, file]));
+  activeFileCountByFolder = new Map();
+  duplicateFileIds = new Set();
+  const duplicateGroups = new Map();
+
+  files.forEach(file => {
+    if (!isActiveFile(file)) return;
+    const folderId = normalizeFolderId(file.folderId);
+    activeFileCountByFolder.set(folderId, (activeFileCountByFolder.get(folderId) || 0) + 1);
+    const duplicateKey = file.contentHash
+      ? `hash:${file.contentHash}`
+      : `meta:${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
+    const group = duplicateGroups.get(duplicateKey) || [];
+    group.push(file.id);
+    duplicateGroups.set(duplicateKey, group);
+  });
+
+  duplicateGroups.forEach(group => {
+    if (group.length > 1) group.forEach(id => duplicateFileIds.add(id));
+  });
+  rebuildDescendantFileCounts();
+}
+
+function rebuildDescendantFileCounts() {
+  descendantFileCountByFolder = new Map();
+  const visit = (folderId, lineage = new Set()) => {
+    if (descendantFileCountByFolder.has(folderId)) return descendantFileCountByFolder.get(folderId);
+    if (lineage.has(folderId)) return 0;
+    const nextLineage = new Set(lineage);
+    nextLineage.add(folderId);
+    let total = activeFileCountByFolder.get(folderId) || 0;
+    (folderChildrenByParent.get(folderId) || []).forEach(child => {
+      total += visit(child.id, nextLineage);
+    });
+    descendantFileCountByFolder.set(folderId, total);
+    return total;
+  };
+  folders.forEach(folder => visit(folder.id));
+}
+
+function rebuildDescendantFolderCounts() {
+  descendantFolderCountByFolder = new Map();
+  const visit = (folderId, lineage = new Set()) => {
+    if (descendantFolderCountByFolder.has(folderId)) return descendantFolderCountByFolder.get(folderId);
+    if (lineage.has(folderId)) return 0;
+    const nextLineage = new Set(lineage);
+    nextLineage.add(folderId);
+    let total = 0;
+    (folderChildrenByParent.get(folderId) || []).forEach(child => {
+      total += 1 + visit(child.id, nextLineage);
+    });
+    descendantFolderCountByFolder.set(folderId, total);
+    return total;
+  };
+  folders.forEach(folder => visit(folder.id));
+}
+
 function getFolder(folderId) {
-  return folders.find(folder => folder.id === folderId) || null;
+  return folderById.get(folderId) || null;
 }
 
 function ensureCurrentFolderExists() {
@@ -477,10 +605,7 @@ function ensureCurrentFolderExists() {
 }
 
 function getFolderChildren(parentId = ROOT_ID) {
-  const firestoreParentId = toFirestoreFolderId(parentId);
-  return folders
-    .filter(folder => (folder.parentId || null) === firestoreParentId)
-    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+  return folderChildrenByParent.get(normalizeFolderId(parentId)) || [];
 }
 
 function getFolderPath(folderId = navState.folderId) {
@@ -550,10 +675,7 @@ function renderFolderTreeNode(folder, depth) {
   li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
   li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
   li.onclick = () => {
-    if (navState.folderId === folder.id) {
-      if (hasChildren) toggleFolderExpanded(folder.id);
-      return;
-    }
+    if (navState.folderId === folder.id) return;
     dispatchNavigation("open", { folderId: folder.id });
   };
   attachFolderDrop(li, folder.id);
@@ -613,8 +735,78 @@ function getParentFolderId(folderId) {
   return getFolder(folderId)?.parentId || ROOT_ID;
 }
 
-function setCurrentFolder(folderId) {
+function syncSectionUI() {
+  const isHome = navState.section === "home";
+  document.body.dataset.section = navState.section;
+  dashboard.hidden = !isHome;
+  filesWorkspace.hidden = isHome;
+  navHome?.classList.toggle("active", isHome);
+  navFiles?.classList.toggle("active", !isHome);
+  navHome?.setAttribute("aria-current", isHome ? "page" : "false");
+  navFiles?.setAttribute("aria-current", isHome ? "false" : "page");
+}
+
+function openHomeSection() {
+  isSelectMode = false;
+  selectedIds.clear();
+  $("viewSelect").classList.remove("active");
+  updateBulkBar();
+  navState.section = "home";
+  syncSectionUI();
+  renderBreadcrumb();
+  scheduleDashboardUpdate();
+  renderGrid();
+}
+
+function openFilesSection(options = {}) {
+  const { render = true, refreshNavigation = true } = options;
+  navState.section = "files";
+  syncSectionUI();
+  if (refreshNavigation) {
+    renderBreadcrumb();
+    renderFolderList();
+  }
+  if (render) renderGrid();
+}
+
+function openLibraryView(options = {}) {
+  const {
+    folderId = navState.folderId,
+    contentScope = navState.contentScope,
+    viewMode = navState.viewMode,
+    resetAdvancedFilters = false,
+  } = options;
+  if (resetAdvancedFilters) {
+    advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
+    advFolderSelect.value = "";
+    advPrioritySelect.value = "";
+    advDateFrom.value = "";
+    advDateTo.value = "";
+  }
+  navState.section = "files";
   navState.folderId = normalizeFolderId(folderId);
+  navState.contentScope = contentScope;
+  navState.viewMode = VIEW_BUTTONS[viewMode] ? viewMode : "grid";
+  visibleLimit = PAGE_SIZE;
+  isSelectMode = false;
+  selectedIds.clear();
+  $("viewSelect").classList.remove("active");
+  syncSectionUI();
+  expandFolderPath(navState.folderId);
+  setActiveFilterChip(navState.contentScope);
+  setViewButtonState(navState.viewMode);
+  updateBulkBar();
+  renderBreadcrumb();
+  renderFolderList();
+  renderGrid();
+}
+
+function setCurrentFolder(folderId) {
+  navState.section = "files";
+  syncSectionUI();
+  navState.folderId = normalizeFolderId(folderId);
+  navState.contentScope = "all";
+  setActiveFilterChip("all");
   expandFolderPath(navState.folderId);
   syncLegacyFolderPath();
   renderBreadcrumb();
@@ -630,6 +822,10 @@ function navigateFolder(folderId) {
 }
 
 function renderBreadcrumb() {
+  if (navState.section === "home") {
+    breadcrumb.innerHTML = `<span>Início</span>`;
+    return;
+  }
   const path = syncLegacyFolderPath();
   if (navState.folderId === ROOT_ID) {
     breadcrumb.innerHTML = `<span>Todos os Arquivos</span>`;
@@ -682,34 +878,98 @@ const VIEW_RENDERERS = {
   gallery: renderFileItems,
 };
 
+function updateLibraryWorkspaceHeader() {
+  const isRoot = navState.folderId === ROOT_ID;
+  const folder = isRoot ? null : getFolder(navState.folderId);
+  const directFiles = activeFileCountByFolder.get(navState.folderId) || 0;
+  const directFolders = getFolderChildren(navState.folderId).length;
+  if (currentFolderTitle) currentFolderTitle.textContent = isRoot ? "Todos os arquivos" : (folder?.name || "Pasta");
+  if (currentFolderMeta) {
+    const fileText = `${directFiles} arquivo${directFiles === 1 ? "" : "s"}`;
+    const folderText = `${directFolders} subpasta${directFolders === 1 ? "" : "s"}`;
+    currentFolderMeta.textContent = isRoot ? `${fileText} no seu acervo.` : `${fileText} · ${folderText} nesta pasta.`;
+  }
+  if (createSubfolderLabel) createSubfolderLabel.textContent = isRoot ? "Nova coleção" : "Nova subpasta";
+  createSubfolderBtn?.setAttribute("aria-label", isRoot ? "Criar nova coleção" : "Criar subpasta nesta pasta");
+  createSubfolderBtn?.setAttribute("title", isRoot ? "Criar nova coleção" : "Criar subpasta");
+}
+
+function shouldShowFolderChildren() {
+  return navState.section === "files"
+    && navState.folderId !== ROOT_ID
+    && navState.viewMode !== "folders"
+    && navState.contentScope === "all"
+    && !currentSearch
+    && !advancedFilters.folderId
+    && !advancedFilters.priority
+    && !advancedFilters.dateFrom
+    && !advancedFilters.dateTo;
+}
+
+function renderFolderChildrenSection() {
+  if (!folderChildrenSection || !folderChildrenGrid) return 0;
+  if (!shouldShowFolderChildren()) {
+    folderChildrenSection.hidden = true;
+    folderChildrenGrid.replaceChildren();
+    return 0;
+  }
+  const children = getFolderChildren(navState.folderId);
+  folderChildrenSection.hidden = children.length === 0;
+  folderChildrenCount.textContent = `${children.length} subpasta${children.length === 1 ? "" : "s"}`;
+  const fragment = document.createDocumentFragment();
+  children.forEach(folder => fragment.appendChild(makeFolderCard(folder, countFilesInFolder(folder.id))));
+  folderChildrenGrid.replaceChildren(fragment);
+  return children.length;
+}
+
 function renderGrid() {
   renderDashboardVisibility();
-  fileGrid.innerHTML = "";
+  if (navState.section === "home") {
+    if (fileGrid.childElementCount) fileGrid.replaceChildren();
+    if (folderChildrenGrid?.childElementCount) folderChildrenGrid.replaceChildren();
+    if (folderChildrenSection) folderChildrenSection.hidden = true;
+    emptyState.style.display = "none";
+    loadMoreBtn.style.display = "none";
+    updateContextualActions();
+    updateViewA11y();
+    return;
+  }
+
+  updateLibraryWorkspaceHeader();
+  const visibleSubfolders = renderFolderChildrenSection();
+  fileGrid.replaceChildren();
   fileGrid.className = getGridClassName();
-  lightboxFiles = [];
 
-  const renderer = VIEW_RENDERERS[navState.viewMode] || VIEW_RENDERERS.grid;
-  const items = renderer();
+  let itemCount = 0;
+  let elements = [];
+  if (navState.viewMode === "folders") {
+    const folderItems = getFolderChildren(navState.folderId).filter(folder => matchesSearch(folder.name));
+    itemCount = folderItems.length;
+    lightboxFiles = [];
+    elements = folderItems.slice(0, visibleLimit).map(folder => makeFolderCard(folder, countFilesInFolder(folder.id)));
+  } else {
+    const contentFiles = getContentFiles();
+    lightboxFiles = contentFiles;
+    itemCount = contentFiles.length;
+    const visibleFiles = contentFiles.slice(0, visibleLimit);
+    elements = navState.viewMode === "timeline"
+      ? renderTimelineViewItems(visibleFiles)
+      : visibleFiles.map(makeFileCard);
+  }
 
-  updateEmptyState(items.length);
-  items.slice(0, visibleLimit).forEach(el => fileGrid.appendChild(el));
-  loadMoreBtn.style.display = items.length > visibleLimit ? "inline-flex" : "none";
-  loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, items.length - visibleLimit)})`;
+  updateEmptyState(itemCount + visibleSubfolders);
+  const fragment = document.createDocumentFragment();
+  elements.forEach(element => fragment.appendChild(element));
+  fileGrid.appendChild(fragment);
+  loadMoreBtn.style.display = itemCount > visibleLimit ? "inline-flex" : "none";
+  loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, itemCount - visibleLimit)})`;
   updateContextualActions();
   updateViewA11y();
 }
 
 function renderDashboardVisibility() {
   if (!dashboard) return;
-  const isHome = navState.folderId === ROOT_ID
-    && navState.contentScope === "all"
-    && navState.viewMode === "grid"
-    && !currentSearch
-    && !advancedFilters.folderId
-    && !advancedFilters.priority
-    && !advancedFilters.dateFrom
-    && !advancedFilters.dateTo;
-  dashboard.hidden = !isHome;
+  dashboard.hidden = navState.section !== "home";
 }
 
 function getGridClassName() {
@@ -729,9 +989,9 @@ function renderFileItems() {
   return contentFiles.map(makeFileCard);
 }
 
-function renderTimelineViewItems() {
+function renderTimelineViewItems(list = getContentFiles()) {
   const items = [];
-  renderTimelineItems(getContentFiles(), items);
+  renderTimelineItems(list, items);
   return items;
 }
 
@@ -790,7 +1050,6 @@ function renderTimelineItems(list, items) {
       items.push(header);
       lastKey = key;
     }
-    lightboxFiles.push(file);
     items.push(makeFileCard(file));
   });
 }
@@ -815,10 +1074,7 @@ function fileDate(file) {
   return created ? new Date(created) : new Date(0);
 }
 function countFilesInFolder(folderId) {
-  let count = files.filter(f => f.folderId === folderId && !f.deletedAt).length;
-  // Conta subpastas tambem
-  folders.filter(f => f.parentId === folderId).forEach(sub => { count += countFilesInFolder(sub.id); });
-  return count;
+  return descendantFileCountByFolder.get(folderId) || 0;
 }
 
 function applyFilter(list) {
@@ -847,24 +1103,11 @@ function matchesAdvancedFilters(file) {
 }
 
 function getDuplicateFiles() {
-  const groups = new Map();
-  files.filter(f => !f.deletedAt).forEach(file => {
-    const key = file.contentHash
-      ? `hash:${file.contentHash}`
-      : `meta:${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(file);
-  });
-  return [...groups.values()].filter(group => group.length > 1).flat();
+  return files.filter(file => duplicateFileIds.has(file.id));
 }
 
 function isDuplicateFile(file) {
-  if (!file || file.deletedAt) return false;
-  if (file.contentHash) {
-    return files.filter(f => !f.deletedAt && f.contentHash === file.contentHash).length > 1;
-  }
-  const keyName = (file.name || "").toLowerCase();
-  return files.filter(f => !f.deletedAt && (f.name || "").toLowerCase() === keyName && (f.size || 0) === (file.size || 0) && (f.fileType || "") === (file.fileType || "")).length > 1;
+  return !!file && duplicateFileIds.has(file.id);
 }
 
 function sortFiles(list) {
@@ -1318,6 +1561,12 @@ function cloudThumb(publicId, resourceType, w, h, coverTime = null) {
   return `https://res.cloudinary.com/${cloudName}/${type}/upload/${cover}c_fit,w_${dims.w},h_${dims.h},q_auto,${fmt}/${publicId}`;
 }
 
+function cloudPreview(publicId, resourceType, w = 1920, h = 1440) {
+  if (!publicId || !cloudName) return "";
+  const type = resourceType === "video" ? "video" : "image";
+  return `https://res.cloudinary.com/${cloudName}/${type}/upload/c_limit,w_${w},h_${h},q_auto,f_auto/${publicId}`;
+}
+
 function qualityDims(w, h) {
   const scale = { low: 0.55, medium: 1, high: 1.55 }[thumbQuality] || 1;
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
@@ -1332,11 +1581,12 @@ function docIcon(name) {
 function makeFolderCard(folder, count) {
   const card = document.createElement("div");
   card.className = "folder-card";
-  const hasChildren = folders.some(f => f.parentId === folder.id);
-  const coverFile = folder.coverFileId ? files.find(f => f.id === folder.coverFileId && !f.deletedAt) : null;
+  const hasChildren = getFolderChildren(folder.id).length > 0;
+  const coverCandidate = folder.coverFileId ? fileById.get(folder.coverFileId) : null;
+  const coverFile = coverCandidate && !coverCandidate.deletedAt ? coverCandidate : null;
   const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
   const coverRatio = coverFile?.width && coverFile?.height ? `${coverFile.width} / ${coverFile.height}` : "16 / 9";
-  const subCount = getDescendantFolderIds(folder.id).length;
+  const subCount = descendantFolderCountByFolder.get(folder.id) || 0;
   card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
@@ -1421,9 +1671,9 @@ function openFolderCoverPicker(folder) {
 }
 
 function getImagesForFolderTree(folderId) {
-  const folderIds = [folderId, ...getDescendantFolderIds(folderId)];
+  const folderIds = new Set([folderId, ...getDescendantFolderIds(folderId)]);
   return files
-    .filter(file => !file.deletedAt && file.fileType === "image" && folderIds.includes(file.folderId))
+    .filter(file => !file.deletedAt && file.fileType === "image" && folderIds.has(file.folderId))
     .sort(comparePageFiles);
 }
 
@@ -1867,11 +2117,18 @@ $("closeMoveModal").onclick = () => {
 };
 
 // ??? New folder ???????????????????????????????????????????
-$("btnNewFolder").onclick = () => {
+function openFolderCreateDialog(parentId = navState.folderId) {
+  pendingFolderParentId = normalizeFolderId(parentId);
+  const parent = pendingFolderParentId === ROOT_ID ? null : getFolder(pendingFolderParentId);
+  if (folderModalTitle) folderModalTitle.textContent = parent ? "Nova subpasta" : "Nova coleção";
+  if (folderModalContext) folderModalContext.textContent = parent ? `Ela será criada dentro de “${parent.name || "Pasta"}”.` : "Crie uma coleção principal para o seu acervo.";
   folderNameInput.value = "";
   folderModal.classList.add("active");
   setTimeout(() => folderNameInput.focus(), 100);
-};
+}
+
+$("btnNewFolder").onclick = () => openFolderCreateDialog(ROOT_ID);
+createSubfolderBtn?.addEventListener("click", () => openFolderCreateDialog(navState.folderId));
 $("cancelFolder").onclick  = () => folderModal.classList.remove("active");
 $("confirmFolder").onclick = createFolder;
 folderNameInput.onkeydown  = e => { if (e.key === "Enter") createFolder(); };
@@ -1880,12 +2137,13 @@ async function createFolder() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
   const name = folderNameInput.value.trim();
   if (!name) return;
-  const parentId = toFirestoreFolderId(navState.folderId);
-    await addDoc(collection(db, "vault_folders"), {
+  const parentId = toFirestoreFolderId(pendingFolderParentId);
+  await addDoc(collection(db, "vault_folders"), {
     name,
-    parentId,   // subpasta!
+    parentId,
     createdAt: serverTimestamp(),
   });
+  navState.expandedFolders.add(normalizeFolderId(pendingFolderParentId));
   folderModal.classList.remove("active");
   addHistory(`Pasta criada: ${name}`);
   showToast(`Pasta "${name}" criada${parentId ? " aqui dentro" : ""}`, "success");
@@ -2127,12 +2385,21 @@ async function deleteFolder(folderId, name) {
 }
 
 function getDescendantFolderIds(folderId) {
-  const children = folders.filter(f => f.parentId === folderId);
-  return children.flatMap(child => [child.id, ...getDescendantFolderIds(child.id)]);
+  const descendants = [];
+  const queue = [...getFolderChildren(folderId)];
+  const seen = new Set();
+  for (let index = 0; index < queue.length; index += 1) {
+    const child = queue[index];
+    if (!child || seen.has(child.id)) continue;
+    seen.add(child.id);
+    descendants.push(child.id);
+    queue.push(...getFolderChildren(child.id));
+  }
+  return descendants;
 }
 
 async function deleteFolderRecursive(folderId) {
-  const subs = folders.filter(f => f.parentId === folderId);
+  const subs = getFolderChildren(folderId);
   for (const sub of subs) await deleteFolderRecursive(sub.id);
   await deleteDoc(doc(db, "vault_folders", folderId));
 }
@@ -2143,10 +2410,18 @@ function openLightbox(file) {
   lightboxInner.innerHTML = "";
   if (file.fileType === "image") {
     const img = document.createElement("img");
-    img.src = file.url;
+    const previewUrl = cloudPreview(file.cloudPublicId, "image") || file.url;
+    img.src = previewUrl;
     img.alt = file.name;
     img.loading = "eager";
-    img.onerror = () => showMissingLightbox(file);
+    img.decoding = "async";
+    img.onerror = () => {
+      if (img.src !== file.url && file.url) {
+        img.src = file.url;
+        return;
+      }
+      showMissingLightbox(file);
+    };
     lightboxInner.appendChild(img);
   } else if (file.fileType === "video") {
     const vid = document.createElement("video");
@@ -2675,6 +2950,7 @@ function setViewButtonState(mode) {
 function setViewMode(mode) {
   if (!VIEW_BUTTONS[mode]) return;
   if (mangaReader.classList.contains("active")) closeMangaReader();
+  openFilesSection({ render: false });
   navState.viewMode = mode;
   visibleLimit = PAGE_SIZE;
   if (isSelectMode) {
@@ -2714,6 +2990,7 @@ function setActiveFilterChip(filterKey) {
 }
 
 function setContentFilter(filterKey) {
+  openFilesSection({ render: false });
   navState.contentScope = filterKey;
   setActiveFilterChip(filterKey);
   setPanelOpen(filterPanel, $("filterPanelToggle"), false);
@@ -2736,18 +3013,10 @@ $("viewFolders").onclick = () => setViewMode("folders");
 $("viewTimeline").onclick = () => setViewMode("timeline");
 $("viewManga").onclick = () => openMangaReader();
 $("dashboardTimelineBtn").onclick = () => {
-  setContentFilter("all");
-  setViewMode("timeline");
+  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "timeline" });
 };
 $("dashboardAllFilesBtn").onclick = () => {
-  advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
-  advFolderSelect.value = "";
-  advPrioritySelect.value = "";
-  advDateFrom.value = "";
-  advDateTo.value = "";
-  navigateFolder(ROOT_ID);
-  setContentFilter("all");
-  setViewMode("grid");
+  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "grid", resetAdvancedFilters: true });
 };
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
@@ -2758,8 +3027,12 @@ $("viewDensity").onclick = () => {
 searchInput.oninput = () => {
   currentSearch = normalizeSearchText(searchInput.value.trim());
   visibleLimit = PAGE_SIZE;
-  renderFolderList();
-  renderGrid();
+  openFilesSection({ render: false, refreshNavigation: false });
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(() => {
+    renderFolderList();
+    renderGrid();
+  }, 180);
 };
 sortSelect.onchange = () => {
   currentSort = sortSelect.value;
@@ -2782,6 +3055,9 @@ document.querySelectorAll(".chip").forEach(chip => {
     setContentFilter(chip.dataset.filter);
   };
 });
+
+navHome?.addEventListener("click", openHomeSection);
+navFiles?.addEventListener("click", () => openFilesSection());
 
 function attachRootDrop() {
   const rootItem = folderList.firstElementChild;
@@ -2840,7 +3116,7 @@ descriptionModal.onclick = e => { if (e.target === descriptionModal) closeDescri
 descriptionInput.onkeydown = e => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") saveFileDescription();
 };
-$("emptyNewFolderBtn").onclick = () => $("btnNewFolder").click();
+$("emptyNewFolderBtn").onclick = () => openFolderCreateDialog(navState.folderId);
 $("filterPanelToggle").onclick = () => togglePanel(filterPanel, $("filterPanelToggle"), toolsPanel, $("toolsPanelToggle"));
 $("toolsPanelToggle").onclick = () => togglePanel(toolsPanel, $("toolsPanelToggle"), filterPanel, $("filterPanelToggle"));
 $("closeFilterPanel").onclick = () => setPanelOpen(filterPanel, $("filterPanelToggle"), false);
@@ -3049,7 +3325,20 @@ function updateStorageUI() {
   storageText.textContent = `${fmtSize(total)} de 25 GB`;
 }
 
+function scheduleDashboardUpdate() {
+  if (navState.section !== "home") return;
+  clearTimeout(dashboardRenderTimer);
+  dashboardRenderTimer = setTimeout(() => {
+    if (dashboardRenderFrame) return;
+    dashboardRenderFrame = requestAnimationFrame(() => {
+      dashboardRenderFrame = 0;
+      if (navState.section === "home") updateDashboard();
+    });
+  }, 90);
+}
+
 function updateDashboard() {
+  if (navState.section !== "home") return;
   const active = files.filter(f => !f.deletedAt);
   $("dashTotal").textContent = active.length;
   $("dashImages").textContent = active.filter(f => f.fileType === "image").length;
@@ -3084,9 +3373,12 @@ function renderPhotoDashboard(active) {
   if (memory) {
     const thumb = dashboardThumb(memory, 900, 620);
     memoriesEl.innerHTML = `
-      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" alt="${esc(memory.name)}" />` : ""}</div>
+      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" alt="${esc(memory.name)}" decoding="async" />` : ""}</div>
       <div class="memory-copy"><em>${fileDate(memory).getFullYear()} · ${memories.length} memoria(s) hoje</em><strong>${esc(memory.name)}</strong><span>Uma lembrança registrada neste mesmo dia, em outro ano.</span></div>`;
-    memoriesEl.onclick = () => openLightbox(memory);
+    memoriesEl.onclick = () => {
+      lightboxFiles = [memory];
+      openLightbox(memory);
+    };
     memoriesEl.style.cursor = "pointer";
   } else {
     memoriesEl.innerHTML = `<div class="memory-copy"><em>SEM MEMÓRIAS HOJE</em><strong>Seu próximo momento começa agora.</strong><span>Fotos com data de captura aparecerão aqui quando a data voltar a chegar.</span></div>`;
@@ -3140,42 +3432,57 @@ function openSuggestedDateRange(dateFrom, dateTo) {
   advancedFilters = { ...advancedFilters, dateFrom, dateTo };
   advDateFrom.value = dateFrom;
   advDateTo.value = dateTo;
-  navigateFolder(ROOT_ID);
-  setContentFilter("all");
-  setViewMode("timeline");
+  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "timeline" });
 }
 
 function renderDashboardHighlights(active) {
   const element = $("dashHighlights");
   if (!element) return;
-  const preferred = active.filter(file => (file.favorite || ["important", "critical"].includes(file.priority)) && ["image", "video"].includes(file.fileType));
-  const fallback = active.filter(file => ["image", "video"].includes(file.fileType));
-  const highlights = [...preferred, ...fallback.filter(file => !preferred.some(item => item.id === file.id))].slice(0, 3);
+  const highlights = [];
+  const seen = new Set();
+  const isMedia = file => file.fileType === "image" || file.fileType === "video";
+  for (const file of active) {
+    if (!isMedia(file) || !(file.favorite || ["important", "critical"].includes(file.priority))) continue;
+    highlights.push(file);
+    seen.add(file.id);
+    if (highlights.length === 3) break;
+  }
+  if (highlights.length < 3) {
+    for (const file of active) {
+      if (!isMedia(file) || seen.has(file.id)) continue;
+      highlights.push(file);
+      if (highlights.length === 3) break;
+    }
+  }
   element.innerHTML = highlights.length
     ? highlights.map(file => {
       const thumb = dashboardThumb(file, 160, 160);
       const label = file.favorite ? "Favorito" : file.priority === "critical" ? "Muito importante" : file.priority === "important" ? "Importante" : monthLabel(file);
       return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
-        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" />` : ""}</span>
+        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" />` : ""}</span>
         <span class="home-highlight-copy"><strong>${esc(file.name)}</strong><span>${esc(label)}</span></span>
       </button>`;
     }).join("")
     : `<span class="dash-memory-item">Marque fotos ou vídeos como favoritos para vê-los aqui.</span>`;
-  element.querySelectorAll(".home-highlight-item").forEach(button => {
-    const file = files.find(item => item.id === button.dataset.fileId);
-    if (file) button.onclick = () => openLightbox(file);
+  element.querySelectorAll(".home-highlight-item").forEach((button, index) => {
+    const file = highlights[index];
+    if (file) button.onclick = () => {
+      lightboxFiles = highlights;
+      openLightbox(file);
+    };
   });
 }
 
 function getTravelSuggestions(active) {
   const photos = active
     .filter(file => file.fileType === "image" && file.eventDate && !file.isScreenshot)
-    .sort((a, b) => fileDate(a) - fileDate(b));
+    .map(file => ({ file, date: fileDate(file) }))
+    .sort((a, b) => a.date - b.date);
   const groups = [];
   let current = [];
   photos.forEach(photo => {
     const previous = current[current.length - 1];
-    const gapDays = previous ? Math.round((fileDate(photo) - fileDate(previous)) / 86400000) : 0;
+    const gapDays = previous ? Math.round((photo.date - previous.date) / 86400000) : 0;
     if (previous && gapDays > 3) {
       groups.push(current);
       current = [];
@@ -3184,16 +3491,18 @@ function getTravelSuggestions(active) {
   });
   if (current.length) groups.push(current);
   return groups
-    .filter(group => group.length >= 6 && Math.round((fileDate(group[group.length - 1]) - fileDate(group[0])) / 86400000) >= 2)
-    .sort((a, b) => fileDate(b[b.length - 1]) - fileDate(a[a.length - 1]))
+    .filter(group => group.length >= 6 && Math.round((group[group.length - 1].date - group[0].date) / 86400000) >= 2)
+    .sort((a, b) => b[b.length - 1].date - a[a.length - 1].date)
     .map(group => {
-      const start = fileDate(group[0]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-      const end = fileDate(group[group.length - 1]).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+      const first = group[0].date;
+      const last = group[group.length - 1].date;
+      const start = first.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+      const end = last.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
       return {
         label: `Possivel viagem · ${start}–${end}`,
         count: group.length,
-        dateFrom: fileDate(group[0]).toISOString().slice(0, 10),
-        dateTo: fileDate(group[group.length - 1]).toISOString().slice(0, 10),
+        dateFrom: first.toISOString().slice(0, 10),
+        dateTo: last.toISOString().slice(0, 10),
       };
     });
 }
