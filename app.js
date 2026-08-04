@@ -8,10 +8,6 @@ import {
   getFirestore, collection, addDoc, deleteDoc,
   doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc, enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import {
-  getAuth, GoogleAuthProvider, browserLocalPersistence, onAuthStateChanged,
-  setPersistence, signInWithPopup, signOut
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
@@ -22,9 +18,6 @@ import { GoogleDriveManager, isGoogleDriveRecord, drivePreviewUrl, driveViewUrl 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
 let db;
-let auth;
-let ownerUser = null;
-let unsubscribeOwnerAuth = null;
 let accountModalReturnFocus = null;
 let accountConnectReturnFocus = null;
 let accountSearchValue = "";
@@ -150,8 +143,6 @@ const accountsSummary = $("accountsSummary");
 const accountsSearch = $("accountsSearch");
 const accountsFilter = $("accountsFilter");
 const accountsEmpty = $("accountsEmpty");
-const accountsOwnerBtn = $("accountsOwnerBtn");
-const accountsOwnerStatus = $("accountsOwnerStatus");
 const accountsLiveRegion = $("accountsLiveRegion");
 const accountReviewBanner = $("accountReviewBanner");
 const accountReviewTitle = $("accountReviewTitle");
@@ -254,10 +245,21 @@ applyTheme(preferredTheme(), { persist: false });
 syncSectionUI();
 
 function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(CFG_KEY)) || null; }
+  try {
+    const cfg = JSON.parse(localStorage.getItem(CFG_KEY)) || null;
+    if (cfg && "ownerEmail" in cfg) {
+      delete cfg.ownerEmail;
+      localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    }
+    return cfg;
+  }
   catch { return null; }
 }
-function saveConfig(cfg) { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
+function saveConfig(cfg) {
+  const sanitized = { ...cfg };
+  delete sanitized.ownerEmail;
+  localStorage.setItem(CFG_KEY, JSON.stringify(sanitized));
+}
 function clearConfig()   { localStorage.removeItem(CFG_KEY); }
 
 // ??? Bootstrap ????????????????????????????????????????????
@@ -289,7 +291,6 @@ function prefillConfig(cfg) {
   $("cfg_storageBucket").value     = cfg.storageBucket     || "";
   $("cfg_messagingSenderId").value = cfg.messagingSenderId || "";
   $("cfg_appId").value             = cfg.appId             || "";
-  $("cfg_ownerEmail").value        = cfg.ownerEmail        || "";
   $("cfg_cloudName").value         = cfg.cloudName         || "";
   $("cfg_uploadPreset").value      = cfg.uploadPreset      || "";
   $("cfg_googleClientId").value    = cfg.googleClientId    || "";
@@ -321,7 +322,6 @@ function configFromForm() {
     storageBucket:     $("cfg_storageBucket").value.trim(),
     messagingSenderId: $("cfg_messagingSenderId").value.trim(),
     appId:             $("cfg_appId").value.trim(),
-    ownerEmail:        $("cfg_ownerEmail").value.trim(),
     googleClientId:    $("cfg_googleClientId").value.trim(),
     driveAccounts: previousAccounts,
     cloudName:         $("cfg_cloudName").value.trim(),
@@ -500,9 +500,6 @@ confirmModal.addEventListener("keydown", e => {
 async function initApp(cfg) {
   try {
     // Se ja existe app "vault", destroi e recria (troca de conta)
-    unsubscribeOwnerAuth?.();
-    unsubscribeOwnerAuth = null;
-    ownerUser = null;
     const existing = getApps().find(a => a.name === "vault");
     if (existing) await deleteApp(existing);
 
@@ -513,15 +510,6 @@ async function initApp(cfg) {
     }, "vault");
 
     db           = getFirestore(firebaseApp);
-    auth         = getAuth(firebaseApp);
-    await setPersistence(auth, browserLocalPersistence);
-    unsubscribeOwnerAuth = onAuthStateChanged(auth, user => {
-      ownerUser = user;
-      adoptOwnerIfUnset();
-      renderAccountCenter();
-      if (accountReviewQueue.length) renderAccountReviewStep();
-      updateConnectionStatus();
-    });
     enableIndexedDbPersistence(db).catch(error => {
       // O cache pode estar ocupado por outra aba ou bloqueado pelo navegador.
       console.warn("Cache offline do Firestore indisponivel", error.code || error);
@@ -530,7 +518,6 @@ async function initApp(cfg) {
     uploadPreset = cfg.uploadPreset;
     googleClientId = cfg.googleClientId || "";
     currentConfig = { ...cfg, driveAccounts: normalizeDriveAccounts(cfg.driveAccounts) };
-    adoptOwnerIfUnset();
     if (!driveManager) {
       driveManager = new GoogleDriveManager({
         clientId: googleClientId,
@@ -636,20 +623,6 @@ function accountRuntime(slot) {
   return driveAccountRuntime.get(slot);
 }
 
-function ownerIsAuthorized() {
-  if (!ownerUser) return false;
-  const expected = String(currentConfig?.ownerEmail || "").trim().toLowerCase();
-  return !expected || String(ownerUser.email || "").toLowerCase() === expected;
-}
-
-function adoptOwnerIfUnset() {
-  if (!ownerUser?.email || !currentConfig || currentConfig.ownerEmail) return;
-  currentConfig.ownerEmail = ownerUser.email;
-  const input = $("cfg_ownerEmail");
-  if (input) input.value = ownerUser.email;
-  saveConfig(currentConfig);
-}
-
 function handleDriveSessionInvalid(slot) {
   const account = driveManager?.getAccount(slot);
   const runtime = accountRuntime(slot);
@@ -664,13 +637,6 @@ function accountState(slot) {
   const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot.slice(-1)) - 1];
   const runtime = accountRuntime(slot);
   if (!currentConfig?.googleClientId) return { key: "not_configured", label: "Configuração pendente", message: "Salve o OAuth Client ID na configuração avançada." };
-  if (!ownerIsAuthorized()) {
-    const expected = currentConfig?.ownerEmail;
-    const message = ownerUser
-      ? `Você entrou como ${ownerUser.email}, mas o proprietário configurado é ${expected}. Troque a conta para continuar.`
-      : `Entre como ${expected || "proprietário"} para conectar ou reconectar esta conta.`;
-    return { key: "owner_required", label: "Entre como proprietário", message };
-  }
   if (runtime.busy) return { key: "connecting", label: `Conectando ${slotTag(slot)}`, message: runtime.message || "Conclua a seleção na janela do Google." };
   if (runtime.state === "wrong_account") return { key: "wrong_account", label: "Conta diferente", message: runtime.message };
   if (runtime.state === "attention") return { key: "attention", label: "Precisa reconectar", message: runtime.message };
@@ -714,25 +680,19 @@ function renderAccountCenter() {
     const matchesSearch = !queryText || haystack.includes(queryText);
     const matchesFilter = accountFilterValue === "all"
       || (accountFilterValue === "connected" && state.key === "connected")
-      || (accountFilterValue === "attention" && ["attention", "wrong_account", "owner_required", "not_configured"].includes(state.key))
+      || (accountFilterValue === "attention" && ["attention", "wrong_account", "not_configured"].includes(state.key))
       || (accountFilterValue === "unconfigured" && ["unconfigured", "not_configured"].includes(state.key));
     return matchesSearch && matchesFilter;
   });
   const connectedCount = accounts.filter(account => driveManager?.isConnected(account.slot)).length;
-  const attentionCount = accounts.filter(account => ["attention", "wrong_account", "owner_required", "not_configured"].includes(accountState(account.slot).key)).length;
+  const attentionCount = accounts.filter(account => ["attention", "wrong_account", "not_configured"].includes(accountState(account.slot).key)).length;
   accountsSummary.textContent = `${connectedCount} de 4 disponíveis nesta sessão${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
-  accountsOwnerStatus.textContent = ownerIsAuthorized()
-    ? `Conectado como ${ownerUser.email || "proprietário"}`
-    : ownerUser
-      ? `Conta incorreta: ${ownerUser.email}. Esperado: ${currentConfig?.ownerEmail || "proprietário"}`
-      : `Entre como ${currentConfig?.ownerEmail || "proprietário"} para liberar as contas.`;
-  accountsOwnerBtn.textContent = ownerUser ? (ownerIsAuthorized() ? "Sair" : "Trocar conta") : "Entrar com Google";
   accountsGrid.innerHTML = visibleAccounts.map(account => {
     const state = accountState(account.slot);
     const stats = accountFileStats(account.slot);
     const quota = quotaSummary(account.quota);
     const canOpen = state.key === "connected";
-    const primaryLabel = state.key === "owner_required" ? "Entrar" : state.key === "connected" ? "Atualizar" : account.email ? "Reconectar" : "Conectar";
+    const primaryLabel = state.key === "connected" ? "Atualizar" : account.email ? "Reconectar" : "Conectar";
     return `<article class="drive-account-card" data-slot="${account.slot}" data-state="${state.key}" data-busy="${accountRuntime(account.slot).busy}" aria-busy="${accountRuntime(account.slot).busy}">
       <div class="account-card-heading">
         <span class="account-badge">${slotTag(account.slot)}</span>
@@ -785,8 +745,7 @@ function bindAccountCardActions() {
     nameInput.addEventListener("change", saveIdentity);
     emailInput.addEventListener("change", saveIdentity);
     card.querySelector(".account-primary-action").onclick = event => {
-      if (!ownerIsAuthorized()) toggleOwnerAccount(event.currentTarget);
-      else if (accountState(slot).key === "connected") refreshDriveAccountHealth(slot, { verifyRecords: false, trigger: event.currentTarget });
+      if (accountState(slot).key === "connected") refreshDriveAccountHealth(slot, { verifyRecords: false, trigger: event.currentTarget });
       else connectDriveSlot(slot, event.currentTarget);
     };
     card.querySelector(".account-view-action").onclick = () => viewOnlyAccount(slot);
@@ -818,44 +777,12 @@ function closeAccountsModal() {
   accountModalReturnFocus = null;
 }
 
-async function toggleOwnerAccount(trigger) {
-  if (!auth) {
-    showToast("Salve a configuração Firebase primeiro", "error");
-    openConfigModal(true);
-    return;
-  }
-  try {
-    if (ownerUser) {
-      const wasAuthorized = ownerIsAuthorized();
-      await signOut(auth);
-      ["ac1", "ac2", "ac3", "ac4"].forEach(slot => driveManager?.disconnect(slot));
-      renderAccountControls();
-      renderAccountCenter();
-      updateConnectionStatus();
-      if (wasAuthorized) {
-        showToast("Proprietário desconectado");
-        return;
-      }
-    }
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    await signInWithPopup(auth, provider);
-    showToast("Proprietário conectado. Agora escolha a conta do Drive.", "success");
-  } catch (error) {
-    showToast(friendlyDriveError(error, "", "", "entrar no VAULT"), "error");
-  } finally {
-    trigger?.focus?.();
-  }
-}
-
 function friendlyDriveError(error, slot = "", email = "", action = "usar o Drive") {
   const raw = String(error?.message || error || "");
   const code = String(error?.code || "");
   const tag = slot ? slotTag(slot) : "a conta";
   const wrongAccount = raw.match(/A conta escolhida foi ([^,]+), mas (AC[1-4]) esta configurada como (.+)$/i);
   if (wrongAccount) return `Você escolheu ${wrongAccount[1]}, mas ${slotTag(wrongAccount[2].toLowerCase())} está configurada para ${wrongAccount[3]}. Escolha a conta correta ou altere o email de ${slotTag(wrongAccount[2].toLowerCase())}.`;
-  if (/auth\/operation-not-allowed/i.test(code)) return "O login Google do Firebase ainda não está ativado. Ative Authentication → Google no console Firebase e tente novamente.";
-  if (/auth\/unauthorized-domain/i.test(code)) return "Este domínio ainda não está autorizado no Firebase Authentication. Adicione-o em Authentication → Settings → Authorized domains.";
   if (/popup|janela|blocked|failed_to_open/i.test(`${code} ${raw}`)) return "Não foi possível abrir o Google. Permita pop-ups para este site e tente novamente.";
   if (/invalid_grant|401|invalid.?token|token.*expir/i.test(`${code} ${raw}`)) return `O Google encerrou o acesso de ${tag}. Reconecte ${email || "a conta configurada"} para continuar usando os arquivos dessa conta.`;
   if (/network|rede|fetch|offline/i.test(`${code} ${raw}`)) return `Não foi possível ${action} porque a internet ou o Google está indisponível. Verifique a conexão e tente novamente.`;
@@ -867,11 +794,6 @@ async function connectDriveSlot(slot, trigger = document.activeElement) {
   if (!driveManager || googleClientId !== $("cfg_googleClientId").value.trim()) {
     showToast("Salve a configuração e o OAuth Client ID antes de conectar as contas.", "error");
     openConfigModal(true);
-    return false;
-  }
-  if (!ownerIsAuthorized()) {
-    openAccountsModal(trigger);
-    announceAccount("Entre como proprietário antes de conectar uma conta do Drive.");
     return false;
   }
   const account = driveManager.getAccount(slot);
@@ -1009,7 +931,7 @@ function renderAccountReviewStep() {
   const state = accountState(slot);
   accountReviewTitle.textContent = `Revisando ${accountFullLabel(slot)}`;
   accountReviewText.textContent = `${state.label}. ${state.message}`;
-  accountReviewAction.textContent = state.key === "owner_required" ? "Entrar" : "Conectar esta conta";
+  accountReviewAction.textContent = "Conectar esta conta";
 }
 
 function advanceAccountReview(slot, success) {
@@ -1028,7 +950,6 @@ $("openAccountsFromConfig")?.addEventListener("click", () => {
   configModal.style.display = "none";
   openAccountsModal(accountConnectBtn);
 });
-accountsOwnerBtn?.addEventListener("click", event => toggleOwnerAccount(event.currentTarget));
 accountsSearch?.addEventListener("input", () => {
   accountSearchValue = accountsSearch.value;
   renderAccountCenter();
@@ -1041,8 +962,7 @@ $("reviewAccountsBtn")?.addEventListener("click", startAccountReview);
 accountReviewAction?.addEventListener("click", event => {
   const slot = accountReviewQueue[0];
   if (!slot) return;
-  if (!ownerIsAuthorized()) toggleOwnerAccount(event.currentTarget);
-  else connectDriveSlot(slot, event.currentTarget);
+  connectDriveSlot(slot, event.currentTarget);
 });
 accountReviewSkip?.addEventListener("click", () => {
   accountReviewQueue.shift();

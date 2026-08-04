@@ -9,7 +9,7 @@
   <title>VAULT - Seu Cofre Digital</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="style.css?v=accounts1" />
+  <link rel="stylesheet" href="style.css?v=accounts2" />
   <link rel="stylesheet" href="layout.css" />
   <link rel="stylesheet" href="theme.css" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
@@ -380,7 +380,7 @@
           <h2 class="modal-title">Conectar o VAULT</h2>
         </div>
       </div>
-      <p class="config-desc">Conecte os metadados no Firebase e até quatro contas Google Drive. O OAuth Client ID e os emails ficam salvos apenas neste navegador; os tokens permanecem somente durante a sessão.</p>
+      <p class="config-desc">Conecte os metadados no Firebase Firestore e até quatro contas Google Drive. O acesso às contas usa somente o OAuth do Google Cloud; os tokens permanecem apenas durante a sessão.</p>
       <div class="config-fields">
         <section class="config-step">
           <p class="cfg-section-label">1. Firebase Firestore</p>
@@ -390,7 +390,6 @@
           <label class="field-label" for="cfg_storageBucket">storageBucket <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" autocomplete="off" /></label>
           <label class="field-label" for="cfg_messagingSenderId">messagingSenderId <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" autocomplete="off" /></label>
           <label class="field-label" for="cfg_appId">appId <input class="modal-input" id="cfg_appId" placeholder="appId" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_ownerEmail">Email do proprietário <input class="modal-input" id="cfg_ownerEmail" type="email" placeholder="seu-email@gmail.com" autocomplete="off" /></label>
         </section>
         <section class="config-step drive-config-step">
           <p class="cfg-section-label">2. Google Drive</p>
@@ -455,15 +454,6 @@
         </div>
         <button class="modal-icon-btn" id="closeAccountsModal" type="button" aria-label="Fechar Central de contas">×</button>
       </header>
-
-      <section class="accounts-owner-card" aria-labelledby="accountsOwnerTitle">
-        <div>
-          <span class="accounts-owner-label" id="accountsOwnerTitle">Proprietário do VAULT</span>
-          <strong id="accountsOwnerStatus">Entre para liberar a conexão das contas.</strong>
-          <small>O login do proprietário permanece no Spark; as sessões do Drive continuam válidas apenas nesta abertura.</small>
-        </div>
-        <button class="modal-btn confirm" id="accountsOwnerBtn" type="button">Entrar com Google</button>
-      </section>
 
       <div class="accounts-toolbar">
         <label class="accounts-search">
@@ -601,6 +591,6 @@
     <div id="uploadList" aria-live="polite" aria-relevant="additions text"></div>
   </div>
 
-  <script type="module" src="app.js?v=accounts2"></script>
+  <script type="module" src="app.js?v=accounts3"></script>
 </body>
 </html>

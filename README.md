@@ -2,7 +2,7 @@
 
 Aplicativo web pessoal para armazenar fotos, vídeos e documentos usando até quatro contas Google Drive.
 
-**Stack:** Google Drive (arquivos) + Firebase Firestore (metadados) + Firebase Authentication (proprietário). Tudo compatível com o plano Spark.
+**Stack:** Google Drive (arquivos e autenticação OAuth) + Firebase Firestore (metadados). Tudo compatível com o plano Spark.
 
 ## Como funciona
 
@@ -34,23 +34,21 @@ O aplicativo solicita apenas `drive.file`, que permite trabalhar com arquivos e 
 
 1. Acesse o [Firebase Console](https://console.firebase.google.com/).
 2. Crie um projeto e ative o Firestore Database.
-3. Em **Authentication → Sign-in method**, ative o provedor **Google**. O login social está disponível no plano Spark.
-4. Registre um aplicativo Web.
-5. Copie os campos do `firebaseConfig` para a configuração do VAULT.
-6. Cadastre o domínio publicado em **Authentication → Settings → Authorized domains**.
+3. Registre um aplicativo Web.
+4. Copie os campos do `firebaseConfig` para a configuração do VAULT.
 
-Para um aplicativo publicado, use autenticação e regras restritas. Regras abertas de teste permitem que qualquer pessoa com acesso ao projeto leia ou altere os metadados.
+O VAULT não usa Firebase Authentication. A conexão das contas é feita somente pelo OAuth configurado no Google Cloud. Por isso, as regras do Firestore precisam permitir as operações usadas pelo aplicativo; regras abertas permitem que qualquer pessoa com acesso ao projeto leia ou altere os metadados.
 
 ## 3. Conectar as contas
 
 1. Abra **Configurações** no VAULT.
-2. Informe Firebase, email do proprietário e OAuth Client ID e clique em **Salvar e Conectar**.
+2. Informe a configuração do Firebase Firestore e o OAuth Client ID e clique em **Salvar e Conectar**.
 3. A **Central de contas** será aberta separadamente.
-4. Entre como proprietário e configure nome amigável/email de cada slot.
+4. Configure nome amigável/email de cada slot.
 5. Clique em **Conectar** ou **Reconectar** em `Ac1`, `Ac2`, `Ac3` e `Ac4`.
 6. Se um email já estiver preenchido, o VAULT rejeitará uma conta diferente naquele slot.
 
-O login do proprietário permanece após recarregar. As sessões do Drive não permanecem: o modelo OAuth direto do Google emite access tokens temporários e exige nova conexão quando eles expiram.
+As sessões do Drive não permanecem: o modelo OAuth direto do Google emite access tokens temporários e exige nova conexão quando eles expiram.
 
 ## Central de contas
 
