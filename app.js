@@ -8,6 +8,10 @@ import {
   getFirestore, collection, addDoc, deleteDoc,
   doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc, enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getAuth, GoogleAuthProvider, browserLocalPersistence, onAuthStateChanged,
+  setPersistence, signInWithPopup, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
@@ -18,6 +22,15 @@ import { GoogleDriveManager, isGoogleDriveRecord, drivePreviewUrl, driveViewUrl 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
 let db;
+let auth;
+let ownerUser = null;
+let unsubscribeOwnerAuth = null;
+let accountModalReturnFocus = null;
+let accountConnectReturnFocus = null;
+let accountSearchValue = "";
+let accountFilterValue = "all";
+let accountReviewQueue = [];
+const driveAccountRuntime = new Map();
 const ROOT_ID = "root";
 let currentSearch  = "";
 let currentSort    = "newest";
@@ -128,6 +141,24 @@ const sortSelect      = $("sortSelect");
 const qualitySelect   = $("qualitySelect");
 const accountViewSelect = $("accountViewSelect");
 const accountConnectBtn = $("accountConnectBtn");
+const activityCenterBtn = $("activityCenterBtn");
+const activityCount = $("activityCount");
+const activitySummary = $("activitySummary");
+const accountsModal = $("accountsModal");
+const accountsGrid = $("accountsGrid");
+const accountsSummary = $("accountsSummary");
+const accountsSearch = $("accountsSearch");
+const accountsFilter = $("accountsFilter");
+const accountsEmpty = $("accountsEmpty");
+const accountsOwnerBtn = $("accountsOwnerBtn");
+const accountsOwnerStatus = $("accountsOwnerStatus");
+const accountsLiveRegion = $("accountsLiveRegion");
+const accountReviewBanner = $("accountReviewBanner");
+const accountReviewTitle = $("accountReviewTitle");
+const accountReviewText = $("accountReviewText");
+const accountReviewAction = $("accountReviewAction");
+const accountReviewSkip = $("accountReviewSkip");
+const migrationLiveRegion = $("migrationLiveRegion");
 const dashboard       = $("dashboard");
 const filesWorkspace  = $("filesWorkspace");
 const folderChildrenSection = $("folderChildrenSection");
@@ -139,6 +170,7 @@ const createSubfolderBtn = $("createSubfolderBtn");
 const createSubfolderLabel = $("createSubfolderLabel");
 const folderModalTitle = $("folderModalTitle");
 const folderModalContext = $("folderModalContext");
+const folderDestination = $("folderDestination");
 const navHome = $("navHome");
 const navFiles = $("navFiles");
 const themeToggle = $("themeToggle");
@@ -257,13 +289,10 @@ function prefillConfig(cfg) {
   $("cfg_storageBucket").value     = cfg.storageBucket     || "";
   $("cfg_messagingSenderId").value = cfg.messagingSenderId || "";
   $("cfg_appId").value             = cfg.appId             || "";
+  $("cfg_ownerEmail").value        = cfg.ownerEmail        || "";
   $("cfg_cloudName").value         = cfg.cloudName         || "";
   $("cfg_uploadPreset").value      = cfg.uploadPreset      || "";
   $("cfg_googleClientId").value    = cfg.googleClientId    || "";
-  const accounts = normalizeDriveAccounts(cfg.driveAccounts);
-  accounts.forEach((account, index) => {
-    $(`cfg_driveEmail${index + 1}`).value = account.email || "";
-  });
   renderDriveAccountSlots();
 }
 
@@ -271,7 +300,15 @@ function normalizeDriveAccounts(accounts = []) {
   return Array.from({ length: 4 }, (_, index) => {
     const slot = `ac${index + 1}`;
     const account = accounts.find(item => item?.slot === slot) || accounts[index] || {};
-    return { slot, email: account.email || "", rootFolderId: account.rootFolderId || "" };
+    return {
+      slot,
+      email: account.email || "",
+      friendlyName: account.friendlyName || "",
+      rootFolderId: account.rootFolderId || "",
+      lastConnectedAt: account.lastConnectedAt || "",
+      lastCheckedAt: account.lastCheckedAt || "",
+      quota: account.quota || null,
+    };
   });
 }
 
@@ -284,11 +321,9 @@ function configFromForm() {
     storageBucket:     $("cfg_storageBucket").value.trim(),
     messagingSenderId: $("cfg_messagingSenderId").value.trim(),
     appId:             $("cfg_appId").value.trim(),
+    ownerEmail:        $("cfg_ownerEmail").value.trim(),
     googleClientId:    $("cfg_googleClientId").value.trim(),
-    driveAccounts: previousAccounts.map((account, index) => ({
-      ...account,
-      email: $(`cfg_driveEmail${index + 1}`).value.trim(),
-    })),
+    driveAccounts: previousAccounts,
     cloudName:         $("cfg_cloudName").value.trim(),
     uploadPreset:      $("cfg_uploadPreset").value.trim(),
   };
@@ -384,6 +419,11 @@ function renderDialogField(field) {
     return `<label class="field-label dialog-field">${label}<select class="modal-input" data-field="${esc(field.name)}"${required}>${options}</select></label>`;
   }
 
+  if (field.type === "checkbox") {
+    const checked = field.value ? " checked" : "";
+    return `<label class="dialog-checkbox"><input data-field="${esc(field.name)}" type="checkbox"${checked} /><span>${label}</span></label>`;
+  }
+
   const type = field.type || "text";
   return `<label class="field-label dialog-field">${label}<input class="modal-input" data-field="${esc(field.name)}" type="${esc(type)}" value="${value}" placeholder="${placeholder}"${maxLength}${required} /></label>`;
 }
@@ -400,7 +440,7 @@ function collectDialogValues() {
   const values = {};
   formDialogFields.forEach(field => {
     const input = formModalBody.querySelector(`[data-field="${CSS.escape(field.name)}"]`);
-    values[field.name] = input?.value ?? "";
+    values[field.name] = field.type === "checkbox" ? !!input?.checked : input?.value ?? "";
   });
   return values;
 }
@@ -460,6 +500,9 @@ confirmModal.addEventListener("keydown", e => {
 async function initApp(cfg) {
   try {
     // Se ja existe app "vault", destroi e recria (troca de conta)
+    unsubscribeOwnerAuth?.();
+    unsubscribeOwnerAuth = null;
+    ownerUser = null;
     const existing = getApps().find(a => a.name === "vault");
     if (existing) await deleteApp(existing);
 
@@ -470,6 +513,15 @@ async function initApp(cfg) {
     }, "vault");
 
     db           = getFirestore(firebaseApp);
+    auth         = getAuth(firebaseApp);
+    await setPersistence(auth, browserLocalPersistence);
+    unsubscribeOwnerAuth = onAuthStateChanged(auth, user => {
+      ownerUser = user;
+      adoptOwnerIfUnset();
+      renderAccountCenter();
+      if (accountReviewQueue.length) renderAccountReviewStep();
+      updateConnectionStatus();
+    });
     enableIndexedDbPersistence(db).catch(error => {
       // O cache pode estar ocupado por outra aba ou bloqueado pelo navegador.
       console.warn("Cache offline do Firestore indisponivel", error.code || error);
@@ -478,11 +530,13 @@ async function initApp(cfg) {
     uploadPreset = cfg.uploadPreset;
     googleClientId = cfg.googleClientId || "";
     currentConfig = { ...cfg, driveAccounts: normalizeDriveAccounts(cfg.driveAccounts) };
+    adoptOwnerIfUnset();
     if (!driveManager) {
       driveManager = new GoogleDriveManager({
         clientId: googleClientId,
         accounts: currentConfig.driveAccounts,
         onAccountsChange: persistDriveAccounts,
+        onSessionInvalid: handleDriveSessionInvalid,
       });
     } else {
       driveManager.configure({ clientId: googleClientId, accounts: currentConfig.driveAccounts });
@@ -502,6 +556,7 @@ async function initApp(cfg) {
     listenFiles();
     renderAccountControls();
     renderDriveAccountSlots();
+    renderAccountCenter();
     updateConnectionStatus();
     return true;
   } catch (e) {
@@ -525,27 +580,32 @@ $("saveConfig").onclick = async () => {
   saveConfig(cfg);
   const connected = await initApp(cfg);
   if (connected) {
-    openConfigModal(true);
-    showToast("Configuracao salva. Agora conecte Ac1 a Ac4.", "success");
+    openAccountsModal(accountConnectBtn);
+    showToast("Configuracao salva. Agora revise Ac1 a Ac4.", "success");
   }
 };
 
 async function persistDriveAccounts(accounts) {
   currentConfig = { ...(currentConfig || configFromForm()), driveAccounts: normalizeDriveAccounts(accounts) };
   saveConfig(currentConfig);
-  currentConfig.driveAccounts.forEach((account, index) => {
-    const input = $(`cfg_driveEmail${index + 1}`);
-    if (input) input.value = account.email || "";
-  });
   renderAccountControls();
   renderDriveAccountSlots();
+  renderAccountCenter();
   updateConnectionStatus();
+  updateStorageUI();
 }
 
 function accountLabel(slot, includeEmail = true) {
   const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot?.slice(-1) || 1) - 1];
   const tag = slotTag(slot);
-  return includeEmail && account?.email ? `${tag} · ${account.email}` : tag;
+  const identity = account?.friendlyName || (includeEmail ? account?.email : "");
+  return identity ? `${tag} · ${identity}` : tag;
+}
+
+function accountFullLabel(slot) {
+  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot?.slice(-1) || 1) - 1];
+  const parts = [slotTag(slot), account?.friendlyName, account?.email].filter(Boolean);
+  return [...new Set(parts)].join(" · ");
 }
 
 function slotTag(slot) {
@@ -562,48 +622,437 @@ function renderAccountControls() {
   ].join("");
   accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView) ? activeAccountView : "all";
   accountConnectBtn.textContent = activeAccountView === "all"
-    ? "Contas"
-    : (driveManager?.isConnected(activeAccountView) ? `${slotTag(activeAccountView)} conectada` : `Conectar ${slotTag(activeAccountView)}`);
+    ? "Central de contas"
+    : (driveManager?.isConnected(activeAccountView) ? `${slotTag(activeAccountView)} disponível` : `Revisar ${slotTag(activeAccountView)}`);
   accountConnectBtn.classList.toggle("is-connected", activeAccountView !== "all" && !!driveManager?.isConnected(activeAccountView));
 }
 
 function renderDriveAccountSlots() {
-  for (let index = 1; index <= 4; index += 1) {
-    const slot = `ac${index}`;
-    const connected = !!driveManager?.isConnected(slot);
-    const status = $(`driveStatus${index}`);
-    const button = document.querySelector(`.drive-connect-slot[data-slot="${slot}"]`);
-    if (status) {
-      status.textContent = connected ? "Conectada nesta sessao" : "Desconectada";
-      status.classList.toggle("connected", connected);
-    }
-    if (button) button.textContent = connected ? "Reconectar" : "Conectar";
-  }
+  renderAccountCenter();
 }
 
-async function connectDriveSlot(slot) {
-  if (!driveManager || googleClientId !== $("cfg_googleClientId").value.trim()) {
-    showToast("Salve a configuracao antes de conectar as contas", "error");
+function accountRuntime(slot) {
+  if (!driveAccountRuntime.has(slot)) driveAccountRuntime.set(slot, { state: "", message: "", busy: false });
+  return driveAccountRuntime.get(slot);
+}
+
+function ownerIsAuthorized() {
+  if (!ownerUser) return false;
+  const expected = String(currentConfig?.ownerEmail || "").trim().toLowerCase();
+  return !expected || String(ownerUser.email || "").toLowerCase() === expected;
+}
+
+function adoptOwnerIfUnset() {
+  if (!ownerUser?.email || !currentConfig || currentConfig.ownerEmail) return;
+  currentConfig.ownerEmail = ownerUser.email;
+  const input = $("cfg_ownerEmail");
+  if (input) input.value = ownerUser.email;
+  saveConfig(currentConfig);
+}
+
+function handleDriveSessionInvalid(slot) {
+  const account = driveManager?.getAccount(slot);
+  const runtime = accountRuntime(slot);
+  runtime.state = "attention";
+  runtime.message = `O Google encerrou o acesso de ${slotTag(slot)}. Reconecte ${account?.email || "a conta configurada"} para continuar usando os arquivos dessa conta.`;
+  renderAccountControls();
+  renderAccountCenter();
+  announceAccount(runtime.message);
+}
+
+function accountState(slot) {
+  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot.slice(-1)) - 1];
+  const runtime = accountRuntime(slot);
+  if (!currentConfig?.googleClientId) return { key: "not_configured", label: "Configuração pendente", message: "Salve o OAuth Client ID na configuração avançada." };
+  if (!ownerIsAuthorized()) {
+    const expected = currentConfig?.ownerEmail;
+    const message = ownerUser
+      ? `Você entrou como ${ownerUser.email}, mas o proprietário configurado é ${expected}. Troque a conta para continuar.`
+      : `Entre como ${expected || "proprietário"} para conectar ou reconectar esta conta.`;
+    return { key: "owner_required", label: "Entre como proprietário", message };
+  }
+  if (runtime.busy) return { key: "connecting", label: `Conectando ${slotTag(slot)}`, message: runtime.message || "Conclua a seleção na janela do Google." };
+  if (runtime.state === "wrong_account") return { key: "wrong_account", label: "Conta diferente", message: runtime.message };
+  if (runtime.state === "attention") return { key: "attention", label: "Precisa reconectar", message: runtime.message };
+  if (driveManager?.isConnected(slot)) return { key: "connected", label: "Disponível nesta sessão", message: runtime.message || "Arquivos e pastas desta conta estão disponíveis." };
+  if (account?.email) return { key: "attention", label: "Reconectar", message: `Reconecte ${account.email} para continuar usando os arquivos desta conta.` };
+  return { key: "unconfigured", label: "Não configurada", message: "Adicione um email ou conecte uma Conta Google para usar este espaço." };
+}
+
+function formatRelativeDate(value) {
+  if (!value) return "Ainda não verificada";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ainda não verificada";
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+  if (seconds < 45) return "Agora";
+  if (seconds < 3600) return `Há ${Math.max(1, Math.round(seconds / 60))} min`;
+  if (seconds < 86400) return `Há ${Math.round(seconds / 3600)} h`;
+  return date.toLocaleDateString("pt-BR");
+}
+
+function quotaSummary(quota) {
+  if (!quota?.limit) return { text: "Não informado pelo Google", pct: 0 };
+  return { text: `${fmtSize(quota.usage || 0)} de ${fmtSize(quota.limit)}`, pct: Math.min(100, ((quota.usage || 0) / quota.limit) * 100) };
+}
+
+function accountFileStats(slot) {
+  const records = files.filter(file => !file.deletedAt && recordAccountSlot(file) === slot);
+  return { count: records.length, missing: records.filter(file => file.missing).length };
+}
+
+function announceAccount(message) {
+  if (accountsLiveRegion) accountsLiveRegion.textContent = message;
+}
+
+function renderAccountCenter() {
+  if (!accountsGrid) return;
+  const accounts = driveManager?.getAccounts() || normalizeDriveAccounts(currentConfig?.driveAccounts || savedCfg?.driveAccounts);
+  const queryText = normalizeSearchText(accountSearchValue);
+  const visibleAccounts = accounts.filter(account => {
+    const state = accountState(account.slot);
+    const haystack = normalizeSearchText(`${account.slot} ${account.friendlyName || ""} ${account.email || ""}`);
+    const matchesSearch = !queryText || haystack.includes(queryText);
+    const matchesFilter = accountFilterValue === "all"
+      || (accountFilterValue === "connected" && state.key === "connected")
+      || (accountFilterValue === "attention" && ["attention", "wrong_account", "owner_required", "not_configured"].includes(state.key))
+      || (accountFilterValue === "unconfigured" && ["unconfigured", "not_configured"].includes(state.key));
+    return matchesSearch && matchesFilter;
+  });
+  const connectedCount = accounts.filter(account => driveManager?.isConnected(account.slot)).length;
+  const attentionCount = accounts.filter(account => ["attention", "wrong_account", "owner_required", "not_configured"].includes(accountState(account.slot).key)).length;
+  accountsSummary.textContent = `${connectedCount} de 4 disponíveis nesta sessão${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
+  accountsOwnerStatus.textContent = ownerIsAuthorized()
+    ? `Conectado como ${ownerUser.email || "proprietário"}`
+    : ownerUser
+      ? `Conta incorreta: ${ownerUser.email}. Esperado: ${currentConfig?.ownerEmail || "proprietário"}`
+      : `Entre como ${currentConfig?.ownerEmail || "proprietário"} para liberar as contas.`;
+  accountsOwnerBtn.textContent = ownerUser ? (ownerIsAuthorized() ? "Sair" : "Trocar conta") : "Entrar com Google";
+  accountsGrid.innerHTML = visibleAccounts.map(account => {
+    const state = accountState(account.slot);
+    const stats = accountFileStats(account.slot);
+    const quota = quotaSummary(account.quota);
+    const canOpen = state.key === "connected";
+    const primaryLabel = state.key === "owner_required" ? "Entrar" : state.key === "connected" ? "Atualizar" : account.email ? "Reconectar" : "Conectar";
+    return `<article class="drive-account-card" data-slot="${account.slot}" data-state="${state.key}" data-busy="${accountRuntime(account.slot).busy}" aria-busy="${accountRuntime(account.slot).busy}">
+      <div class="account-card-heading">
+        <span class="account-badge">${slotTag(account.slot)}</span>
+        <div class="account-card-identity"><strong>${esc(account.friendlyName || account.email || "Conta sem nome")}</strong><span>${esc(account.email || "Nenhum email definido")}</span><span class="account-state">${esc(state.label)}</span></div>
+      </div>
+      <div class="account-card-fields">
+        <label>Nome amigável<input class="modal-input account-friendly-name" value="${esc(account.friendlyName || "")}" placeholder="Ex.: Fotos pessoais" maxlength="40" /></label>
+        <label>Email esperado<input class="modal-input account-email" type="email" value="${esc(account.email || "")}" placeholder="conta@gmail.com" /></label>
+      </div>
+      <p class="account-card-message">${esc(state.message)}</p>
+      <div class="account-card-meta">
+        <div class="account-meta-item"><span>Última atualização</span><strong>${esc(formatRelativeDate(account.lastCheckedAt || account.lastConnectedAt))}</strong></div>
+        <div class="account-meta-item"><span>Itens no VAULT</span><strong>${stats.count}${stats.missing ? ` · ${stats.missing} conflito(s)` : ""}</strong></div>
+        <div class="account-meta-item account-quota"><span>Armazenamento Google</span><strong>${esc(quota.text)}</strong><div class="account-quota-bar" aria-hidden="true"><span style="--quota-pct:${quota.pct.toFixed(1)}%"></span></div></div>
+      </div>
+      <div class="account-card-actions">
+        <button class="primary account-primary-action" type="button" ${accountRuntime(account.slot).busy ? "disabled" : ""}>${esc(primaryLabel)}</button>
+        <button class="account-view-action" type="button" ${canOpen ? "" : "disabled"}>Ver arquivos</button>
+        <button class="account-open-drive" type="button" ${canOpen ? "" : "disabled"}>Abrir VAULT no Drive</button>
+        <button class="account-check-action" type="button" ${canOpen ? "" : "disabled"}>Verificar</button>
+      </div>
+    </article>`;
+  }).join("");
+  accountsEmpty.hidden = visibleAccounts.length > 0;
+  bindAccountCardActions();
+  updateConnectionStatus();
+}
+
+function bindAccountCardActions() {
+  accountsGrid?.querySelectorAll(".drive-account-card").forEach(card => {
+    const slot = card.dataset.slot;
+    const account = driveManager?.getAccount(slot);
+    const nameInput = card.querySelector(".account-friendly-name");
+    const emailInput = card.querySelector(".account-email");
+    const saveIdentity = async () => {
+      if (!account) return;
+      const previousEmail = account.email || "";
+      account.friendlyName = nameInput.value.trim();
+      account.email = emailInput.value.trim();
+      if (previousEmail.toLowerCase() !== account.email.toLowerCase() && driveManager.isConnected(slot)) {
+        driveManager.disconnect(slot);
+        const runtime = accountRuntime(slot);
+        runtime.state = "attention";
+        runtime.message = account.email
+          ? `O email de ${slotTag(slot)} foi alterado. Conecte ${account.email} para confirmar a nova conta.`
+          : `O email de ${slotTag(slot)} foi removido. Conecte novamente para identificar a conta.`;
+      }
+      await persistDriveAccounts(driveManager.getAccounts());
+    };
+    nameInput.addEventListener("change", saveIdentity);
+    emailInput.addEventListener("change", saveIdentity);
+    card.querySelector(".account-primary-action").onclick = event => {
+      if (!ownerIsAuthorized()) toggleOwnerAccount(event.currentTarget);
+      else if (accountState(slot).key === "connected") refreshDriveAccountHealth(slot, { verifyRecords: false, trigger: event.currentTarget });
+      else connectDriveSlot(slot, event.currentTarget);
+    };
+    card.querySelector(".account-view-action").onclick = () => viewOnlyAccount(slot);
+    card.querySelector(".account-open-drive").onclick = event => openDriveRoot(slot, event.currentTarget);
+    card.querySelector(".account-check-action").onclick = event => refreshDriveAccountHealth(slot, { verifyRecords: true, trigger: event.currentTarget });
+  });
+}
+
+function openAccountsModal(returnFocus = document.activeElement) {
+  if (!currentConfig) {
+    openConfigModal(true);
+    showToast("Salve a configuração do Firebase e o OAuth Client ID primeiro", "error");
+    return;
+  }
+  accountModalReturnFocus = returnFocus;
+  renderAccountCenter();
+  accountsModal.classList.add("active");
+  setTimeout(() => accountsSearch?.focus(), 0);
+}
+
+function closeAccountsModal() {
+  accountsModal?.classList.remove("active");
+  accountReviewQueue = [];
+  accountReviewBanner.hidden = true;
+  const returnTargetIsVisible = accountModalReturnFocus?.isConnected
+    && accountModalReturnFocus.getClientRects().length > 0
+    && getComputedStyle(accountModalReturnFocus).visibility !== "hidden";
+  (returnTargetIsVisible ? accountModalReturnFocus : $("sidebarOpenBtn"))?.focus?.();
+  accountModalReturnFocus = null;
+}
+
+async function toggleOwnerAccount(trigger) {
+  if (!auth) {
+    showToast("Salve a configuração Firebase primeiro", "error");
     openConfigModal(true);
     return;
   }
-  const index = Number(slot.slice(-1));
-  const expectedEmail = $(`cfg_driveEmail${index}`).value.trim();
   try {
-    showToast(`Abrindo login de ${slotTag(slot)}...`);
-    const account = await driveManager.connect(slot, expectedEmail);
-    $(`cfg_driveEmail${index}`).value = account.email;
-    await persistDriveAccounts(driveManager.getAccounts());
-    showToast(`${slotTag(slot)} conectada: ${account.email}`, "success");
-    updateDashboard();
-    renderGrid();
+    if (ownerUser) {
+      const wasAuthorized = ownerIsAuthorized();
+      await signOut(auth);
+      ["ac1", "ac2", "ac3", "ac4"].forEach(slot => driveManager?.disconnect(slot));
+      renderAccountControls();
+      renderAccountCenter();
+      updateConnectionStatus();
+      if (wasAuthorized) {
+        showToast("Proprietário desconectado");
+        return;
+      }
+    }
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await signInWithPopup(auth, provider);
+    showToast("Proprietário conectado. Agora escolha a conta do Drive.", "success");
   } catch (error) {
-    showToast(error.message, "error");
+    showToast(friendlyDriveError(error, "", "", "entrar no VAULT"), "error");
+  } finally {
+    trigger?.focus?.();
   }
 }
 
-document.querySelectorAll(".drive-connect-slot").forEach(button => {
-  button.addEventListener("click", () => connectDriveSlot(button.dataset.slot));
+function friendlyDriveError(error, slot = "", email = "", action = "usar o Drive") {
+  const raw = String(error?.message || error || "");
+  const code = String(error?.code || "");
+  const tag = slot ? slotTag(slot) : "a conta";
+  const wrongAccount = raw.match(/A conta escolhida foi ([^,]+), mas (AC[1-4]) esta configurada como (.+)$/i);
+  if (wrongAccount) return `Você escolheu ${wrongAccount[1]}, mas ${slotTag(wrongAccount[2].toLowerCase())} está configurada para ${wrongAccount[3]}. Escolha a conta correta ou altere o email de ${slotTag(wrongAccount[2].toLowerCase())}.`;
+  if (/auth\/operation-not-allowed/i.test(code)) return "O login Google do Firebase ainda não está ativado. Ative Authentication → Google no console Firebase e tente novamente.";
+  if (/auth\/unauthorized-domain/i.test(code)) return "Este domínio ainda não está autorizado no Firebase Authentication. Adicione-o em Authentication → Settings → Authorized domains.";
+  if (/popup|janela|blocked|failed_to_open/i.test(`${code} ${raw}`)) return "Não foi possível abrir o Google. Permita pop-ups para este site e tente novamente.";
+  if (/invalid_grant|401|invalid.?token|token.*expir/i.test(`${code} ${raw}`)) return `O Google encerrou o acesso de ${tag}. Reconecte ${email || "a conta configurada"} para continuar usando os arquivos dessa conta.`;
+  if (/network|rede|fetch|offline/i.test(`${code} ${raw}`)) return `Não foi possível ${action} porque a internet ou o Google está indisponível. Verifique a conexão e tente novamente.`;
+  if (/cancel|closed/i.test(`${code} ${raw}`)) return "A conexão foi cancelada. Quando estiver pronto, tente novamente e conclua a seleção no Google.";
+  return raw || `Não foi possível ${action}. Tente novamente.`;
+}
+
+async function connectDriveSlot(slot, trigger = document.activeElement) {
+  if (!driveManager || googleClientId !== $("cfg_googleClientId").value.trim()) {
+    showToast("Salve a configuração e o OAuth Client ID antes de conectar as contas.", "error");
+    openConfigModal(true);
+    return false;
+  }
+  if (!ownerIsAuthorized()) {
+    openAccountsModal(trigger);
+    announceAccount("Entre como proprietário antes de conectar uma conta do Drive.");
+    return false;
+  }
+  const account = driveManager.getAccount(slot);
+  const expectedEmail = account?.email || "";
+  const runtime = accountRuntime(slot);
+  accountConnectReturnFocus = trigger;
+  runtime.busy = true;
+  runtime.state = "connecting";
+  runtime.message = `Conectando ${slotTag(slot)}. Conclua a seleção na janela do Google.`;
+  renderAccountCenter();
+  announceAccount(runtime.message);
+  try {
+    showToast(`Abrindo login de ${slotTag(slot)}...`);
+    const connectedAccount = await driveManager.connect(slot, expectedEmail);
+    runtime.state = "connected";
+    runtime.message = `${slotTag(slot)} está disponível nesta sessão.`;
+    await persistDriveAccounts(driveManager.getAccounts());
+    await refreshDriveAccountHealth(slot, { silent: true });
+    showToast(`${slotTag(slot)} conectada: ${connectedAccount.email}`, "success");
+    announceAccount(`${slotTag(slot)} conectada como ${connectedAccount.email}.`);
+    updateDashboard();
+    renderGrid();
+    advanceAccountReview(slot, true);
+    return true;
+  } catch (error) {
+    const message = friendlyDriveError(error, slot, expectedEmail, "conectar esta conta");
+    runtime.state = /configurada como|escolheu/i.test(String(error?.message || "")) ? "wrong_account" : "attention";
+    runtime.message = message;
+    showToast(message, "error");
+    announceAccount(message);
+    advanceAccountReview(slot, false);
+    return false;
+  } finally {
+    runtime.busy = false;
+    renderAccountCenter();
+    const originalTrigger = accountConnectReturnFocus;
+    const replacementTrigger = accountsGrid?.querySelector(`[data-slot="${slot}"] .account-primary-action`);
+    (document.contains(originalTrigger) ? originalTrigger : replacementTrigger)?.focus?.();
+    accountConnectReturnFocus = null;
+  }
+}
+
+function viewOnlyAccount(slot) {
+  activeAccountView = slot;
+  localStorage.setItem("vault_drive_account_view", slot);
+  accountViewSelect.value = slot;
+  navState.folderId = ROOT_ID;
+  rebuildFolderIndexes();
+  rebuildFileIndexes();
+  renderAccountControls();
+  renderFolderList();
+  populateFolderFilter();
+  updateStorageUI();
+  updateDashboard();
+  renderGrid();
+  closeAccountsModal();
+}
+
+async function refreshDriveAccountHealth(slot, { silent = false, verifyRecords = false, trigger = null } = {}) {
+  const account = driveManager?.getAccount(slot);
+  if (!driveManager?.isConnected(slot)) {
+    const message = `${slotTag(slot)} não está disponível. Reconecte ${account?.email || "a conta"} e tente novamente.`;
+    if (!silent) showToast(message, "error");
+    return false;
+  }
+  const runtime = accountRuntime(slot);
+  runtime.busy = true;
+  runtime.message = `Atualizando informações de ${slotTag(slot)}...`;
+  renderAccountCenter();
+  try {
+    await driveManager.getAbout(slot);
+    if (verifyRecords) await verifyDriveRecordsForSlot(slot);
+    runtime.state = "connected";
+    runtime.message = `${slotTag(slot)} verificada com sucesso.`;
+    if (!silent) showToast(runtime.message, "success");
+    return true;
+  } catch (error) {
+    if (driveManager.isConnected(slot)) {
+      runtime.state = "connected";
+      runtime.message = "Conta disponível; o Google não liberou os dados de armazenamento nesta verificação.";
+      if (!silent) showToast(runtime.message);
+      return true;
+    }
+    runtime.state = "attention";
+    runtime.message = friendlyDriveError(error, slot, account?.email, "atualizar esta conta");
+    if (!silent) showToast(runtime.message, "error");
+    return false;
+  } finally {
+    runtime.busy = false;
+    renderAccountCenter();
+    trigger?.focus?.();
+  }
+}
+
+async function openDriveRoot(slot, trigger) {
+  const account = driveManager?.getAccount(slot);
+  let popup = null;
+  try {
+    if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slotTag(slot)} antes de abrir a pasta VAULT.`);
+    popup = window.open("about:blank", "_blank");
+    if (!popup) throw new Error("popup_failed_to_open");
+    const url = await driveManager.getRootFolderUrl(slot);
+    popup.location.replace(url);
+    refreshDriveAccountHealth(slot, { silent: true });
+  } catch (error) {
+    popup?.close?.();
+    showToast(friendlyDriveError(error, slot, account?.email, "abrir a pasta VAULT"), "error");
+  } finally {
+    trigger?.focus?.();
+  }
+}
+
+function problemAccountSlots() {
+  return ["ac1", "ac2", "ac3", "ac4"].filter(slot => accountState(slot).key !== "connected");
+}
+
+function startAccountReview() {
+  accountReviewQueue = problemAccountSlots();
+  if (!accountReviewQueue.length) {
+    showToast("Todas as contas estão disponíveis nesta sessão.", "success");
+    return;
+  }
+  accountReviewBanner.hidden = false;
+  renderAccountReviewStep();
+}
+
+function renderAccountReviewStep() {
+  const slot = accountReviewQueue[0];
+  if (!slot) {
+    accountReviewBanner.hidden = true;
+    announceAccount("Revisão concluída.");
+    showToast("Revisão de contas concluída", "success");
+    return;
+  }
+  const state = accountState(slot);
+  accountReviewTitle.textContent = `Revisando ${accountFullLabel(slot)}`;
+  accountReviewText.textContent = `${state.label}. ${state.message}`;
+  accountReviewAction.textContent = state.key === "owner_required" ? "Entrar" : "Conectar esta conta";
+}
+
+function advanceAccountReview(slot, success) {
+  if (accountReviewQueue[0] !== slot) return;
+  if (success) accountReviewQueue.shift();
+  renderAccountReviewStep();
+}
+
+$("closeAccountsModal")?.addEventListener("click", closeAccountsModal);
+$("accountsDone")?.addEventListener("click", closeAccountsModal);
+$("accountsAdvancedConfig")?.addEventListener("click", () => {
+  accountsModal.classList.remove("active");
+  openConfigModal(true);
+});
+$("openAccountsFromConfig")?.addEventListener("click", () => {
+  configModal.style.display = "none";
+  openAccountsModal(accountConnectBtn);
+});
+accountsOwnerBtn?.addEventListener("click", event => toggleOwnerAccount(event.currentTarget));
+accountsSearch?.addEventListener("input", () => {
+  accountSearchValue = accountsSearch.value;
+  renderAccountCenter();
+});
+accountsFilter?.addEventListener("change", () => {
+  accountFilterValue = accountsFilter.value;
+  renderAccountCenter();
+});
+$("reviewAccountsBtn")?.addEventListener("click", startAccountReview);
+accountReviewAction?.addEventListener("click", event => {
+  const slot = accountReviewQueue[0];
+  if (!slot) return;
+  if (!ownerIsAuthorized()) toggleOwnerAccount(event.currentTarget);
+  else connectDriveSlot(slot, event.currentTarget);
+});
+accountReviewSkip?.addEventListener("click", () => {
+  accountReviewQueue.shift();
+  renderAccountReviewStep();
+});
+accountsModal?.addEventListener("click", event => {
+  if (event.target === accountsModal) closeAccountsModal();
+});
+accountsModal?.addEventListener("keydown", event => {
+  if (event.key === "Escape") closeAccountsModal();
 });
 
 // ??? Firestore listeners ??????????????????????????????????
@@ -619,6 +1068,7 @@ function listenFolders() {
       renderFolderList();
       populateFolderFilter();
       renderGrid();
+      renderAccountCenter();
     },
     err => {
       openConfigModal(true);
@@ -638,6 +1088,7 @@ function listenFiles() {
       updateStorageUI();
       scheduleDashboardUpdate();
       renderGrid();
+      renderAccountCenter();
     },
     err => {
       openConfigModal(true);
@@ -1525,6 +1976,7 @@ function makeFileCard(file) {
   ].filter(Boolean);
   const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
   const canReadAsManga = file.fileType === "image";
+  const canCopyAcrossAccounts = isGoogleDriveRecord(file);
   const mediaDescriptionText = description || "Adicionar descricao...";
   const mediaDescriptionClass = description ? "" : " is-empty";
   const mediaDescriptionTop = hasMediaDescription ? `<p class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
@@ -1567,6 +2019,7 @@ function makeFileCard(file) {
                <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
                <button class="file-menu-item tags-btn" type="button" role="menuitem">Tags</button>
                <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
+               ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
                ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
                ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
                <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
@@ -1603,6 +2056,7 @@ function makeFileCard(file) {
   bindAction(".info-btn", () => editFileInfo(file));
   bindAction(".tags-btn", () => editTags(file));
   bindAction(".share-btn", () => shareFile(file));
+  bindAction(".copy-account-btn", () => copyFileToAnotherAccount(file));
   bindAction(".manga-btn-card", () => openMangaReader(file));
   bindAction(".restore-btn", () => restoreFile(file));
   bindAction(".permanent-delete", () => permanentlyDeleteFile(file));
@@ -1638,7 +2092,7 @@ function makeFileCard(file) {
   });
 
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
-  if (file.missing) markFileUnavailable(card);
+  if (file.missing) markFileUnavailable(card, file);
   if (mediaEl) {
     mediaEl.addEventListener("error", () => markFileUnavailable(card), { once: true });
   }
@@ -1659,15 +2113,15 @@ function closeActionMenus() {
   });
 }
 
-function markFileUnavailable(card) {
+function markFileUnavailable(card, file = null) {
   const thumb = card.querySelector(".file-thumb");
   if (!thumb) return;
   card.classList.add("file-unavailable");
   thumb.querySelectorAll("img, video").forEach(el => el.remove());
   thumb.insertAdjacentHTML("afterbegin", `
     <div class="missing-media">
-      <span class="missing-media-title">Arquivo indisponivel</span>
-      <span class="missing-media-sub">Nao encontrado no armazenamento</span>
+      <span class="missing-media-title">Conflito de armazenamento</span>
+      <span class="missing-media-sub">${file?.conflictReason === "trashed_in_drive" ? "O arquivo está na lixeira do Google Drive" : file?.conflictReason === "removed_from_drive" ? "O arquivo foi removido diretamente do Google Drive" : "Não foi encontrado no armazenamento"}</span>
     </div>
   `);
 }
@@ -2417,6 +2871,7 @@ function openFolderCreateDialog(parentId = navState.folderId) {
     ? inheritedSlot
     : (activeAccountView !== "all" ? activeAccountView : "ac1");
   folderNameInput.value = "";
+  updateFolderDestinationPreview();
   folderModal.classList.add("active");
   setTimeout(() => folderNameInput.focus(), 100);
 }
@@ -2434,11 +2889,187 @@ async function moveStoredFileTo(file, targetFolderId) {
   await driveManager.moveFile(sourceSlot, file.driveFileId, targetDriveParent);
 }
 
+async function copyFileToAnotherAccount(file) {
+  const sourceSlot = recordAccountSlot(file);
+  if (!driveManager?.isConnected(sourceSlot)) {
+    showToast(`${slotTag(sourceSlot)} não está disponível. Reconecte a conta de origem antes de copiar.`, "error");
+    openAccountsModal();
+    return;
+  }
+  const targetOptions = ["ac1", "ac2", "ac3", "ac4"]
+    .filter(slot => slot !== sourceSlot)
+    .map(slot => ({ value: slot, label: `${accountFullLabel(slot)} · ${driveManager.isConnected(slot) ? "disponível" : "reconectar"}` }));
+  const values = await openFieldsDialog({
+    title: `Copiar “${file.name}”`,
+    confirmText: "Escolher pasta",
+    fields: [
+      { name: "targetSlot", label: "Conta de destino", type: "select", value: targetOptions[0]?.value || "", options: targetOptions },
+      { name: "deleteOriginal", label: "Excluir o original somente depois que a cópia for concluída", type: "checkbox", value: false },
+    ],
+  });
+  if (!values?.targetSlot) return;
+  const targetSlot = values.targetSlot;
+  if (!driveManager.isConnected(targetSlot)) {
+    showToast(`${slotTag(targetSlot)} não está disponível. Reconecte ${driveManager.getAccount(targetSlot)?.email || "a conta de destino"} e tente novamente.`, "error");
+    openAccountsModal();
+    return;
+  }
+  const folderOptions = [
+    { value: "", label: "VAULT / Raiz" },
+    ...folders.filter(folder => recordAccountSlot(folder) === targetSlot).map(folder => ({ value: folder.id, label: `VAULT / ${getFolderPathLabel(folder.id)}` })),
+  ];
+  const folderChoice = await openFieldsDialog({
+    title: "Escolher pasta de destino",
+    confirmText: "Revisar cópia",
+    fields: [{ name: "targetFolderId", label: accountFullLabel(targetSlot), type: "select", value: "", options: folderOptions }],
+  });
+  if (!folderChoice) return;
+  const targetFolderId = folderChoice.targetFolderId || null;
+  const duplicate = files.find(existing => !existing.deletedAt
+    && existing.id !== file.id
+    && recordAccountSlot(existing) === targetSlot
+    && (existing.folderId || null) === targetFolderId
+    && ((file.contentHash && existing.contentHash === file.contentHash) || ((existing.name || "").toLowerCase() === (file.name || "").toLowerCase() && Number(existing.size || 0) === Number(file.size || 0))));
+  const destination = formatDriveDestination(targetSlot, targetFolderId);
+  const confirmed = await openConfirmDialog({
+    title: duplicate ? "Possível duplicado no destino" : "Confirmar cópia entre contas",
+    message: `${duplicate ? `Já existe “${duplicate.name}” no destino. ` : ""}Origem: ${formatDriveDestination(sourceSlot, file.folderId || null)}. Destino: ${destination}.${values.deleteOriginal ? " O original será excluído somente após a cópia ser confirmada pelo Drive." : " O original será preservado."}`,
+    confirmText: duplicate ? "Copiar mesmo assim" : "Copiar arquivo",
+    danger: !!values.deleteOriginal,
+  });
+  if (!confirmed) return;
+  await executeCopyFileAcrossAccounts(file, { sourceSlot, targetSlot, targetFolderId, deleteOriginal: !!values.deleteOriginal });
+}
+
+async function executeCopyFileAcrossAccounts(file, options) {
+  const { sourceSlot, targetSlot, targetFolderId, deleteOriginal } = options;
+  const itemEl = document.createElement("div");
+  itemEl.className = "upload-item";
+  itemEl.dataset.status = "active";
+  itemEl.dataset.activityType = "copy";
+  itemEl.innerHTML = `<div class="upload-item-top"><div class="upload-item-name"><span class="account-badge">${slotTag(sourceSlot)}→${slotTag(targetSlot)}</span> ${esc(file.name)}</div></div><div class="upload-item-destination">Destino: ${esc(formatDriveDestination(targetSlot, targetFolderId))}</div><div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div><div class="upload-item-status">Baixando da conta de origem...</div>`;
+  uploadList.appendChild(itemEl);
+  showActivityCenter();
+  const bar = itemEl.querySelector(".upload-item-bar");
+  const status = itemEl.querySelector(".upload-item-status");
+  let copySaved = false;
+  try {
+    if (!driveManager.isConnected(sourceSlot) || !driveManager.isConnected(targetSlot)) throw new Error("Uma das contas perdeu a conexão durante a cópia.");
+    const blob = await driveManager.getBlob(sourceSlot, file.driveFileId);
+    const source = new File([blob], file.name || "arquivo", { type: file.mimeType || blob.type || "application/octet-stream" });
+    const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
+    const driveParentId = targetFolder ? await ensureFolderOnDrive(targetFolder, targetSlot) : await driveManager.ensureRootFolder(targetSlot);
+    status.textContent = "Enviando para a conta de destino...";
+    const metadata = await driveManager.uploadFile(targetSlot, source, driveParentId, {
+      onProgress: (loaded, total) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        bar.style.width = `${pct}%`;
+        status.textContent = `Copiando · ${pct}%`;
+      },
+    });
+    const copiedRecord = {
+      name: file.name,
+      provider: "google-drive",
+      accountSlot: targetSlot,
+      driveFileId: metadata.id,
+      driveThumbnailLink: metadata.thumbnailLink || "",
+      driveWebViewLink: metadata.webViewLink || "",
+      driveWebContentLink: metadata.webContentLink || "",
+      url: "",
+      cloudPublicId: "",
+      contentHash: file.contentHash || "",
+      size: Number(metadata.size || file.size || 0),
+      width: file.width || null,
+      height: file.height || null,
+      fileType: file.fileType || "document",
+      mimeType: file.mimeType || metadata.mimeType || "",
+      folderId: targetFolderId,
+      favorite: !!file.favorite,
+      tags: normalizeTags(file.tags),
+      description: file.description || "",
+      priority: file.priority || "normal",
+      eventDate: file.eventDate || "",
+      photoDateSource: file.photoDateSource || "",
+      isScreenshot: !!file.isScreenshot,
+      dueDate: file.dueDate || "",
+      customFields: file.customFields || {},
+      notes: normalizeNotes(file.notes),
+      copiedFromFileId: file.id,
+      createdAt: serverTimestamp(),
+    };
+    await addDoc(collection(db, "vault_files"), copiedRecord);
+    copySaved = true;
+    if (deleteOriginal) {
+      status.textContent = "Cópia confirmada. Excluindo o original...";
+      await finalizeCopiedOriginalDeletion(file, sourceSlot);
+    }
+    itemEl.dataset.status = "complete";
+    itemEl.classList.add("upload-complete");
+    bar.style.width = "100%";
+    status.textContent = deleteOriginal ? "Movido com segurança para a nova conta" : "Cópia concluída; original preservado";
+    addHistory(`${deleteOriginal ? "Movido" : "Copiado"} ${slotTag(sourceSlot)} → ${slotTag(targetSlot)}: ${file.name}`);
+    showToast(`${file.name} copiado para ${slotTag(targetSlot)}`, "success");
+  } catch (error) {
+    itemEl.dataset.status = "error";
+    itemEl.classList.add("upload-error");
+    if (copySaved && deleteOriginal) {
+      status.innerHTML = `A cópia foi concluída, mas o original não pôde ser excluído. <button class="upload-retry" type="button">Tentar excluir original</button>`;
+      status.querySelector(".upload-retry").onclick = async () => {
+        try {
+          await finalizeCopiedOriginalDeletion(file, sourceSlot);
+          itemEl.dataset.status = "complete";
+          itemEl.classList.remove("upload-error");
+          itemEl.classList.add("upload-complete");
+          status.textContent = "Original excluído; movimentação concluída";
+          updateActivityCenter();
+        } catch (deleteError) {
+          showToast(friendlyDriveError(deleteError, sourceSlot, driveManager.getAccount(sourceSlot)?.email, "excluir o original"), "error");
+        }
+      };
+      showToast("A cópia está segura, mas o original ainda existe.", "error");
+      updateActivityCenter();
+      return;
+    }
+    const message = friendlyDriveError(error, targetSlot, driveManager.getAccount(targetSlot)?.email, "copiar o arquivo");
+    status.innerHTML = `${esc(message)} <button class="upload-retry" type="button">Tentar novamente</button>`;
+    status.querySelector(".upload-retry").onclick = () => {
+      itemEl.remove();
+      executeCopyFileAcrossAccounts(file, options);
+    };
+    showToast(message, "error");
+  } finally {
+    updateActivityCenter();
+  }
+}
+
+async function finalizeCopiedOriginalDeletion(file, sourceSlot) {
+  try {
+    await driveManager.deleteFile(sourceSlot, file.driveFileId);
+  } catch (error) {
+    if (!/not found|404|File not found/i.test(String(error?.message || ""))) throw error;
+  }
+  await deleteDoc(doc(db, "vault_files", file.id));
+  await localTextSearch.remove(file.id);
+}
+
 $("btnNewFolder").onclick = () => openFolderCreateDialog(ROOT_ID);
 createSubfolderBtn?.addEventListener("click", () => openFolderCreateDialog(navState.folderId));
 $("cancelFolder").onclick  = () => folderModal.classList.remove("active");
 $("confirmFolder").onclick = createFolder;
 folderNameInput.onkeydown  = e => { if (e.key === "Enter") createFolder(); };
+folderNameInput.addEventListener("input", updateFolderDestinationPreview);
+folderAccountSelect.addEventListener("change", updateFolderDestinationPreview);
+
+function updateFolderDestinationPreview() {
+  if (!folderDestination) return;
+  const parentId = toFirestoreFolderId(pendingFolderParentId);
+  const parent = parentId ? getFolder(parentId) : null;
+  const slot = parent ? recordAccountSlot(parent) : folderAccountSelect.value;
+  const parentPath = parent ? getFolderPathLabel(parent.id) : "";
+  const newName = folderNameInput.value.trim() || (parent ? "Nova subpasta" : "Nova coleção");
+  const path = ["VAULT", parentPath, newName].filter(Boolean).join(" / ");
+  folderDestination.innerHTML = `<strong>Destino:</strong> ${esc(accountFullLabel(slot))} / ${esc(path)}${parent ? "<br>Esta subpasta herdará a conta da pasta principal." : ""}`;
+}
 
 async function createFolder() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
@@ -3149,10 +3780,19 @@ async function handleFiles(fileList) {
     uniqueFiles.push(file);
   }
   if (!uniqueFiles.length) return;
+  const destinationConfirmed = await openConfirmDialog({
+    title: "Confirmar destino do upload",
+    message: `${uniqueFiles.length} arquivo(s) serão enviados para ${destination.label}. Continuar?`,
+    confirmText: "Enviar",
+  });
+  if (!destinationConfirmed) {
+    fileInput.value = "";
+    return;
+  }
   uploadPanel.style.display = "block";
-  uploadList.innerHTML = "";
+  updateActivityCenter();
   pendingUploadAccountSlot = destination.accountSlot;
-  await runLimitedQueue(uniqueFiles, file => uploadOneFile(file, destination.accountSlot, destination.driveParentId), UPLOAD_CONCURRENCY);
+  await runLimitedQueue(uniqueFiles, file => uploadOneFile(file, destination.accountSlot, destination.driveParentId, destination.folderId), UPLOAD_CONCURRENCY);
   pendingUploadAccountSlot = "";
   fileInput.value = "";
   showToast(`${uniqueFiles.length} upload(s) processado(s)`, "success");
@@ -3182,11 +3822,16 @@ async function resolveUploadDestination() {
   const folder = navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
   const accountSlot = folder ? recordAccountSlot(folder) : await chooseAccountSlot("Enviar arquivos para qual conta?");
   if (accountSlot === "legacy") throw new Error("Migre esta pasta para o Drive antes de enviar novos arquivos");
-  if (!driveManager.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} antes de enviar arquivos`);
+  if (!driveManager.isConnected(accountSlot)) throw new Error(`${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes de enviar arquivos.`);
   const driveParentId = folder
     ? await ensureFolderOnDrive(folder, accountSlot)
     : await driveManager.ensureRootFolder(accountSlot);
-  return { accountSlot, driveParentId };
+  return { accountSlot, driveParentId, folderId: folder?.id || null, label: formatDriveDestination(accountSlot, folder?.id || null) };
+}
+
+function formatDriveDestination(accountSlot, folderId = null) {
+  const path = folderId ? getFolderPathLabel(folderId) : "Raiz";
+  return `${accountFullLabel(accountSlot)} / VAULT${path && path !== "Raiz" ? ` / ${path}` : ""}`;
 }
 
 async function getOrComputeUploadHash(file) {
@@ -3214,28 +3859,45 @@ function isUploadDuplicate(file, contentHash = "") {
 
 function scheduleUploadItemRemoval(itemEl, delay = 2200) {
   setTimeout(() => {
-    itemEl.classList.add("upload-removing");
-    setTimeout(() => {
-      itemEl.remove();
-      if (!activeUploads.size && uploadList.children.length === 0) {
-        uploadPanel.style.display = "none";
-      }
-    }, 220);
+    if (itemEl.dataset.status === "active") itemEl.dataset.status = itemEl.classList.contains("upload-error") ? "error" : "complete";
+    updateActivityCenter();
   }, delay);
 }
 
-async function uploadOneFile(file, accountSlot, driveParentId) {
+function updateActivityCenter() {
+  if (!uploadList) return;
+  const items = [...uploadList.querySelectorAll(".upload-item")];
+  const active = items.filter(item => !["complete", "error", "cancelled"].includes(item.dataset.status)).length;
+  const errors = items.filter(item => item.dataset.status === "error" || item.classList.contains("upload-error")).length;
+  const pending = active + errors;
+  activityCount.textContent = String(pending);
+  activityCount.hidden = pending === 0;
+  activitySummary.textContent = active ? `${active} em andamento${errors ? ` · ${errors} com erro` : ""}` : errors ? `${errors} precisam de atenção` : items.length ? `${items.length} concluída(s)` : "Nenhuma atividade";
+  activityCenterBtn?.setAttribute("aria-expanded", uploadPanel.style.display !== "none" ? "true" : "false");
+}
+
+function showActivityCenter() {
+  uploadPanel.style.display = "block";
+  updateActivityCenter();
+}
+
+async function uploadOneFile(file, accountSlot, driveParentId, targetFolderId = null) {
   const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const itemEl = document.createElement("div");
   itemEl.className = "upload-item";
+  itemEl.dataset.status = "active";
+  itemEl.dataset.activityType = "upload";
+  itemEl.dataset.cancellable = "true";
   itemEl.innerHTML = `
     <div class="upload-item-top">
       <div class="upload-item-name"><span class="account-badge">${slotTag(accountSlot)}</span> ${esc(file.name)}</div>
       <button class="upload-cancel">Cancelar</button>
     </div>
+    <div class="upload-item-destination">Destino: ${esc(formatDriveDestination(accountSlot, targetFolderId))}</div>
     <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
     <div class="upload-item-status">Preparando Drive...</div>`;
   uploadList.appendChild(itemEl);
+  showActivityCenter();
   const bar = itemEl.querySelector(".upload-item-bar");
   const status = itemEl.querySelector(".upload-item-status");
   const cancelBtn = itemEl.querySelector(".upload-cancel");
@@ -3246,6 +3908,7 @@ async function uploadOneFile(file, accountSlot, driveParentId) {
     xhr?.abort();
     activeUploads.delete(uploadId);
     status.textContent = "Cancelado";
+    itemEl.dataset.status = "cancelled";
     cancelBtn.remove();
     itemEl.classList.add("upload-complete");
     scheduleUploadItemRemoval(itemEl, 900);
@@ -3261,6 +3924,8 @@ async function uploadOneFile(file, accountSlot, driveParentId) {
         const pct = total ? Math.round((loaded / total) * 100) : 0;
         bar.style.width = `${pct}%`;
         status.textContent = `${pct}% · ${slotTag(accountSlot)}`;
+        itemEl.setAttribute("aria-label", `Enviando ${file.name}: ${pct}% para ${slotTag(accountSlot)}`);
+        updateActivityCenter();
       },
     });
     if (cancelled) return;
@@ -3285,7 +3950,7 @@ async function uploadOneFile(file, accountSlot, driveParentId) {
       height: Number(imageMetadata.height || videoMetadata.height || 0) || null,
       fileType: getFileType(file),
       mimeType: file.type || metadata.mimeType || "",
-      folderId: toFirestoreFolderId(navState.folderId),
+      folderId: targetFolderId,
       favorite: false,
       tags: initialTags,
       description: "",
@@ -3318,19 +3983,22 @@ async function uploadOneFile(file, accountSlot, driveParentId) {
     status.style.color = "var(--accent)";
     cancelBtn.remove();
     itemEl.classList.add("upload-complete");
+    itemEl.dataset.status = "complete";
     scheduleUploadItemRemoval(itemEl);
   } catch (error) {
     if (cancelled || error?.name === "AbortError") return;
     itemEl.classList.add("upload-error");
+    itemEl.dataset.status = "error";
     status.innerHTML = `${esc(error.message)} <button class="upload-retry">Tentar novamente</button>`;
     status.style.color = "var(--danger)";
     status.querySelector(".upload-retry").onclick = () => {
       itemEl.remove();
-      uploadOneFile(file, accountSlot, driveParentId);
+      uploadOneFile(file, accountSlot, driveParentId, targetFolderId);
     };
     console.error(error);
   } finally {
     activeUploads.delete(uploadId);
+    updateActivityCenter();
   }
 }
 
@@ -3491,8 +4159,7 @@ accountViewSelect?.addEventListener("change", () => {
   renderGrid();
 });
 accountConnectBtn?.addEventListener("click", () => {
-  if (activeAccountView === "all") openConfigModal(true);
-  else connectDriveSlot(activeAccountView);
+  openAccountsModal(accountConnectBtn);
 });
 
 function attachRootDrop() {
@@ -3537,10 +4204,26 @@ $("sidebarOpenBtn").onclick = () => {
   sidebar.classList.add("mobile-open");
 };
 $("closePanel").onclick = () => {
+  uploadPanel.style.display = "none";
+  updateActivityCenter();
+};
+activityCenterBtn?.addEventListener("click", () => {
+  uploadPanel.style.display = uploadPanel.style.display === "none" ? "block" : "none";
+  updateActivityCenter();
+});
+$("cancelActivities")?.addEventListener("click", () => {
   activeUploads.forEach(xhr => xhr.abort());
   activeUploads.clear();
-  uploadPanel.style.display = "none";
-};
+  uploadList.querySelectorAll('.upload-item[data-status="active"][data-cancellable="true"]').forEach(item => {
+    item.dataset.status = "cancelled";
+    item.querySelector(".upload-item-status").textContent = "Cancelado pelo usuário";
+  });
+  updateActivityCenter();
+});
+$("clearActivities")?.addEventListener("click", () => {
+  uploadList.querySelectorAll('.upload-item[data-status="complete"], .upload-item[data-status="cancelled"]').forEach(item => item.remove());
+  updateActivityCenter();
+});
 $("btnCheckFiles").onclick = verifyFiles;
 $("bulkEditBtn").onclick = bulkEditSelected;
 $("btnEmptyTrash").onclick = emptyTrash;
@@ -3594,40 +4277,48 @@ backupInput.onchange = e => {
 async function migrateLegacyFilesToDrive() {
   if (!db || !driveManager) throw new Error("Configure o Google Drive primeiro");
   const accountSlot = await chooseAccountSlot("Migrar arquivos antigos para qual conta?");
-  if (!driveManager.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} antes da migracao`);
+  if (!driveManager.isConnected(accountSlot)) throw new Error(`${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes da migração.`);
   const legacyFiles = files.filter(file => !file.deletedAt && !isGoogleDriveRecord(file) && file.url);
   if (!legacyFiles.length) { showToast("Nao ha arquivos antigos para migrar"); return; }
   const confirmed = await openConfirmDialog({
     title: "Migrar Cloudinary para Drive",
-    message: `Copiar ${legacyFiles.length} arquivo(s) para ${slotTag(accountSlot)}? Os arquivos antigos nao serao apagados do Cloudinary automaticamente.`,
+    message: `Origem: Cloudinary (${legacyFiles.length} arquivo(s)). Destino: ${formatDriveDestination(accountSlot)}. Os arquivos antigos não serão apagados automaticamente.`,
     confirmText: "Migrar",
   });
   if (!confirmed) return;
-  uploadPanel.style.display = "block";
-  uploadList.innerHTML = "";
+  showActivityCenter();
+  migrationLiveRegion.textContent = `Migração iniciada: ${legacyFiles.length} arquivos para ${accountFullLabel(accountSlot)}.`;
   let migrated = 0;
   let failed = 0;
   await runLimitedQueue(legacyFiles, async record => {
     try {
       await migrateLegacyFile(record, accountSlot);
       migrated += 1;
+      migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados.`;
     } catch (error) {
       failed += 1;
+      migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados, ${failed} com erro.`;
       console.error(`Falha ao migrar ${record.name}`, error);
     }
   }, 2);
   addHistory(`Migracao para ${slotTag(accountSlot)}: ${migrated} concluido(s), ${failed} falha(s)`);
   showToast(`${migrated} migrado(s) para ${slotTag(accountSlot)}${failed ? ` · ${failed} falha(s)` : ""}`, failed ? "error" : "success");
+  migrationLiveRegion.textContent = `Migração concluída. ${migrated} enviados e ${failed} com erro.`;
+  updateActivityCenter();
 }
 
 async function migrateLegacyFile(record, accountSlot) {
   const itemEl = document.createElement("div");
   itemEl.className = "upload-item";
+  itemEl.dataset.status = "active";
+  itemEl.dataset.activityType = "migration";
   itemEl.innerHTML = `
     <div class="upload-item-top"><div class="upload-item-name"><span class="account-badge">${slotTag(accountSlot)}</span> ${esc(record.name)}</div></div>
+    <div class="upload-item-destination">Cloudinary → ${esc(formatDriveDestination(accountSlot, record.folderId || null))}</div>
     <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
     <div class="upload-item-status">Baixando do Cloudinary...</div>`;
   uploadList.appendChild(itemEl);
+  showActivityCenter();
   const bar = itemEl.querySelector(".upload-item-bar");
   const status = itemEl.querySelector(".upload-item-status");
   try {
@@ -3660,10 +4351,19 @@ async function migrateLegacyFile(record, accountSlot) {
     if (metadata.thumbnailLink) driveThumbnailCache.set(record.id, metadata.thumbnailLink);
     status.textContent = "Migrado para o Drive";
     itemEl.classList.add("upload-complete");
+    itemEl.dataset.status = "complete";
     scheduleUploadItemRemoval(itemEl, 1600);
   } catch (error) {
     itemEl.classList.add("upload-error");
-    status.textContent = error.message;
+    itemEl.dataset.status = "error";
+    status.innerHTML = `${esc(friendlyDriveError(error, accountSlot, driveManager.getAccount(accountSlot)?.email, "migrar este arquivo"))} <button class="upload-retry" type="button">Tentar novamente</button>`;
+    status.querySelector(".upload-retry").onclick = async () => {
+      itemEl.remove();
+      try { await migrateLegacyFile(record, accountSlot); }
+      catch (retryError) { console.error(retryError); }
+      updateActivityCenter();
+    };
+    updateActivityCenter();
     throw error;
   }
 }
@@ -3689,8 +4389,10 @@ async function importFromUrl() {
     const blob = await response.blob();
     const source = new File([blob], name, { type: blob.type || "application/octet-stream" });
     const destination = await resolveUploadDestination();
-    uploadPanel.style.display = "block";
-    await uploadOneFile(source, destination.accountSlot, destination.driveParentId);
+    const confirmed = await openConfirmDialog({ title: "Confirmar destino", message: `“${name}” será enviado para ${destination.label}.`, confirmText: "Enviar" });
+    if (!confirmed) return;
+    showActivityCenter();
+    await uploadOneFile(source, destination.accountSlot, destination.driveParentId, destination.folderId);
     addHistory(`URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`);
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -3778,6 +4480,9 @@ function normalizeBackupFile(fileRecord) {
     customFields: fileRecord.customFields || {},
     notes: normalizeNotes(fileRecord.notes),
     deletedAt: fileRecord.deletedAt || null,
+    missing: !!fileRecord.missing,
+    conflictReason: fileRecord.conflictReason || "",
+    checkedAt: fileRecord.checkedAt || null,
     createdAt: fileRecord.createdAt || serverTimestamp(),
   };
 }
@@ -3792,35 +4497,89 @@ function guessFileTypeFromUrl(url) {
 async function verifyFiles() {
   const liveFiles = files.filter(f => !f.deletedAt && matchesAccountView(f) && (f.url || isGoogleDriveRecord(f)));
   if (!liveFiles.length) { showToast("Nenhum arquivo para verificar"); return; }
-  showToast("Verificando arquivos...");
-  let missing = 0;
-  for (const file of liveFiles) {
-    const ok = await checkFileExists(file);
-    try {
-      await updateDoc(doc(db, "vault_files", file.id), {
-        missing: !ok,
-        checkedAt: serverTimestamp(),
-      });
-      if (!ok) missing++;
-    } catch {}
-  }
-  showToast(missing ? `${missing} arquivo(s) indisponivel(is)` : "Todos os arquivos carregaram", missing ? "error" : "success");
+  await runFileVerification(liveFiles, activeAccountView === "all" ? "Todas as contas" : accountFullLabel(activeAccountView));
 }
 
-async function checkFileExists(file) {
+async function verifyDriveRecordsForSlot(slot) {
+  const records = files.filter(file => !file.deletedAt && isGoogleDriveRecord(file) && recordAccountSlot(file) === slot);
+  if (!records.length) return { missing: 0, skipped: 0, checked: 0 };
+  return runFileVerification(records, accountFullLabel(slot), { quiet: true });
+}
+
+async function runFileVerification(records, label, { quiet = false } = {}) {
+  const itemEl = document.createElement("div");
+  itemEl.className = "upload-item";
+  itemEl.dataset.status = "active";
+  itemEl.dataset.activityType = "verification";
+  itemEl.innerHTML = `<div class="upload-item-top"><div class="upload-item-name">Verificando ${esc(label)}</div></div><div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div><div class="upload-item-status">0 de ${records.length}</div>`;
+  uploadList.appendChild(itemEl);
+  showActivityCenter();
+  const bar = itemEl.querySelector(".upload-item-bar");
+  const status = itemEl.querySelector(".upload-item-status");
+  let missing = 0;
+  let skipped = 0;
+  let checked = 0;
+  for (const file of records) {
+    const result = await inspectFileAvailability(file);
+    if (result.status === "skipped") {
+      skipped += 1;
+    } else {
+      checked += 1;
+      const isMissing = result.status === "missing";
+      if (isMissing) missing += 1;
+      try {
+        await updateDoc(doc(db, "vault_files", file.id), {
+          missing: isMissing,
+          conflictReason: isMissing ? result.reason || "removed_from_provider" : "",
+          checkedAt: serverTimestamp(),
+        });
+      } catch {}
+    }
+    const processed = checked + skipped;
+    const pct = records.length ? Math.round((processed / records.length) * 100) : 100;
+    bar.style.width = `${pct}%`;
+    status.textContent = `${processed} de ${records.length} · ${missing} conflito(s)${skipped ? ` · ${skipped} ignorado(s)` : ""}`;
+  }
+  itemEl.dataset.status = missing ? "error" : "complete";
+  itemEl.classList.toggle("upload-error", missing > 0);
+  itemEl.classList.toggle("upload-complete", missing === 0);
+  if (missing || skipped) {
+    status.innerHTML = `${missing} conflito(s) e ${skipped} não verificado(s). <button class="upload-retry" type="button">Tentar novamente</button>`;
+    status.querySelector(".upload-retry").onclick = () => {
+      itemEl.remove();
+      runFileVerification(records, label, { quiet });
+    };
+  } else {
+    status.textContent = `${checked} arquivo(s) disponíveis`;
+  }
+  updateActivityCenter();
+  renderAccountCenter();
+  if (!quiet) showToast(missing ? `${missing} conflito(s) encontrado(s)` : skipped ? `${skipped} arquivo(s) aguardam reconexão` : "Todos os arquivos verificados", missing || skipped ? "error" : "success");
+  return { missing, skipped, checked };
+}
+
+async function inspectFileAvailability(file) {
   if (isGoogleDriveRecord(file)) {
     const slot = recordAccountSlot(file);
-    if (!driveManager?.isConnected(slot)) return false;
+    if (!driveManager?.isConnected(slot)) return { status: "skipped", reason: "account_disconnected" };
     try {
       const metadata = await driveManager.getMetadata(slot, file.driveFileId, "id,trashed");
-      return !metadata.trashed;
-    } catch { return false; }
+      return metadata.trashed ? { status: "missing", reason: "trashed_in_drive" } : { status: "available" };
+    } catch (error) {
+      if (!driveManager.isConnected(slot)) {
+        const runtime = accountRuntime(slot);
+        runtime.state = "attention";
+        runtime.message = friendlyDriveError(error, slot, driveManager.getAccount(slot)?.email, "verificar os arquivos");
+        return { status: "skipped", reason: "account_session_expired" };
+      }
+      return { status: "missing", reason: "removed_from_drive" };
+    }
   }
   if (file.fileType === "image") {
     return new Promise(resolve => {
       const img = new Image();
-      img.onload = () => resolve(true);
-      img.onerror = () => resolve(false);
+      img.onload = () => resolve({ status: "available" });
+      img.onerror = () => resolve({ status: "missing", reason: "source_unavailable" });
       img.src = file.url;
     });
   }
@@ -3828,23 +4587,29 @@ async function checkFileExists(file) {
     return new Promise(resolve => {
       const video = document.createElement("video");
       video.preload = "metadata";
-      video.onloadedmetadata = () => resolve(true);
-      video.onerror = () => resolve(false);
+      video.onloadedmetadata = () => resolve({ status: "available" });
+      video.onerror = () => resolve({ status: "missing", reason: "source_unavailable" });
       video.src = file.url;
     });
   }
   return fetch(file.url, { method: "HEAD", mode: "no-cors" })
-    .then(() => true)
-    .catch(() => false);
+    .then(() => ({ status: "available" }))
+    .catch(() => ({ status: "missing", reason: "source_unavailable" }));
 }
 
 // ??? Storage UI ???????????????????????????????????????????
 function updateStorageUI() {
-  const total = files.filter(f => !f.deletedAt && matchesAccountView(f)).reduce((s, f) => s + (f.size || 0), 0);
-  const MAX   = (activeAccountView === "all" ? 60 : 15) * 1024 * 1024 * 1024;
+  const visibleAccounts = (driveManager?.getAccounts() || []).filter(account => activeAccountView === "all" || account.slot === activeAccountView);
+  const quotaAccounts = visibleAccounts.filter(account => account.quota?.limit);
+  const hasQuota = quotaAccounts.length > 0 && (activeAccountView !== "all" || quotaAccounts.length === visibleAccounts.filter(account => account.email).length);
+  const acervoTotal = files.filter(f => !f.deletedAt && matchesAccountView(f)).reduce((s, f) => s + (f.size || 0), 0);
+  const total = hasQuota ? quotaAccounts.reduce((sum, account) => sum + Number(account.quota.usage || 0), 0) : acervoTotal;
+  const MAX = hasQuota ? quotaAccounts.reduce((sum, account) => sum + Number(account.quota.limit || 0), 0) : (activeAccountView === "all" ? 60 : 15) * 1024 * 1024 * 1024;
   const pct   = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
-  storageText.textContent = `${fmtSize(total)} no acervo${activeAccountView === "all" ? " das 4 contas" : ` · ${slotTag(activeAccountView)}`}`;
+  storageText.textContent = hasQuota
+    ? `${fmtSize(total)} de ${fmtSize(MAX)} no Google${activeAccountView === "all" ? "" : ` · ${slotTag(activeAccountView)}`}`
+    : `${fmtSize(acervoTotal)} no acervo${activeAccountView === "all" ? " das 4 contas" : ` · ${slotTag(activeAccountView)}`}`;
 }
 
 function scheduleDashboardUpdate() {

@@ -9,7 +9,7 @@
   <title>VAULT - Seu Cofre Digital</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="style.css?v=drive1" />
+  <link rel="stylesheet" href="style.css?v=accounts1" />
   <link rel="stylesheet" href="layout.css" />
   <link rel="stylesheet" href="theme.css" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
@@ -157,7 +157,8 @@
               <option value="ac3">Ac3</option>
               <option value="ac4">Ac4</option>
             </select>
-            <button class="utility-btn account-connect-btn" id="accountConnectBtn" type="button">Contas</button>
+            <button class="utility-btn account-connect-btn" id="accountConnectBtn" type="button" aria-haspopup="dialog">Central de contas</button>
+            <button class="utility-btn activity-center-btn" id="activityCenterBtn" type="button" aria-controls="uploadPanel" aria-expanded="false">Atividades <span id="activityCount" hidden>0</span></button>
           </div>
           <div class="control-cluster sort-cluster">
             <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
@@ -354,6 +355,7 @@
           <option value="ac4">Ac4</option>
         </select>
       </label>
+      <div class="destination-preview" id="folderDestination" role="status" aria-live="polite"></div>
       <div class="modal-actions">
         <button class="modal-btn cancel" id="cancelFolder">Cancelar</button>
         <button class="modal-btn confirm" id="confirmFolder">Criar</button>
@@ -388,17 +390,16 @@
           <label class="field-label" for="cfg_storageBucket">storageBucket <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" autocomplete="off" /></label>
           <label class="field-label" for="cfg_messagingSenderId">messagingSenderId <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" autocomplete="off" /></label>
           <label class="field-label" for="cfg_appId">appId <input class="modal-input" id="cfg_appId" placeholder="appId" autocomplete="off" /></label>
+          <label class="field-label" for="cfg_ownerEmail">Email do proprietário <input class="modal-input" id="cfg_ownerEmail" type="email" placeholder="seu-email@gmail.com" autocomplete="off" /></label>
         </section>
         <section class="config-step drive-config-step">
           <p class="cfg-section-label">2. Google Drive</p>
           <label class="field-label" for="cfg_googleClientId">OAuth Client ID
             <input class="modal-input" id="cfg_googleClientId" placeholder="000000000000-xxx.apps.googleusercontent.com" autocomplete="off" />
           </label>
-          <div class="drive-account-slots" id="driveAccountSlots">
-            <div class="drive-account-slot" data-slot="ac1"><span class="account-badge">Ac1</span><input class="modal-input" id="cfg_driveEmail1" type="email" placeholder="email da conta 1" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac1">Conectar</button><span class="drive-slot-status" id="driveStatus1">Desconectada</span></div>
-            <div class="drive-account-slot" data-slot="ac2"><span class="account-badge">Ac2</span><input class="modal-input" id="cfg_driveEmail2" type="email" placeholder="email da conta 2" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac2">Conectar</button><span class="drive-slot-status" id="driveStatus2">Desconectada</span></div>
-            <div class="drive-account-slot" data-slot="ac3"><span class="account-badge">Ac3</span><input class="modal-input" id="cfg_driveEmail3" type="email" placeholder="email da conta 3" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac3">Conectar</button><span class="drive-slot-status" id="driveStatus3">Desconectada</span></div>
-            <div class="drive-account-slot" data-slot="ac4"><span class="account-badge">Ac4</span><input class="modal-input" id="cfg_driveEmail4" type="email" placeholder="email da conta 4" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac4">Conectar</button><span class="drive-slot-status" id="driveStatus4">Desconectada</span></div>
+          <div class="config-account-link">
+            <span>Emails, nomes e estado das contas ficam na Central de contas.</span>
+            <button class="modal-btn cancel" id="openAccountsFromConfig" type="button">Abrir Central de contas</button>
           </div>
           <details class="legacy-cloudinary-config">
             <summary>Credenciais antigas do Cloudinary (somente migração)</summary>
@@ -440,6 +441,61 @@
         <button class="modal-btn cancel" id="cancelDescription">Cancelar</button>
         <button class="modal-btn confirm" id="saveDescription">Salvar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Central de contas Google Drive -->
+  <div class="modal-overlay" id="accountsModal" role="dialog" aria-modal="true" aria-labelledby="accountsModalTitle">
+    <div class="modal accounts-modal">
+      <header class="accounts-modal-header">
+        <div>
+          <p class="modal-kicker">Google Drive</p>
+          <h2 class="modal-title" id="accountsModalTitle">Central de contas</h2>
+          <p class="accounts-summary" id="accountsSummary">Gerencie Ac1 a Ac4 sem alterar o Firebase.</p>
+        </div>
+        <button class="modal-icon-btn" id="closeAccountsModal" type="button" aria-label="Fechar Central de contas">×</button>
+      </header>
+
+      <section class="accounts-owner-card" aria-labelledby="accountsOwnerTitle">
+        <div>
+          <span class="accounts-owner-label" id="accountsOwnerTitle">Proprietário do VAULT</span>
+          <strong id="accountsOwnerStatus">Entre para liberar a conexão das contas.</strong>
+          <small>O login do proprietário permanece no Spark; as sessões do Drive continuam válidas apenas nesta abertura.</small>
+        </div>
+        <button class="modal-btn confirm" id="accountsOwnerBtn" type="button">Entrar com Google</button>
+      </section>
+
+      <div class="accounts-toolbar">
+        <label class="accounts-search">
+          <span class="sr-only">Buscar conta</span>
+          <input class="modal-input" id="accountsSearch" type="search" placeholder="Buscar por Ac, nome ou email" />
+        </label>
+        <label>
+          <span class="sr-only">Filtrar contas</span>
+          <select class="modal-input" id="accountsFilter">
+            <option value="all">Todas</option>
+            <option value="connected">Disponíveis</option>
+            <option value="attention">Precisam de atenção</option>
+            <option value="unconfigured">Não configuradas</option>
+          </select>
+        </label>
+        <button class="modal-btn cancel" id="reviewAccountsBtn" type="button">Revisar contas com problema</button>
+      </div>
+
+      <section class="account-review-banner" id="accountReviewBanner" hidden aria-live="polite">
+        <div><strong id="accountReviewTitle">Revisão de contas</strong><span id="accountReviewText"></span></div>
+        <button class="modal-btn confirm" id="accountReviewAction" type="button">Continuar</button>
+        <button class="modal-btn cancel" id="accountReviewSkip" type="button">Pular</button>
+      </section>
+
+      <div class="accounts-grid" id="accountsGrid"></div>
+      <p class="accounts-empty" id="accountsEmpty" hidden>Nenhuma conta corresponde à busca.</p>
+      <div class="sr-only" id="accountsLiveRegion" role="status" aria-live="polite" aria-atomic="true"></div>
+
+      <footer class="modal-actions accounts-footer">
+        <button class="modal-btn cancel" id="accountsAdvancedConfig" type="button">Configuração avançada</button>
+        <button class="modal-btn confirm" id="accountsDone" type="button">Concluir</button>
+      </footer>
     </div>
   </div>
 
@@ -529,17 +585,22 @@
   </div>
 
   <!-- TOAST -->
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="sr-only" id="migrationLiveRegion" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- UPLOAD PROGRESS -->
-  <div class="upload-progress-panel" id="uploadPanel" style="display:none;">
+  <div class="upload-progress-panel" id="uploadPanel" style="display:none;" role="region" aria-label="Centro de atividades">
     <div class="upload-panel-header">
-      <span>Enviando arquivos</span>
-      <button id="closePanel">×</button>
+      <div><strong>Atividades</strong><span id="activitySummary">Nenhuma atividade</span></div>
+      <div class="activity-panel-actions">
+        <button id="clearActivities" type="button">Limpar concluídas</button>
+        <button id="cancelActivities" type="button">Cancelar uploads</button>
+        <button id="closePanel" type="button" aria-label="Fechar centro de atividades">×</button>
+      </div>
     </div>
-    <div id="uploadList"></div>
+    <div id="uploadList" aria-live="polite" aria-relevant="additions text"></div>
   </div>
 
-  <script type="module" src="app.js?v=drive1"></script>
+  <script type="module" src="app.js?v=accounts2"></script>
 </body>
 </html>

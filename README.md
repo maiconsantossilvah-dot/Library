@@ -2,7 +2,7 @@
 
 Aplicativo web pessoal para armazenar fotos, vídeos e documentos usando até quatro contas Google Drive.
 
-**Stack:** Google Drive (arquivos) + Firebase Firestore (metadados).
+**Stack:** Google Drive (arquivos) + Firebase Firestore (metadados) + Firebase Authentication (proprietário). Tudo compatível com o plano Spark.
 
 ## Como funciona
 
@@ -12,6 +12,7 @@ Aplicativo web pessoal para armazenar fotos, vídeos e documentos usando até qu
 - Cada pasta principal pertence a uma conta; suas subpastas herdam a mesma conta.
 - O app cria uma pasta física `VAULT` na raiz de cada Drive conectado.
 - O Firestore reúne os metadados das quatro contas para permitir a visão unificada.
+- A Central de contas mostra estado, nome amigável, email, última verificação, uso de armazenamento e conflitos por conta.
 - Tokens do Google não são gravados no navegador. Por isso, as contas precisam ser reconectadas quando a sessão expirar ou a página for reaberta.
 
 ## 1. Configurar o Google Drive
@@ -33,18 +34,33 @@ O aplicativo solicita apenas `drive.file`, que permite trabalhar com arquivos e 
 
 1. Acesse o [Firebase Console](https://console.firebase.google.com/).
 2. Crie um projeto e ative o Firestore Database.
-3. Registre um aplicativo Web.
-4. Copie os campos do `firebaseConfig` para a configuração do VAULT.
+3. Em **Authentication → Sign-in method**, ative o provedor **Google**. O login social está disponível no plano Spark.
+4. Registre um aplicativo Web.
+5. Copie os campos do `firebaseConfig` para a configuração do VAULT.
+6. Cadastre o domínio publicado em **Authentication → Settings → Authorized domains**.
 
 Para um aplicativo publicado, use autenticação e regras restritas. Regras abertas de teste permitem que qualquer pessoa com acesso ao projeto leia ou altere os metadados.
 
 ## 3. Conectar as contas
 
 1. Abra **Configurações** no VAULT.
-2. Informe Firebase e OAuth Client ID e clique em **Salvar e Conectar**.
-3. Preencha ou deixe vazio o email de cada slot.
-4. Clique em **Conectar** ao lado de `Ac1`, `Ac2`, `Ac3` e `Ac4`.
-5. Se um email já estiver preenchido, o VAULT rejeitará uma conta diferente naquele slot.
+2. Informe Firebase, email do proprietário e OAuth Client ID e clique em **Salvar e Conectar**.
+3. A **Central de contas** será aberta separadamente.
+4. Entre como proprietário e configure nome amigável/email de cada slot.
+5. Clique em **Conectar** ou **Reconectar** em `Ac1`, `Ac2`, `Ac3` e `Ac4`.
+6. Se um email já estiver preenchido, o VAULT rejeitará uma conta diferente naquele slot.
+
+O login do proprietário permanece após recarregar. As sessões do Drive não permanecem: o modelo OAuth direto do Google emite access tokens temporários e exige nova conexão quando eles expiram.
+
+## Central de contas
+
+- Busca por tag, nome ou email e filtros por estado.
+- Cada conta funciona de forma independente; uma falha não interrompe as demais.
+- **Atualizar** consulta a quota oficial pela Drive API.
+- **Abrir VAULT no Drive** abre a pasta física da conta.
+- **Verificar** compara registros Firestore com arquivos existentes no Drive.
+- **Revisar contas com problema** conduz a reconexão uma conta por vez.
+- Nomes amigáveis são opcionais; `Ac1–Ac4` continuam sendo os identificadores estáveis.
 
 ## Pastas e uploads
 
@@ -52,6 +68,12 @@ Para um aplicativo publicado, use autenticação e regras restritas. Regras aber
 - Ao criar uma subpasta, a conta é herdada automaticamente.
 - Ao enviar na raiz com **Todas as contas** selecionado, o VAULT pergunta qual conta deve receber os arquivos.
 - Arquivos não podem ser movidos diretamente entre contas. Para trocar de conta é necessário copiar/migrar o conteúdo.
+- A ação **Copiar para outra conta** baixa o arquivo da origem e envia ao destino. Ela verifica possíveis duplicados e pode excluir o original somente depois da cópia concluída.
+- Upload, criação de pasta, cópia e migração mostram o destino completo antes da confirmação.
+
+## Centro de atividades
+
+Uploads, cópias, verificações e migrações aparecem em **Atividades**, com progresso e ação **Tentar novamente** quando possível. Fechar o painel não cancela operações em andamento.
 
 ## Migração do Cloudinary
 

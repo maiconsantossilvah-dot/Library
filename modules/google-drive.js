@@ -44,14 +44,23 @@ async function parseResponse(response) {
 }
 
 export class GoogleDriveManager {
-  constructor({ clientId = "", accounts = [], onAccountsChange } = {}) {
+  constructor({ clientId = "", accounts = [], onAccountsChange, onSessionInvalid } = {}) {
     this.clientId = clientId;
     this.accounts = Array.from({ length: 4 }, (_, index) => {
       const slot = `ac${index + 1}`;
       const saved = accounts.find(account => account.slot === slot) || accounts[index] || {};
-      return { slot, email: saved.email || "", rootFolderId: saved.rootFolderId || "" };
+      return {
+        slot,
+        email: saved.email || "",
+        friendlyName: saved.friendlyName || "",
+        rootFolderId: saved.rootFolderId || "",
+        lastConnectedAt: saved.lastConnectedAt || "",
+        lastCheckedAt: saved.lastCheckedAt || "",
+        quota: saved.quota || null,
+      };
     });
     this.onAccountsChange = onAccountsChange;
+    this.onSessionInvalid = onSessionInvalid;
     this.sessions = new Map();
   }
 
@@ -65,7 +74,11 @@ export class GoogleDriveManager {
       return {
         slot,
         email: incoming.email ?? saved.email ?? "",
+        friendlyName: incoming.friendlyName ?? saved.friendlyName ?? "",
         rootFolderId: incoming.rootFolderId ?? saved.rootFolderId ?? "",
+        lastConnectedAt: incoming.lastConnectedAt ?? saved.lastConnectedAt ?? "",
+        lastCheckedAt: incoming.lastCheckedAt ?? saved.lastCheckedAt ?? "",
+        quota: incoming.quota ?? saved.quota ?? null,
       };
     });
   }
@@ -118,6 +131,7 @@ export class GoogleDriveManager {
     });
     const account = this.getAccount(normalized);
     account.email = profile.email;
+    account.lastConnectedAt = new Date().toISOString();
     await this.notifyAccountsChanged();
     return { ...account, connected: true };
   }
@@ -148,7 +162,11 @@ export class GoogleDriveManager {
     const response = await fetch(url, { ...options, headers });
     const payload = await parseResponse(response);
     if (!response.ok) {
-      if (response.status === 401) this.sessions.delete(normalizeSlot(slot));
+      if (response.status === 401) {
+        const normalized = normalizeSlot(slot);
+        this.sessions.delete(normalized);
+        this.onSessionInvalid?.(normalized, payload);
+      }
       throw new Error(driveErrorMessage(payload, `Erro ${response.status} no Google Drive`));
     }
     return payload;
@@ -212,6 +230,29 @@ export class GoogleDriveManager {
     return this.request(slot, `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fields)}`);
   }
 
+  async getAbout(slot) {
+    const normalized = normalizeSlot(slot);
+    const about = await this.request(normalized, `${DRIVE_API}/about?fields=user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)`);
+    const account = this.getAccount(normalized);
+    account.lastCheckedAt = new Date().toISOString();
+    account.quota = about.storageQuota ? {
+      limit: Number(about.storageQuota.limit || 0),
+      usage: Number(about.storageQuota.usage || 0),
+      usageInDrive: Number(about.storageQuota.usageInDrive || 0),
+      usageInDriveTrash: Number(about.storageQuota.usageInDriveTrash || 0),
+    } : null;
+    await this.notifyAccountsChanged();
+    return about;
+  }
+
+  async getRootFolderUrl(slot) {
+    const normalized = normalizeSlot(slot);
+    const account = this.getAccount(normalized);
+    const folderId = await this.ensureRootFolder(normalized);
+    const authUser = account.email ? `?authuser=${encodeURIComponent(account.email)}` : "";
+    return `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}${authUser}`;
+  }
+
   getBlob(slot, fileId) {
     const session = this.requireSession(slot);
     return fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, {
@@ -219,6 +260,11 @@ export class GoogleDriveManager {
     }).then(async response => {
       if (!response.ok) {
         const payload = await parseResponse(response);
+        if (response.status === 401) {
+          const normalized = normalizeSlot(slot);
+          this.sessions.delete(normalized);
+          this.onSessionInvalid?.(normalized, payload);
+        }
         throw new Error(driveErrorMessage(payload, "Nao foi possivel baixar o arquivo do Drive"));
       }
       return response.blob();
@@ -245,6 +291,10 @@ export class GoogleDriveManager {
     });
     if (!startResponse.ok) {
       const payload = await parseResponse(startResponse);
+      if (startResponse.status === 401) {
+        this.sessions.delete(normalized);
+        this.onSessionInvalid?.(normalized, payload);
+      }
       throw new Error(driveErrorMessage(payload, "Nao foi possivel iniciar o upload no Drive"));
     }
     const uploadUrl = startResponse.headers.get("location");
@@ -262,7 +312,13 @@ export class GoogleDriveManager {
         let payload = {};
         try { payload = JSON.parse(xhr.responseText || "{}"); } catch {}
         if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
-        else reject(new Error(driveErrorMessage(payload, `Erro ${xhr.status} no upload para o Drive`)));
+        else {
+          if (xhr.status === 401) {
+            this.sessions.delete(normalized);
+            this.onSessionInvalid?.(normalized, payload);
+          }
+          reject(new Error(driveErrorMessage(payload, `Erro ${xhr.status} no upload para o Drive`)));
+        }
       };
       xhr.onerror = () => reject(new Error("Erro de rede durante o upload para o Drive"));
       xhr.onabort = () => reject(new DOMException("Upload cancelado", "AbortError"));

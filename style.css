@@ -2899,10 +2899,195 @@ html, body {
 }
 
 .drive-config-step > .field-label,
-.drive-config-step > .drive-account-slots,
+.drive-config-step > .config-account-link,
 .drive-config-step > .legacy-cloudinary-config {
   grid-column: 1 / -1;
   min-width: 0;
+}
+
+/* ===== CENTRAL DE CONTAS E ATIVIDADES ===== */
+.config-account-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent2) 7%, var(--surface));
+  color: var(--text2);
+  font-size: 12px;
+}
+.accounts-modal {
+  width: min(1040px, calc(100vw - 28px));
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  padding: 0;
+}
+.accounts-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(18px);
+}
+.accounts-summary { margin-top: 6px; color: var(--text3); font-size: 12px; }
+.modal-icon-btn {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text2);
+  font-size: 20px;
+  cursor: pointer;
+}
+.modal-icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.accounts-owner-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 18px 24px 12px;
+  padding: 15px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent2) 28%, var(--border));
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--accent2) 8%, var(--surface));
+}
+.accounts-owner-card > div { display: grid; min-width: 0; gap: 3px; }
+.accounts-owner-label { color: var(--accent2); font: 700 9px/1.2 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.accounts-owner-card strong { color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.accounts-owner-card small { color: var(--text3); font-size: 10px; line-height: 1.45; }
+.accounts-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, auto) auto;
+  gap: 9px;
+  padding: 8px 24px 14px;
+}
+.accounts-toolbar .modal-input { height: 40px; margin: 0; }
+.account-review-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  margin: 0 24px 14px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.account-review-banner[hidden] { display: none; }
+.account-review-banner > div { display: grid; gap: 3px; }
+.account-review-banner strong { font-size: 12px; }
+.account-review-banner span { color: var(--text3); font-size: 10px; }
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 24px 20px;
+}
+.drive-account-card {
+  min-width: 0;
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg2));
+  box-shadow: 0 9px 25px rgba(32, 50, 45, .05);
+}
+.drive-account-card[data-state="connected"] { border-color: color-mix(in srgb, var(--accent2) 38%, var(--border)); }
+.drive-account-card[data-state="attention"],
+.drive-account-card[data-state="wrong_account"] { border-color: color-mix(in srgb, var(--danger) 42%, var(--border)); }
+.drive-account-card[data-busy="true"] { opacity: .78; }
+.account-card-heading { display: flex; align-items: flex-start; gap: 10px; }
+.account-card-identity { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.account-card-identity strong { color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.account-card-identity span { color: var(--text3); font: 10px/1.4 var(--font-mono); overflow-wrap: anywhere; }
+.account-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--text2);
+  font: 700 9px/1.3 var(--font-mono);
+}
+.account-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text3); }
+.drive-account-card[data-state="connected"] .account-state::before { background: var(--accent2); }
+.drive-account-card[data-state="attention"] .account-state::before,
+.drive-account-card[data-state="wrong_account"] .account-state::before { background: var(--danger); }
+.drive-account-card[data-state="connecting"] .account-state::before { background: var(--accent); animation: accountPulse 1s infinite alternate; }
+@keyframes accountPulse { to { opacity: .25; transform: scale(.72); } }
+.account-card-fields { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 8px; }
+.account-card-fields label { display: grid; gap: 5px; color: var(--text3); font: 9px/1.2 var(--font-mono); }
+.account-card-fields .modal-input { min-width: 0; margin: 0; height: 38px; }
+.account-card-message { min-height: 32px; color: var(--text2); font-size: 11px; line-height: 1.45; }
+.account-card-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.account-meta-item { display: grid; gap: 2px; padding: 8px; border-radius: 10px; background: var(--bg); }
+.account-meta-item span { color: var(--text3); font: 8px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+.account-meta-item strong { color: var(--text); font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
+.account-quota { grid-column: 1 / -1; display: grid; gap: 5px; }
+.account-quota-bar { height: 5px; overflow: hidden; border-radius: 999px; background: var(--bg3); }
+.account-quota-bar span { display: block; width: var(--quota-pct, 0%); height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+.account-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.account-card-actions .primary { margin-right: auto; }
+.account-card-actions button, .account-card-actions a {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text2);
+  font: 600 10px/1 var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-card-actions .primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.account-card-actions button:hover, .account-card-actions a:hover { border-color: var(--accent); color: var(--accent); }
+.account-card-actions .primary:hover { color: #fff; filter: brightness(.95); }
+.account-card-actions :disabled { opacity: .45; cursor: not-allowed; }
+.accounts-empty { margin: 0 24px 22px; padding: 28px; border: 1px dashed var(--border); border-radius: 15px; color: var(--text3); text-align: center; }
+.accounts-footer { position: sticky; bottom: 0; margin: 0; padding: 14px 24px 20px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(18px); }
+.destination-preview { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg); color: var(--text2); font: 10px/1.45 var(--font-mono); }
+.destination-preview strong { color: var(--text); }
+.dialog-checkbox { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid var(--border); border-radius: 11px; color: var(--text2); font-size: 11px; line-height: 1.4; cursor: pointer; }
+.dialog-checkbox input { width: 17px; height: 17px; margin-top: 1px; accent-color: var(--accent); }
+.activity-center-btn { gap: 7px; }
+.activity-center-btn span { display: inline-grid; min-width: 18px; height: 18px; place-items: center; border-radius: 999px; background: var(--accent); color: #fff; font: 700 9px/1 var(--font-mono); }
+.upload-progress-panel { width: min(440px, calc(100vw - 24px)); max-height: min(72vh, 680px); overflow: hidden; }
+.upload-panel-header { align-items: center; }
+.upload-panel-header > div:first-child { display: grid; gap: 2px; }
+.upload-panel-header strong { font-size: 12px; }
+.upload-panel-header span { color: var(--text3); font-size: 9px; }
+.activity-panel-actions { display: flex !important; align-items: center; gap: 5px; }
+.activity-panel-actions button { min-height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text2); font-size: 9px; cursor: pointer; }
+#uploadList { max-height: calc(min(72vh, 680px) - 68px); overflow-y: auto; }
+.upload-item[data-status="complete"] { opacity: .82; }
+.upload-item-destination { color: var(--text3); font: 9px/1.4 var(--font-mono); }
+.upload-retry { margin-left: 6px; }
+
+@media (max-width: 760px) {
+  .accounts-modal { width: calc(100vw - 12px); max-height: calc(100vh - 12px); }
+  .accounts-modal-header { padding: 18px 16px 13px; }
+  .accounts-owner-card { align-items: stretch; margin: 12px 16px 10px; flex-direction: column; }
+  .accounts-toolbar { grid-template-columns: 1fr; padding: 7px 16px 12px; }
+  .account-review-banner { grid-template-columns: 1fr 1fr; margin: 0 16px 12px; }
+  .account-review-banner > div { grid-column: 1 / -1; }
+  .accounts-grid { grid-template-columns: 1fr; padding: 0 16px 16px; }
+  .account-card-fields { grid-template-columns: 1fr; }
+  .accounts-footer { padding: 12px 16px 16px; }
+  .config-account-link { align-items: stretch; flex-direction: column; }
+  .activity-panel-actions button:not(#closePanel) { display: none; }
 }
 
 .form-error {

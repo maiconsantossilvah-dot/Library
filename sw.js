@@ -1,4 +1,4 @@
-const CACHE_NAME = "vault-shell-v6-drive";
+const CACHE_NAME = "vault-shell-v9-account-center";
 const APP_SHELL = [
   "./",
   "./index.html",
