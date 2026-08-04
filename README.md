@@ -1,109 +1,81 @@
-# ⬡ VAULT — Cofre Digital
+# VAULT — Cofre Digital
 
-Aplicativo web pessoal para armazenar vídeos, imagens e documentos.
-**Stack: Cloudinary (arquivos, 25 GB grátis) + Firebase Firestore (metadados, grátis)**
+Aplicativo web pessoal para armazenar fotos, vídeos e documentos usando até quatro contas Google Drive.
 
----
+**Stack:** Google Drive (arquivos) + Firebase Firestore (metadados).
 
-## 🆓 Por que essa combinação é gratuita?
+## Como funciona
 
-| Serviço | O que faz | Plano grátis |
-|---|---|---|
-| **Cloudinary** | Guarda os arquivos (imagens, vídeos, docs) | 25 GB + CDN |
-| **Firebase Firestore** | Guarda os metadados (nome, pasta, tamanho, link) | 1 GB / 50k leituras por dia |
+- Um único OAuth Client ID conecta até quatro contas Google diferentes.
+- As contas aparecem como `Ac1`, `Ac2`, `Ac3` e `Ac4`.
+- O seletor da barra superior alterna entre uma conta específica e a visão **Todas as contas**.
+- Cada pasta principal pertence a uma conta; suas subpastas herdam a mesma conta.
+- O app cria uma pasta física `VAULT` na raiz de cada Drive conectado.
+- O Firestore reúne os metadados das quatro contas para permitir a visão unificada.
+- Tokens do Google não são gravados no navegador. Por isso, as contas precisam ser reconectadas quando a sessão expirar ou a página for reaberta.
 
-Nenhum dos dois exige cartão de crédito para começar.
+## 1. Configurar o Google Drive
 
----
+1. Abra o [Google Cloud Console](https://console.cloud.google.com/).
+2. Crie ou escolha um projeto.
+3. Em **APIs e serviços → Biblioteca**, ative a **Google Drive API**.
+4. Configure a **Tela de consentimento OAuth**.
+5. Durante testes, adicione os quatro emails em **Usuários de teste**.
+6. Em **Credenciais**, crie um **ID do cliente OAuth 2.0** do tipo **Aplicativo da Web**.
+7. Em **Origens JavaScript autorizadas**, cadastre a origem em que o VAULT é publicado, por exemplo:
+   - `http://localhost:8000`
+   - `https://seuusuario.github.io`
+8. Copie o Client ID terminado em `.apps.googleusercontent.com`.
 
-## 🚀 Passo a passo de configuração
+O aplicativo solicita apenas `drive.file`, que permite trabalhar com arquivos e pastas criados ou escolhidos pelo próprio VAULT, e a permissão de email usada para validar cada slot.
 
-### 1. Configurar o Cloudinary
+## 2. Configurar o Firebase Firestore
 
-1. Crie uma conta em [cloudinary.com](https://cloudinary.com) (gratuito, sem cartão)
-2. No Dashboard, anote seu **Cloud Name** (ex: `meu-vault-abc123`)
-3. Vá em **Settings → Upload → Upload presets**
-4. Clique em **Add upload preset**
-   - **Signing mode**: `Unsigned` ← obrigatório!
-   - **Folder**: `vault` (opcional, organiza no painel deles)
-   - Salve e copie o nome do preset (ex: `vault_preset`)
+1. Acesse o [Firebase Console](https://console.firebase.google.com/).
+2. Crie um projeto e ative o Firestore Database.
+3. Registre um aplicativo Web.
+4. Copie os campos do `firebaseConfig` para a configuração do VAULT.
 
-### 2. Configurar o Firebase (só Firestore, sem Storage)
+Para um aplicativo publicado, use autenticação e regras restritas. Regras abertas de teste permitem que qualquer pessoa com acesso ao projeto leia ou altere os metadados.
 
-1. Acesse [console.firebase.google.com](https://console.firebase.google.com)
-2. Crie um projeto (ou use um existente)
-3. Ative o **Firestore Database**:
-   - Build → Firestore Database → Criar banco de dados
-   - Modo: **Teste** (para uso pessoal, ou Produção para mais controle)
-   - Região: `southamerica-east1` (menor latência no Brasil)
-4. Vá em **Configurações do projeto (⚙️) → Seus aplicativos → `</>`**
-5. Registre um app web e copie o `firebaseConfig`
+## 3. Conectar as contas
 
-### 3. Regras do Firestore (para uso pessoal)
+1. Abra **Configurações** no VAULT.
+2. Informe Firebase e OAuth Client ID e clique em **Salvar e Conectar**.
+3. Preencha ou deixe vazio o email de cada slot.
+4. Clique em **Conectar** ao lado de `Ac1`, `Ac2`, `Ac3` e `Ac4`.
+5. Se um email já estiver preenchido, o VAULT rejeitará uma conta diferente naquele slot.
 
-Em **Firestore → Rules**, cole:
+## Pastas e uploads
+
+- Ao criar uma coleção na visão **Todas as contas**, escolha a conta de destino.
+- Ao criar uma subpasta, a conta é herdada automaticamente.
+- Ao enviar na raiz com **Todas as contas** selecionado, o VAULT pergunta qual conta deve receber os arquivos.
+- Arquivos não podem ser movidos diretamente entre contas. Para trocar de conta é necessário copiar/migrar o conteúdo.
+
+## Migração do Cloudinary
+
+O botão **Mais → Migrar Cloudinary → Drive** copia os registros antigos para a conta selecionada.
+
+- O VAULT baixa o arquivo pela URL antiga, envia ao Drive e atualiza o registro no Firestore.
+- A estrutura de pastas é recriada no Drive e recebe a tag da conta escolhida.
+- As URLs e IDs antigos são preservados nos campos de legado do backup.
+- O arquivo original não é apagado automaticamente do Cloudinary. Apague-o no painel do Cloudinary somente depois de conferir a migração.
+- Se o Cloudinary bloquear o download por CORS ou o arquivo já estiver ausente, o item será apresentado como falha e permanecerá com o registro antigo.
+
+## Arquivos principais
+
+```text
+index.html                 interface e configurações
+app.js                     navegação, Firestore e integração dos provedores
+modules/google-drive.js    OAuth e operações da Google Drive API
+modules/                   fila, hash, busca local e metadados
+sw.js                      cache do PWA
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
 
-### 4. Hospedar no GitHub Pages
+## Observações
 
-1. Crie um repositório GitHub (ex: `vault`)
-2. Suba os 4 arquivos: `index.html`, `style.css`, `app.js`, `README.md`
-3. Vá em **Settings → Pages → Source**: branch `main`, pasta `/root`
-4. Acesse: `https://seuusuario.github.io/vault`
-5. Cole suas credenciais na tela de configuração → **Salvar e Conectar**
-
----
-
-## 📁 Arquivos do projeto
-
-```
-vault/
-├── index.html   → estrutura HTML + modais
-├── style.css    → tema escuro industrial
-├── app.js       → lógica + Cloudinary + Firestore
-├── modules/     → fila de upload, hash e ordenação de páginas
-└── README.md    → este guia
-```
-
----
-
-## ✅ Funcionalidades
-
-- Upload de imagens, vídeos e documentos (clique ou arrastar)
-- Thumbnails automáticos via Cloudinary CDN
-- Lightbox para visualizar em tela cheia
-- Player de vídeo embutido
-- Pastas para organizar arquivos
-- Filtro por tipo (imagem, vídeo, documento)
-- Vista em grade grande ou lista
-- Leitor de mangá por pasta, com modo horizontal e vertical
-- Deletar arquivos e pastas
-- Indicador de uso dos 25 GB
-- Progresso de upload em tempo real com fila limitada
-- Detecção de duplicados por hash nos novos uploads
-- Exportar e restaurar backup JSON dos metadados
-- Credenciais salvas localmente no navegador
-- Instalavel como aplicativo (PWA), com interface disponivel offline apos a primeira abertura
-- Busca local por conteudo de TXT, imagens e PDFs; imagens e PDFs escaneados usam OCR no proprio navegador
-- Fotos leem automaticamente metadados de JPEG, TIFF, PNG, HEIC/HEIF, AVIF e outros formatos compativeis; quando nao houver data embutida, usam a data do arquivo como identificada na importacao. Elas sugerem albuns por mes, identificam capturas de tela e alimentam o painel "Neste dia"
-
----
-
-## 💡 Dicas
-
-- **Deletar do computador**: faça upload → confirme no lightbox → delete do HD.
-- **Deletar do Cloudinary**: o app remove só o registro do Firestore. Para apagar o arquivo do servidor do Cloudinary também, entre no painel deles em Media Library.
-- O Cloudinary gera **thumbnails automáticos** de vídeo (frame inicial) e redimensiona imagens via URL — sem custo extra.
-- Para instalar o VAULT, abra-o pelo GitHub Pages em um navegador compativel e use a opcao **Instalar aplicativo** do navegador.
-- Em **Ferramentas → Indexar busca local**, o texto de imagens, PDFs e TXT e salvo apenas no navegador atual. O primeiro OCR precisa de internet para baixar o mecanismo; depois, busque normalmente pelo campo superior.
-- **Limpar indice local** remove somente os textos extraidos daquele navegador, nunca os arquivos enviados ao VAULT.
-- Em **Ferramentas → Analisar fotos**, fotos que ja estavam no VAULT recebem a mesma classificacao. A leitura nao move arquivos nem cria pastas automaticamente; sugestoes de album permanecem reversiveis.
+- O espaço gratuito de uma Conta Google é compartilhado entre Drive, Gmail e Google Fotos.
+- Miniaturas do Drive são temporárias e são renovadas pelo aplicativo durante a sessão.
+- Vídeos e documentos usam a visualização autenticada do próprio Google Drive.
+- Download, exclusão, renomeação e movimentação física exigem que a conta correspondente esteja conectada.

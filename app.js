@@ -13,6 +13,7 @@ import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
 import { createLocalTextSearch, extractSearchText } from "./modules/local-text-search.js";
 import { readPhotoMetadata } from "./modules/photo-metadata.js";
+import { GoogleDriveManager, isGoogleDriveRecord, drivePreviewUrl, driveViewUrl } from "./modules/google-drive.js";
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
@@ -21,6 +22,7 @@ const ROOT_ID = "root";
 let currentSearch  = "";
 let currentSort    = "newest";
 let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
+let activeAccountView = localStorage.getItem("vault_drive_account_view") || "all";
 let isCompactView  = false;
 let isSelectMode   = false;
 let selectedIds    = new Set();
@@ -63,6 +65,13 @@ const PHOTO_EXTENSION_PATTERN = /\.(?:arw|avif|bmp|cr2|cr3|dng|gif|heic|heif|iiq
 
 let cloudName    = "";
 let uploadPreset = "";
+let googleClientId = "";
+let driveManager = null;
+let currentConfig = null;
+let pendingUploadAccountSlot = "";
+const driveThumbnailCache = new Map();
+const driveThumbnailRequests = new Map();
+const driveObjectUrls = new Map();
 
 // Move modal state
 let fileToMove    = null;
@@ -101,6 +110,8 @@ const lightboxInner   = $("lightboxInner");
 const lightboxInfo    = $("lightboxInfo");
 const folderModal     = $("folderModal");
 const folderNameInput = $("folderNameInput");
+const folderAccountField = $("folderAccountField");
+const folderAccountSelect = $("folderAccountSelect");
 const configModal     = $("configModal");
 const uploadPanel     = $("uploadPanel");
 const uploadList      = $("uploadList");
@@ -115,6 +126,8 @@ const bulkCount       = $("bulkCount");
 const searchInput     = $("searchInput");
 const sortSelect      = $("sortSelect");
 const qualitySelect   = $("qualitySelect");
+const accountViewSelect = $("accountViewSelect");
+const accountConnectBtn = $("accountConnectBtn");
 const dashboard       = $("dashboard");
 const filesWorkspace  = $("filesWorkspace");
 const folderChildrenSection = $("folderChildrenSection");
@@ -226,6 +239,9 @@ queueMicrotask(async () => {
   if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
   else openConfigModal(false); // nao pode cancelar na primeira vez
   qualitySelect.value = thumbQuality;
+  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView) ? activeAccountView : "all";
+  activeAccountView = accountViewSelect.value;
+  renderAccountControls();
   renderHistory();
   updateConnectionStatus();
   registerPwa();
@@ -243,6 +259,39 @@ function prefillConfig(cfg) {
   $("cfg_appId").value             = cfg.appId             || "";
   $("cfg_cloudName").value         = cfg.cloudName         || "";
   $("cfg_uploadPreset").value      = cfg.uploadPreset      || "";
+  $("cfg_googleClientId").value    = cfg.googleClientId    || "";
+  const accounts = normalizeDriveAccounts(cfg.driveAccounts);
+  accounts.forEach((account, index) => {
+    $(`cfg_driveEmail${index + 1}`).value = account.email || "";
+  });
+  renderDriveAccountSlots();
+}
+
+function normalizeDriveAccounts(accounts = []) {
+  return Array.from({ length: 4 }, (_, index) => {
+    const slot = `ac${index + 1}`;
+    const account = accounts.find(item => item?.slot === slot) || accounts[index] || {};
+    return { slot, email: account.email || "", rootFolderId: account.rootFolderId || "" };
+  });
+}
+
+function configFromForm() {
+  const previousAccounts = normalizeDriveAccounts(currentConfig?.driveAccounts || savedCfg?.driveAccounts || []);
+  return {
+    apiKey:            $("cfg_apiKey").value.trim(),
+    authDomain:        $("cfg_authDomain").value.trim(),
+    projectId:         $("cfg_projectId").value.trim(),
+    storageBucket:     $("cfg_storageBucket").value.trim(),
+    messagingSenderId: $("cfg_messagingSenderId").value.trim(),
+    appId:             $("cfg_appId").value.trim(),
+    googleClientId:    $("cfg_googleClientId").value.trim(),
+    driveAccounts: previousAccounts.map((account, index) => ({
+      ...account,
+      email: $(`cfg_driveEmail${index + 1}`).value.trim(),
+    })),
+    cloudName:         $("cfg_cloudName").value.trim(),
+    uploadPreset:      $("cfg_uploadPreset").value.trim(),
+  };
 }
 
 function openConfigModal(canCancel = true) {
@@ -270,7 +319,8 @@ function updateConnectionStatus() {
   if (!connectionStatus) return;
   const online = navigator.onLine;
   connectionStatus.dataset.state = online ? "online" : "offline";
-  connectionStatus.textContent = online ? "Online" : "Sem conexao";
+  const connected = driveManager?.getAccounts().filter(account => account.connected).length || 0;
+  connectionStatus.textContent = online ? `Online · ${connected}/4 Drive` : "Sem conexao";
 }
 
 function registerPwa() {
@@ -426,6 +476,17 @@ async function initApp(cfg) {
     });
     cloudName    = cfg.cloudName;
     uploadPreset = cfg.uploadPreset;
+    googleClientId = cfg.googleClientId || "";
+    currentConfig = { ...cfg, driveAccounts: normalizeDriveAccounts(cfg.driveAccounts) };
+    if (!driveManager) {
+      driveManager = new GoogleDriveManager({
+        clientId: googleClientId,
+        accounts: currentConfig.driveAccounts,
+        onAccountsChange: persistDriveAccounts,
+      });
+    } else {
+      driveManager.configure({ clientId: googleClientId, accounts: currentConfig.driveAccounts });
+    }
 
     configModal.style.display = "none";
     showConfigError("");
@@ -439,35 +500,111 @@ async function initApp(cfg) {
 
     listenFolders();
     listenFiles();
+    renderAccountControls();
+    renderDriveAccountSlots();
+    updateConnectionStatus();
+    return true;
   } catch (e) {
     const message = "Erro ao conectar: " + e.message;
     openConfigModal(true);
     showConfigError(message);
     showToast(message, "error");
     console.error(e);
+    return false;
   }
 }
 
-$("saveConfig").onclick = () => {
-  const cfg = {
-    apiKey:            $("cfg_apiKey").value.trim(),
-    authDomain:        $("cfg_authDomain").value.trim(),
-    projectId:         $("cfg_projectId").value.trim(),
-    storageBucket:     $("cfg_storageBucket").value.trim(),
-    messagingSenderId: $("cfg_messagingSenderId").value.trim(),
-    appId:             $("cfg_appId").value.trim(),
-    cloudName:         $("cfg_cloudName").value.trim(),
-    uploadPreset:      $("cfg_uploadPreset").value.trim(),
-  };
-  if (!cfg.apiKey || !cfg.projectId || !cfg.cloudName || !cfg.uploadPreset) {
-    showConfigError("Preencha apiKey, projectId, Cloud Name e Upload Preset para conectar.");
+$("saveConfig").onclick = async () => {
+  const cfg = configFromForm();
+  if (!cfg.apiKey || !cfg.projectId || !cfg.googleClientId) {
+    showConfigError("Preencha apiKey, projectId e o OAuth Client ID do Google para conectar.");
     showToast("Preencha os campos obrigatorios", "error");
     return;
   }
   showConfigError("");
   saveConfig(cfg);
-  initApp(cfg);
+  const connected = await initApp(cfg);
+  if (connected) {
+    openConfigModal(true);
+    showToast("Configuracao salva. Agora conecte Ac1 a Ac4.", "success");
+  }
 };
+
+async function persistDriveAccounts(accounts) {
+  currentConfig = { ...(currentConfig || configFromForm()), driveAccounts: normalizeDriveAccounts(accounts) };
+  saveConfig(currentConfig);
+  currentConfig.driveAccounts.forEach((account, index) => {
+    const input = $(`cfg_driveEmail${index + 1}`);
+    if (input) input.value = account.email || "";
+  });
+  renderAccountControls();
+  renderDriveAccountSlots();
+  updateConnectionStatus();
+}
+
+function accountLabel(slot, includeEmail = true) {
+  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot?.slice(-1) || 1) - 1];
+  const tag = slotTag(slot);
+  return includeEmail && account?.email ? `${tag} · ${account.email}` : tag;
+}
+
+function slotTag(slot) {
+  const value = String(slot || "").toLowerCase();
+  return /^ac[1-4]$/.test(value) ? `Ac${value.slice(-1)}` : value.toUpperCase();
+}
+
+function renderAccountControls() {
+  if (!accountViewSelect) return;
+  const accounts = driveManager?.getAccounts() || normalizeDriveAccounts(currentConfig?.driveAccounts);
+  accountViewSelect.innerHTML = [
+    '<option value="all">Todas as contas</option>',
+    ...accounts.map(account => `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : ""}</option>`),
+  ].join("");
+  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView) ? activeAccountView : "all";
+  accountConnectBtn.textContent = activeAccountView === "all"
+    ? "Contas"
+    : (driveManager?.isConnected(activeAccountView) ? `${slotTag(activeAccountView)} conectada` : `Conectar ${slotTag(activeAccountView)}`);
+  accountConnectBtn.classList.toggle("is-connected", activeAccountView !== "all" && !!driveManager?.isConnected(activeAccountView));
+}
+
+function renderDriveAccountSlots() {
+  for (let index = 1; index <= 4; index += 1) {
+    const slot = `ac${index}`;
+    const connected = !!driveManager?.isConnected(slot);
+    const status = $(`driveStatus${index}`);
+    const button = document.querySelector(`.drive-connect-slot[data-slot="${slot}"]`);
+    if (status) {
+      status.textContent = connected ? "Conectada nesta sessao" : "Desconectada";
+      status.classList.toggle("connected", connected);
+    }
+    if (button) button.textContent = connected ? "Reconectar" : "Conectar";
+  }
+}
+
+async function connectDriveSlot(slot) {
+  if (!driveManager || googleClientId !== $("cfg_googleClientId").value.trim()) {
+    showToast("Salve a configuracao antes de conectar as contas", "error");
+    openConfigModal(true);
+    return;
+  }
+  const index = Number(slot.slice(-1));
+  const expectedEmail = $(`cfg_driveEmail${index}`).value.trim();
+  try {
+    showToast(`Abrindo login de ${slotTag(slot)}...`);
+    const account = await driveManager.connect(slot, expectedEmail);
+    $(`cfg_driveEmail${index}`).value = account.email;
+    await persistDriveAccounts(driveManager.getAccounts());
+    showToast(`${slotTag(slot)} conectada: ${account.email}`, "success");
+    updateDashboard();
+    renderGrid();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+document.querySelectorAll(".drive-connect-slot").forEach(button => {
+  button.addEventListener("click", () => connectDriveSlot(button.dataset.slot));
+});
 
 // ??? Firestore listeners ??????????????????????????????????
 function listenFolders() {
@@ -543,7 +680,7 @@ function rebuildFileIndexes() {
   const duplicateGroups = new Map();
 
   files.forEach(file => {
-    if (!isActiveFile(file)) return;
+    if (!isActiveFile(file) || !matchesAccountView(file)) return;
     const folderId = normalizeFolderId(file.folderId);
     activeFileCountByFolder.set(folderId, (activeFileCountByFolder.get(folderId) || 0) + 1);
     const duplicateKey = file.contentHash
@@ -599,13 +736,29 @@ function getFolder(folderId) {
 }
 
 function ensureCurrentFolderExists() {
-  if (navState.folderId !== ROOT_ID && !getFolder(navState.folderId)) {
+  if (navState.folderId !== ROOT_ID && (!getFolder(navState.folderId) || !matchesAccountView(getFolder(navState.folderId)))) {
     navState.folderId = ROOT_ID;
   }
 }
 
 function getFolderChildren(parentId = ROOT_ID) {
-  return folderChildrenByParent.get(normalizeFolderId(parentId)) || [];
+  return (folderChildrenByParent.get(normalizeFolderId(parentId)) || []).filter(matchesAccountView);
+}
+
+function recordAccountSlot(record) {
+  const explicit = String(record?.accountSlot || "").toLowerCase();
+  if (/^ac[1-4]$/.test(explicit)) return explicit;
+  const parentSlot = record?.folderId ? String(getFolder(record.folderId)?.accountSlot || "").toLowerCase() : "";
+  return /^ac[1-4]$/.test(parentSlot) ? parentSlot : "legacy";
+}
+
+function matchesAccountView(record) {
+  return activeAccountView === "all" || recordAccountSlot(record) === activeAccountView;
+}
+
+function accountBadge(record) {
+  const slot = recordAccountSlot(record);
+  return slot === "legacy" ? "LEG" : slotTag(slot);
 }
 
 function getFolderPath(folderId = navState.folderId) {
@@ -664,6 +817,7 @@ function renderFolderTreeNode(folder, depth) {
       ${hasChildren ? (isExpanded ? "-" : "+") : ""}
     </button>
     <span class="folder-icon">${hasChildren ? "#" : "."}</span>
+    <span class="account-badge folder-account-badge">${accountBadge(folder)}</span>
     <span class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
     <button class="folder-rename" title="Renomear pasta">Renomear</button>
     <button class="folder-delete" title="Excluir pasta">×</button>`;
@@ -691,7 +845,7 @@ function populateFolderFilter() {
   if (!advFolderSelect) return;
   const current = advFolderSelect.value;
   const opts = ['<option value="">Todas as pastas</option>', '<option value="root">Raiz</option>'];
-  folders.forEach(folder => {
+  folders.filter(matchesAccountView).forEach(folder => {
     opts.push(`<option value="${folder.id}">${esc(getFolderPathLabel(folder.id) || folder.name)}</option>`);
   });
   advFolderSelect.innerHTML = opts.join("");
@@ -963,6 +1117,7 @@ function renderGrid() {
   const fragment = document.createDocumentFragment();
   elements.forEach(element => fragment.appendChild(element));
   fileGrid.appendChild(fragment);
+  hydrateDriveThumbnails(fileGrid);
   loadMoreBtn.style.display = itemCount > visibleLimit ? "inline-flex" : "none";
   loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, itemCount - visibleLimit)})`;
   updateContextualActions();
@@ -1080,7 +1235,7 @@ function countFilesInFolder(folderId) {
 }
 
 function applyFilter(list) {
-  let result = list;
+  let result = list.filter(matchesAccountView);
   if (navState.viewMode === "gallery" || navState.contentScope === "media") result = result.filter(f => f.fileType === "image" || f.fileType === "video");
   if (["image", "video", "document"].includes(navState.contentScope)) {
     result = result.filter(f => f.fileType === navState.contentScope);
@@ -1158,7 +1313,7 @@ function supportsLocalIndex(file) {
 }
 
 function indexSourceKey(file) {
-  return file.contentHash || `${file.url || ""}|${file.size || 0}|${file.name || ""}`;
+  return file.contentHash || `${file.driveFileId || file.url || ""}|${file.size || 0}|${file.name || ""}`;
 }
 
 function albumForPhoto(capturedAt, isScreenshot) {
@@ -1217,9 +1372,8 @@ async function analyzeExistingPhotos() {
       const file = pending[index];
       button.textContent = `Analisando ${index + 1}/${pending.length}`;
       try {
-        const response = await fetch(file.url);
-        if (!response.ok) throw new Error("Download indisponivel");
-        const source = new File([await response.blob()], file.name || "foto", { type: file.mimeType || "image/jpeg" });
+        const blob = await fetchStoredBlob(file);
+        const source = new File([blob], file.name || "foto", { type: file.mimeType || blob.type || "image/jpeg" });
         const insights = await getPhotoInsights(source, { allowFileDateFallback: false });
         await updateDoc(doc(db, "vault_files", file.id), photoMetadataUpdate(file, insights));
         processed += 1;
@@ -1238,9 +1392,7 @@ async function analyzeExistingPhotos() {
 
 async function resolveIndexSource(file, sourceFile = null) {
   if (sourceFile) return sourceFile;
-  const response = await fetch(file.url);
-  if (!response.ok) throw new Error("Nao foi possivel baixar o arquivo para indexar");
-  const blob = await response.blob();
+  const blob = await fetchStoredBlob(file);
   return new File([blob], file.name || "arquivo", { type: file.mimeType || blob.type });
 }
 
@@ -1347,11 +1499,13 @@ function makeFileCard(file) {
 
   let thumbHtml = "";
   if (file.fileType === "image") {
-    const thumb = cloudThumb(file.cloudPublicId, "image", 520, 360) || file.url;
-    thumbHtml = `<img src="${thumb}" alt="${esc(file.name)}" loading="lazy" />`;
+    const thumb = mediaThumbUrl(file, 520, 360);
+    thumbHtml = thumb
+      ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />`
+      : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">IMG</span>`;
   } else if (file.fileType === "video") {
-    const poster = cloudThumb(file.cloudPublicId, "video", 520, 360, file.coverTime);
-    thumbHtml = `${poster ? `<img src="${poster}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon">VID</span>`}
+    const poster = mediaThumbUrl(file, 520, 360);
+    thumbHtml = `${poster ? `<img src="${poster}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">VID</span>`}
       <div class="play-overlay">
         <div class="play-indicator">▶</div>
       </div>`;
@@ -1379,6 +1533,7 @@ function makeFileCard(file) {
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
+      <span class="account-badge file-account-badge">${accountBadge(file)}</span>
       <button class="${favClass}" title="${favTitle}">★</button>
       <div class="select-checkbox"><span class="chk">${selectedIds.has(file.id) ? "✓" : ""}</span></div>
     </div>`;
@@ -1512,7 +1667,7 @@ function markFileUnavailable(card) {
   thumb.insertAdjacentHTML("afterbegin", `
     <div class="missing-media">
       <span class="missing-media-title">Arquivo indisponivel</span>
-      <span class="missing-media-sub">Apagado do Cloudinary</span>
+      <span class="missing-media-sub">Nao encontrado no armazenamento</span>
     </div>
   `);
 }
@@ -1569,6 +1724,107 @@ function cloudPreview(publicId, resourceType, w = 1920, h = 1440) {
   return `https://res.cloudinary.com/${cloudName}/${type}/upload/c_limit,w_${w},h_${h},q_auto,f_auto/${publicId}`;
 }
 
+function mediaThumbUrl(file, w = 520, h = 360) {
+  if (!file) return "";
+  if (isGoogleDriveRecord(file)) return driveThumbnailCache.get(file.id) || file.driveThumbnailLink || "";
+  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", w, h) || file.url || "";
+  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", w, h, file.coverTime) || "";
+  return "";
+}
+
+async function loadDriveThumbnail(file, force = false) {
+  if (!isGoogleDriveRecord(file) || !driveManager?.isConnected(recordAccountSlot(file))) return "";
+  if (!force && driveThumbnailCache.has(file.id)) return driveThumbnailCache.get(file.id);
+  if (!force && driveThumbnailRequests.has(file.id)) return driveThumbnailRequests.get(file.id);
+  const request = driveManager.getMetadata(recordAccountSlot(file), file.driveFileId)
+    .then(metadata => {
+      const thumbnail = metadata.thumbnailLink || "";
+      if (thumbnail) driveThumbnailCache.set(file.id, thumbnail);
+      file.driveThumbnailLink = thumbnail;
+      file.driveWebViewLink = metadata.webViewLink || file.driveWebViewLink || "";
+      file.driveWebContentLink = metadata.webContentLink || file.driveWebContentLink || "";
+      return thumbnail;
+    })
+    .catch(error => {
+      console.warn(`Miniatura indisponivel para ${file.name}`, error);
+      return "";
+    })
+    .finally(() => driveThumbnailRequests.delete(file.id));
+  driveThumbnailRequests.set(file.id, request);
+  return request;
+}
+
+function hydrateDriveThumbnails(root = document) {
+  const ids = new Set();
+  root.querySelectorAll?.("[data-drive-file-id], [data-drive-thumb-id]").forEach(element => {
+    const id = element.dataset.driveFileId || element.dataset.driveThumbId;
+    if (id) ids.add(id);
+  });
+  ids.forEach(async id => {
+    const file = fileById.get(id);
+    if (!file) return;
+    const thumbnail = await loadDriveThumbnail(file);
+    if (!thumbnail) return;
+    root.querySelectorAll?.(`[data-drive-file-id="${CSS.escape(id)}"]`).forEach(image => {
+      if (image.src !== thumbnail) image.src = thumbnail;
+    });
+    root.querySelectorAll?.(`[data-drive-thumb-id="${CSS.escape(id)}"]`).forEach(placeholder => {
+      const image = document.createElement("img");
+      image.src = thumbnail;
+      image.alt = file.name || "Arquivo";
+      image.loading = "lazy";
+      image.dataset.driveFileId = id;
+      placeholder.replaceWith(image);
+    });
+  });
+}
+
+document.addEventListener("error", event => {
+  const image = event.target;
+  const id = image?.dataset?.driveFileId;
+  if (!id || image.dataset.driveRefreshAttempted) return;
+  image.dataset.driveRefreshAttempted = "true";
+  const file = fileById.get(id);
+  if (!file) return;
+  loadDriveThumbnail(file, true).then(thumbnail => { if (thumbnail) image.src = thumbnail; });
+}, true);
+
+async function fetchStoredBlob(file) {
+  if (isGoogleDriveRecord(file)) return driveManager.getBlob(recordAccountSlot(file), file.driveFileId);
+  if (!file.url) throw new Error("Arquivo sem endereco de origem");
+  const response = await fetch(file.url);
+  if (!response.ok) throw new Error(`Nao foi possivel carregar o arquivo (${response.status})`);
+  return response.blob();
+}
+
+async function storedObjectUrl(file) {
+  if (!isGoogleDriveRecord(file)) return file.url || "";
+  if (driveObjectUrls.has(file.id)) return driveObjectUrls.get(file.id);
+  const url = URL.createObjectURL(await fetchStoredBlob(file));
+  driveObjectUrls.set(file.id, url);
+  return url;
+}
+
+async function downloadStoredFile(file) {
+  try {
+    if (!isGoogleDriveRecord(file)) {
+      window.open(file.url, "_blank", "noopener");
+      return;
+    }
+    showToast(`Preparando ${file.name}...`);
+    const url = URL.createObjectURL(await fetchStoredBlob(file));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = file.name || "arquivo";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 function qualityDims(w, h) {
   const scale = { low: 0.55, medium: 1, high: 1.55 }[thumbQuality] || 1;
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
@@ -1592,7 +1848,8 @@ function makeFolderCard(folder, count) {
   card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
-      ${coverUrl ? `<img src="${coverUrl}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
+      ${coverUrl ? `<img src="${coverUrl}" data-drive-file-id="${isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
+      <span class="account-badge folder-card-account">${accountBadge(folder)}</span>
       <button class="folder-card-cover-btn" type="button" title="Escolher capa do album">Capa</button>
     </div>
     <div class="folder-card-inner">
@@ -1628,10 +1885,7 @@ function getFolderPathLabel(folderId) {
 }
 
 function folderCoverUrl(file) {
-  if (!file) return "";
-  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", 520, 260) || file.url || "";
-  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", 520, 260, file.coverTime) || "";
-  return "";
+  return mediaThumbUrl(file, 520, 260);
 }
 
 async function setFolderCover(file) {
@@ -1737,6 +1991,9 @@ function attachFolderDrop(el, folderId) {
     const fileId = e.dataTransfer.getData("text/plain");
     if (!fileId) return;
     try {
+      const file = fileById.get(fileId);
+      if (!file) return;
+      await moveStoredFileTo(file, folderId);
       await updateDoc(doc(db, "vault_files", fileId), { folderId });
       addHistory("Movido por arrastar");
       showToast("Arquivo movido", "success");
@@ -1758,6 +2015,11 @@ async function renameFolder(folder) {
   const clean = name.trim();
   if (!clean) { showToast("Nome vazio", "error"); return; }
   try {
+    const slot = recordAccountSlot(folder);
+    if (folder.driveFolderId && slot !== "legacy") {
+      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para renomear a pasta no Drive`);
+      await driveManager.updateName(slot, folder.driveFolderId, clean);
+    }
     await updateDoc(doc(db, "vault_folders", folder.id), { name: clean });
     addHistory(`Pasta renomeada: ${folder.name} -> ${clean}`);
     syncLegacyFolderPath();
@@ -1842,10 +2104,10 @@ $("bulkSelectMonthBtn").onclick = () => {
   updateBulkBar();
   renderGrid();
 };
-$("bulkDownloadBtn").onclick = () => {
-  const selected = files.filter(f => selectedIds.has(f.id) && f.url && !f.deletedAt);
-  selected.forEach(file => window.open(file.url, "_blank"));
-  showToast(`${selected.length} link(s) aberto(s) para download`, "success");
+$("bulkDownloadBtn").onclick = async () => {
+  const selected = files.filter(f => selectedIds.has(f.id) && !f.deletedAt && (f.url || isGoogleDriveRecord(f)));
+  for (const file of selected) await downloadStoredFile(file);
+  showToast(`${selected.length} download(s) preparado(s)`, "success");
 };
 
 $("bulkDeleteBtn").onclick = async () => {
@@ -1867,6 +2129,8 @@ $("bulkDeleteBtn").onclick = async () => {
 };
 
 $("bulkMoveBtn").onclick = () => {
+  const accountSlots = new Set(files.filter(file => selectedIds.has(file.id)).map(recordAccountSlot));
+  if (accountSlots.size > 1) { showToast("Mova em lote apenas arquivos da mesma conta", "error"); return; }
   bulkMoveMode = true;
   fileToMove = null;
   moveFileName.textContent = `${selectedIds.size} arquivo(s) selecionado(s)`;
@@ -1932,13 +2196,15 @@ function showFileInfo(file) {
     ["Tipo", file.fileType || ""],
     ["Tamanho", fmtSize(file.size)],
     ["Pasta", getFolderPathLabel(file.folderId) || "Raiz"],
+    ["Conta", accountBadge(file)],
+    ["Provedor", isGoogleDriveRecord(file) ? "Google Drive" : (file.provider || "Legado")],
     ["Prioridade", file.priority || "normal"],
     ["Favorito", file.favorite ? "Sim" : "Nao"],
     ["Resolucao", file.width && file.height ? `${file.width} x ${file.height}` : "-"],
     ["Data", file.eventDate || formatDateValue(file.createdAt)],
     ["Tags", normalizeTags(file.tags).join(", ") || "-"],
     ["Descricao", file.description || "-"],
-    ["URL", file.url || "-"],
+    ["Link", isGoogleDriveRecord(file) ? driveViewUrl(file) : (file.url || "-")],
   ];
   infoModalBody.innerHTML = rows.map(([k, v]) => `<div class="info-key">${esc(k)}</div><div class="info-value">${esc(v)}</div>`).join("");
   infoModal.classList.add("active");
@@ -1950,6 +2216,8 @@ function exportData(format) {
     name: f.name,
     parentId: f.parentId || null,
     coverFileId: f.coverFileId || null,
+    accountSlot: f.accountSlot || "",
+    driveFolderId: f.driveFolderId || "",
     createdAt: f.createdAt || null,
   }));
   const activeFiles = files.map(f => ({
@@ -1968,6 +2236,14 @@ function exportData(format) {
     description: f.description || "",
     url: f.url || "",
     cloudPublicId: f.cloudPublicId || "",
+    provider: f.provider || (f.cloudPublicId ? "cloudinary" : "url"),
+    accountSlot: f.accountSlot || "",
+    driveFileId: f.driveFileId || "",
+    driveWebViewLink: f.driveWebViewLink || "",
+    driveWebContentLink: f.driveWebContentLink || "",
+    driveThumbnailLink: f.driveThumbnailLink || "",
+    legacyUrl: f.legacyUrl || "",
+    legacyCloudPublicId: f.legacyCloudPublicId || "",
     contentHash: f.contentHash || "",
     eventDate: f.eventDate || "",
     photoDateSource: f.photoDateSource || "",
@@ -2067,7 +2343,9 @@ function renderMoveFolderList() {
 }
 
 function renderMoveTree(parentId, depth, currentFolderId) {
-  const children = folders.filter(f => (f.parentId || null) === parentId);
+  const sourceFiles = bulkMoveMode ? files.filter(file => selectedIds.has(file.id)) : [fileToMove].filter(Boolean);
+  const sourceSlot = sourceFiles.length ? recordAccountSlot(sourceFiles[0]) : "legacy";
+  const children = folders.filter(f => (f.parentId || null) === parentId && recordAccountSlot(f) === sourceSlot);
   children.forEach(f => {
     const isCurrent = f.id === currentFolderId;
     const item = document.createElement("div");
@@ -2090,6 +2368,7 @@ function renderMoveTree(parentId, depth, currentFolderId) {
 async function moveFileTo(targetFolderId) {
   if (!fileToMove) return;
   try {
+    await moveStoredFileTo(fileToMove, targetFolderId);
     await updateDoc(doc(db, "vault_files", fileToMove.id), { folderId: targetFolderId });
     const destName = targetFolderId ? (folders.find(f => f.id === targetFolderId)?.name || "pasta") : "Raiz";
     showToast(`Movido para "${destName}"`, "success");
@@ -2103,7 +2382,12 @@ async function moveFileTo(targetFolderId) {
 async function bulkMoveTo(targetFolderId) {
   const ids = [...selectedIds];
   for (const id of ids) {
-    try { await updateDoc(doc(db, "vault_files", id), { folderId: targetFolderId }); } catch {}
+    try {
+      const file = fileById.get(id);
+      if (!file) continue;
+      await moveStoredFileTo(file, targetFolderId);
+      await updateDoc(doc(db, "vault_files", id), { folderId: targetFolderId });
+    } catch (error) { console.warn(`Falha ao mover ${id}`, error); }
   }
   const destName = targetFolderId ? (folders.find(f => f.id === targetFolderId)?.name || "pasta") : "Raiz";
   showToast(`${ids.length} arquivo(s) movido(s) para "${destName}"`, "success");
@@ -2124,9 +2408,30 @@ function openFolderCreateDialog(parentId = navState.folderId) {
   const parent = pendingFolderParentId === ROOT_ID ? null : getFolder(pendingFolderParentId);
   if (folderModalTitle) folderModalTitle.textContent = parent ? "Nova subpasta" : "Nova coleção";
   if (folderModalContext) folderModalContext.textContent = parent ? `Ela será criada dentro de “${parent.name || "Pasta"}”.` : "Crie uma coleção principal para o seu acervo.";
+  const inheritedSlot = parent ? recordAccountSlot(parent) : "";
+  folderAccountField.hidden = !!parent;
+  folderAccountSelect.innerHTML = ["ac1", "ac2", "ac3", "ac4"].map(slot =>
+    `<option value="${slot}">${esc(accountLabel(slot))}${driveManager?.isConnected(slot) ? " ✓" : ""}</option>`
+  ).join("");
+  folderAccountSelect.value = inheritedSlot !== "legacy" && inheritedSlot
+    ? inheritedSlot
+    : (activeAccountView !== "all" ? activeAccountView : "ac1");
   folderNameInput.value = "";
   folderModal.classList.add("active");
   setTimeout(() => folderNameInput.focus(), 100);
+}
+
+async function moveStoredFileTo(file, targetFolderId) {
+  const sourceSlot = recordAccountSlot(file);
+  const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
+  const targetSlot = targetFolder ? recordAccountSlot(targetFolder) : sourceSlot;
+  if (targetSlot !== sourceSlot) throw new Error(`Nao e possivel mover diretamente de ${accountBadge(file)} para ${accountBadge(targetFolder)}`);
+  if (!isGoogleDriveRecord(file)) return;
+  if (!driveManager?.isConnected(sourceSlot)) throw new Error(`Conecte ${sourceSlot.toUpperCase()} para mover o arquivo`);
+  const targetDriveParent = targetFolder
+    ? await ensureFolderOnDrive(targetFolder, sourceSlot)
+    : await driveManager.ensureRootFolder(sourceSlot);
+  await driveManager.moveFile(sourceSlot, file.driveFileId, targetDriveParent);
 }
 
 $("btnNewFolder").onclick = () => openFolderCreateDialog(ROOT_ID);
@@ -2140,15 +2445,48 @@ async function createFolder() {
   const name = folderNameInput.value.trim();
   if (!name) return;
   const parentId = toFirestoreFolderId(pendingFolderParentId);
-  await addDoc(collection(db, "vault_folders"), {
-    name,
-    parentId,
-    createdAt: serverTimestamp(),
-  });
-  navState.expandedFolders.add(normalizeFolderId(pendingFolderParentId));
-  folderModal.classList.remove("active");
-  addHistory(`Pasta criada: ${name}`);
-  showToast(`Pasta "${name}" criada${parentId ? " aqui dentro" : ""}`, "success");
+  const parent = parentId ? getFolder(parentId) : null;
+  const accountSlot = parent ? recordAccountSlot(parent) : folderAccountSelect.value;
+  if (accountSlot === "legacy") { showToast("Migre a pasta pai para o Drive antes de criar subpastas", "error"); return; }
+  if (!driveManager?.isConnected(accountSlot)) { showToast(`Conecte ${accountSlot.toUpperCase()} antes de criar a pasta`, "error"); return; }
+  try {
+    const driveParentId = parent
+      ? await ensureFolderOnDrive(parent, accountSlot)
+      : await driveManager.ensureRootFolder(accountSlot);
+    const driveFolder = await driveManager.createFolder(accountSlot, name, driveParentId);
+    await addDoc(collection(db, "vault_folders"), {
+      name,
+      parentId,
+      accountSlot,
+      driveFolderId: driveFolder.id,
+      createdAt: serverTimestamp(),
+    });
+    navState.expandedFolders.add(normalizeFolderId(pendingFolderParentId));
+    folderModal.classList.remove("active");
+    addHistory(`Pasta criada em ${accountSlot.toUpperCase()}: ${name}`);
+    showToast(`Pasta "${name}" criada em ${accountSlot.toUpperCase()}`, "success");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function ensureFolderOnDrive(folder, targetSlot = "") {
+  if (!folder) throw new Error("Pasta nao encontrada");
+  let accountSlot = recordAccountSlot(folder);
+  if (accountSlot === "legacy") accountSlot = targetSlot;
+  if (!/^ac[1-4]$/.test(accountSlot)) throw new Error("Escolha a conta do Drive para esta pasta");
+  if (targetSlot && accountSlot !== targetSlot) throw new Error(`A pasta pertence a ${accountSlot.toUpperCase()}`);
+  if (!driveManager?.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} ao Drive`);
+  if (folder.driveFolderId) return folder.driveFolderId;
+  const parent = folder.parentId ? getFolder(folder.parentId) : null;
+  const parentDriveId = parent
+    ? await ensureFolderOnDrive(parent, accountSlot)
+    : await driveManager.ensureRootFolder(accountSlot);
+  const created = await driveManager.createFolder(accountSlot, folder.name || "Pasta", parentDriveId);
+  folder.accountSlot = accountSlot;
+  folder.driveFolderId = created.id;
+  await updateDoc(doc(db, "vault_folders", folder.id), { accountSlot, driveFolderId: created.id });
+  return created.id;
 }
 
 // ??? Delete file ??????????????????????????????????????????
@@ -2170,7 +2508,7 @@ async function deleteFile(file) {
 }
 
 async function emptyTrash() {
-  const trashed = files.filter(f => f.deletedAt);
+  const trashed = files.filter(f => f.deletedAt && matchesAccountView(f));
   if (!trashed.length) { showToast("Lixeira vazia"); return; }
   const confirmed = await openConfirmDialog({
     title: "Esvaziar lixeira",
@@ -2181,6 +2519,7 @@ async function emptyTrash() {
   if (!confirmed) return;
   for (const file of trashed) {
     try {
+      await deleteStoredFilePermanently(file);
       await deleteDoc(doc(db, "vault_files", file.id));
       await localTextSearch.remove(file.id);
     } catch {}
@@ -2190,7 +2529,7 @@ async function emptyTrash() {
 }
 
 async function restoreTrash() {
-  const trashed = files.filter(f => f.deletedAt);
+  const trashed = files.filter(f => f.deletedAt && matchesAccountView(f));
   if (!trashed.length) { showToast("Nada para restaurar"); return; }
   const confirmed = await openConfirmDialog({
     title: "Restaurar lixeira",
@@ -2217,12 +2556,13 @@ async function restoreFile(file) {
 async function permanentlyDeleteFile(file) {
   const confirmed = await openConfirmDialog({
     title: "Excluir definitivamente",
-    message: `Excluir definitivamente "${file.name}" do app?\n\nIsso remove apenas o registro do Firebase.`,
+    message: `Excluir definitivamente "${file.name}" do app e do provedor de armazenamento?`,
     confirmText: "Excluir",
     danger: true,
   });
   if (!confirmed) return;
   try {
+    await deleteStoredFilePermanently(file);
     await deleteDoc(doc(db, "vault_files", file.id));
     await localTextSearch.remove(file.id);
     addHistory(`Removido: ${file.name}`);
@@ -2230,6 +2570,17 @@ async function permanentlyDeleteFile(file) {
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
+}
+
+async function deleteStoredFilePermanently(file) {
+  if (!isGoogleDriveRecord(file)) return;
+  const slot = recordAccountSlot(file);
+  if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para excluir o arquivo do Drive`);
+  await driveManager.deleteFile(slot, file.driveFileId);
+  const objectUrl = driveObjectUrls.get(file.id);
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  driveObjectUrls.delete(file.id);
+  driveThumbnailCache.delete(file.id);
 }
 
 async function renameFile(file) {
@@ -2243,6 +2594,11 @@ async function renameFile(file) {
   const clean = name.trim();
   if (!clean) { showToast("Nome vazio", "error"); return; }
   try {
+    if (isGoogleDriveRecord(file)) {
+      const slot = recordAccountSlot(file);
+      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para renomear no Drive`);
+      await driveManager.updateName(slot, file.driveFileId, clean);
+    }
     await updateDoc(doc(db, "vault_files", file.id), { name: clean });
     addHistory(`Renomeado: ${file.name} -> ${clean}`);
     showToast("Arquivo renomeado", "success");
@@ -2341,7 +2697,7 @@ async function editFileInfo(file) {
 }
 
 async function shareFile(file) {
-  const url = file.url;
+  const url = isGoogleDriveRecord(file) ? driveViewUrl(file) : file.url;
   if (!url) { showToast("Arquivo sem link", "error"); return; }
   try {
     await navigator.clipboard.writeText(url);
@@ -2374,11 +2730,23 @@ async function deleteFolder(folderId, name) {
 
   // Move todos os arquivos da pasta e das subpastas para o pai.
   const parentId = folders.find(f => f.id === folderId)?.parentId || null;
-  for (const f of files.filter(x => affectedFolderIds.includes(x.folderId))) {
-    await updateDoc(doc(db, "vault_files", f.id), { folderId: parentId });
+  const folder = getFolder(folderId);
+  try {
+    for (const f of files.filter(x => affectedFolderIds.includes(x.folderId))) {
+      await moveStoredFileTo(f, parentId);
+      await updateDoc(doc(db, "vault_files", f.id), { folderId: parentId });
+    }
+    const slot = recordAccountSlot(folder);
+    if (folder?.driveFolderId && slot !== "legacy") {
+      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para excluir a pasta no Drive`);
+      await driveManager.deleteFile(slot, folder.driveFolderId);
+    }
+    // Excluir subpastas recursivo
+    await deleteFolderRecursive(folderId);
+  } catch (error) {
+    showToast(error.message, "error");
+    return;
   }
-  // Excluir subpastas recursivo
-  await deleteFolderRecursive(folderId);
   if (navState.folderId === folderId) {
     dispatchNavigation("open", { folderId: parentId || ROOT_ID });
   }
@@ -2412,32 +2780,43 @@ function openLightbox(file) {
   lightboxInner.innerHTML = "";
   if (file.fileType === "image") {
     const img = document.createElement("img");
-    const previewUrl = cloudPreview(file.cloudPublicId, "image") || file.url;
-    img.src = previewUrl;
     img.alt = file.name;
     img.loading = "eager";
     img.decoding = "async";
-    img.onerror = () => {
-      if (img.src !== file.url && file.url) {
-        img.src = file.url;
-        return;
-      }
-      showMissingLightbox(file);
-    };
+    if (isGoogleDriveRecord(file)) {
+      img.src = mediaThumbUrl(file, 1600, 1200) || "";
+      storedObjectUrl(file).then(url => { img.src = url; }).catch(error => showMissingLightbox(file, error.message));
+    } else {
+      const previewUrl = cloudPreview(file.cloudPublicId, "image") || file.url;
+      img.src = previewUrl;
+      img.onerror = () => {
+        if (img.src !== file.url && file.url) { img.src = file.url; return; }
+        showMissingLightbox(file);
+      };
+    }
     lightboxInner.appendChild(img);
   } else if (file.fileType === "video") {
-    const vid = document.createElement("video");
-    vid.src = file.url;
-    vid.controls = true;
-    vid.autoplay = true;
-    vid.playsInline = true;
-    vid.preload = "metadata";
-    vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
-    vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
-    vid.onvolumechange = () => localStorage.setItem("vault_video_volume", String(vid.volume));
-    vid.onratechange = () => localStorage.setItem("vault_video_speed", String(vid.playbackRate));
-    vid.onerror = () => showMissingLightbox(file);
-    lightboxInner.appendChild(vid);
+    if (isGoogleDriveRecord(file)) {
+      const iframe = document.createElement("iframe");
+      iframe.className = "drive-preview-frame";
+      iframe.src = drivePreviewUrl(file, driveManager?.getAccount(recordAccountSlot(file))?.email || "");
+      iframe.title = file.name;
+      iframe.allow = "autoplay";
+      lightboxInner.appendChild(iframe);
+    } else {
+      const vid = document.createElement("video");
+      vid.src = file.url;
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.preload = "metadata";
+      vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
+      vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
+      vid.onvolumechange = () => localStorage.setItem("vault_video_volume", String(vid.volume));
+      vid.onratechange = () => localStorage.setItem("vault_video_speed", String(vid.playbackRate));
+      vid.onerror = () => showMissingLightbox(file);
+      lightboxInner.appendChild(vid);
+    }
   } else {
     renderDocumentPreview(file);
   }
@@ -2450,7 +2829,7 @@ function openLightbox(file) {
   const imageActions = file.fileType === "image"
     ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
     : "";
-  const videoActions = file.fileType === "video"
+  const videoActions = file.fileType === "video" && !isGoogleDriveRecord(file)
     ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
        <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>`
     : "";
@@ -2473,7 +2852,7 @@ function openLightbox(file) {
       <button class="lb-action-btn" id="lbShareBtn" type="button">Copiar link</button>
       ${imageActions}
       ${videoActions}
-      <a class="lb-action-btn lb-link" href="${file.url}" target="_blank" rel="noopener">Baixar</a>
+      <button class="lb-action-btn lb-link" id="lbDownloadBtn" type="button">Baixar</button>
     </div>`;
 
   $("lbFavBtn").onclick = () => { toggleFavorite(file); closeLightbox(); };
@@ -2489,7 +2868,7 @@ function openLightbox(file) {
       openMangaReader(file);
     };
   }
-  if (file.fileType === "video") {
+  if (file.fileType === "video" && !isGoogleDriveRecord(file)) {
     $("lbSpeedBtn").onclick = () => cycleVideoSpeed();
     $("lbCoverBtn").onclick = () => saveCurrentVideoFrame(file);
   }
@@ -2515,6 +2894,10 @@ function setLightboxZoom(value) {
 
 async function renderDocumentPreview(file) {
   const ext = (file.name || "").split(".").pop().toLowerCase();
+  if (isGoogleDriveRecord(file) && ext !== "txt") {
+    lightboxInner.innerHTML = `<iframe class="doc-preview drive-preview-frame" src="${esc(drivePreviewUrl(file, driveManager?.getAccount(recordAccountSlot(file))?.email || ""))}" title="${esc(file.name)}"></iframe>`;
+    return;
+  }
   if (ext === "pdf") {
     lightboxInner.innerHTML = `<iframe class="doc-preview" src="${file.url}" title="${esc(file.name)}"></iframe>`;
     return;
@@ -2522,8 +2905,7 @@ async function renderDocumentPreview(file) {
   if (ext === "txt") {
     lightboxInner.innerHTML = `<pre class="text-preview">Carregando texto...</pre>`;
     try {
-      const res = await fetch(file.url);
-      const text = await res.text();
+      const text = await (await fetchStoredBlob(file)).text();
       lightboxInner.querySelector(".text-preview").textContent = text.slice(0, 200000);
     } catch {
       lightboxInner.querySelector(".text-preview").textContent = "Nao foi possivel carregar a previa do texto.";
@@ -2534,8 +2916,9 @@ async function renderDocumentPreview(file) {
     <div class="doc-fallback">
       <div class="doc-fallback-icon">${docIcon(file.name)}</div>
       <p>${esc(file.name)}</p>
-      <a href="${file.url}" target="_blank">Abrir / Baixar</a>
+      <button class="lb-action-btn" id="docDownloadBtn" type="button">Baixar</button>
     </div>`;
+  $("docDownloadBtn").onclick = () => downloadStoredFile(file);
 }
 
 function navigateLightbox(direction) {
@@ -2567,11 +2950,11 @@ async function saveCurrentVideoFrame(file) {
   }
 }
 
-function showMissingLightbox(file) {
+function showMissingLightbox(file, detail = "") {
   lightboxInner.innerHTML = `
     <div class="missing-lightbox">
       <div class="missing-lightbox-title">Arquivo indisponivel</div>
-      <p>Este item ainda existe no Firebase, mas o arquivo foi apagado ou movido no Cloudinary.</p>
+      <p>${esc(detail || "Este item ainda existe no Firestore, mas nao foi possivel encontra-lo no provedor de armazenamento.")}</p>
       <button id="removeMissingFile" type="button">Remover registro do app</button>
     </div>
   `;
@@ -2597,6 +2980,7 @@ document.onkeydown = e => {
       return;
     }
   }
+  $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
   if (e.key === "Escape") {
     closeLightbox();
     folderModal.classList.remove("active");
@@ -2652,7 +3036,7 @@ function renderMangaReader() {
   if (mangaState.mode === "vertical") {
     mangaStage.innerHTML = mangaState.pages.map((page, index) => `
       <figure class="manga-page-stack" data-index="${index}">
-        <img src="${page.url}" alt="${esc(page.name)}" loading="${index < 2 ? "eager" : "lazy"}" />
+        <img src="${esc(mediaThumbUrl(page, 1800, 2400))}" data-drive-file-id="${isGoogleDriveRecord(page) ? esc(page.id) : ""}" alt="${esc(page.name)}" loading="${index < 2 ? "eager" : "lazy"}" />
         <figcaption>${index + 1}. ${esc(page.name)}</figcaption>
       </figure>
     `).join("");
@@ -2666,13 +3050,14 @@ function renderMangaReader() {
     const page = mangaState.pages[mangaState.index];
     mangaStage.innerHTML = `
       <figure class="manga-page-single">
-        <img src="${page.url}" alt="${esc(page.name)}" />
+        <img src="${esc(mediaThumbUrl(page, 1800, 2400))}" data-drive-file-id="${isGoogleDriveRecord(page) ? esc(page.id) : ""}" alt="${esc(page.name)}" />
         <figcaption>${esc(page.name)}</figcaption>
       </figure>`;
     mangaPrev.disabled = mangaState.index <= 0;
     mangaNext.disabled = mangaState.index >= mangaState.pages.length - 1;
   }
 
+  hydrateDriveThumbnails(mangaStage);
   updateMangaCounter();
 }
 
@@ -2738,8 +3123,16 @@ mangaStage.addEventListener("scroll", updateMangaIndexFromScroll);
 fileInput.onchange = e => handleFiles(Array.from(e.target.files));
 
 async function handleFiles(fileList) {
-  if (!db || !cloudName || !uploadPreset) { showToast("Configure as credenciais primeiro", "error"); return; }
+  if (!db || !driveManager) { showToast("Configure o Firebase e o Google Drive primeiro", "error"); return; }
   if (!fileList.length) return;
+  let destination;
+  try {
+    destination = await resolveUploadDestination();
+  } catch (error) {
+    showToast(error.message, "error");
+    fileInput.value = "";
+    return;
+  }
   const uniqueFiles = [];
   showToast("Analisando arquivos...");
   for (const file of fileList) {
@@ -2758,9 +3151,42 @@ async function handleFiles(fileList) {
   if (!uniqueFiles.length) return;
   uploadPanel.style.display = "block";
   uploadList.innerHTML = "";
-  await runLimitedQueue(uniqueFiles, uploadOneFile, UPLOAD_CONCURRENCY);
+  pendingUploadAccountSlot = destination.accountSlot;
+  await runLimitedQueue(uniqueFiles, file => uploadOneFile(file, destination.accountSlot, destination.driveParentId), UPLOAD_CONCURRENCY);
+  pendingUploadAccountSlot = "";
   fileInput.value = "";
   showToast(`${uniqueFiles.length} upload(s) processado(s)`, "success");
+}
+
+async function chooseAccountSlot(title = "Escolher conta do Drive") {
+  if (activeAccountView !== "all") return activeAccountView;
+  const values = await openFieldsDialog({
+    title,
+    confirmText: "Continuar",
+    fields: [{
+      name: "accountSlot",
+      label: "Conta",
+      type: "select",
+      value: "ac1",
+      options: ["ac1", "ac2", "ac3", "ac4"].map(slot => ({
+        value: slot,
+        label: `${accountLabel(slot)}${driveManager?.isConnected(slot) ? " · conectada" : " · desconectada"}`,
+      })),
+    }],
+  });
+  if (!values) throw new Error("Operacao cancelada");
+  return values.accountSlot;
+}
+
+async function resolveUploadDestination() {
+  const folder = navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
+  const accountSlot = folder ? recordAccountSlot(folder) : await chooseAccountSlot("Enviar arquivos para qual conta?");
+  if (accountSlot === "legacy") throw new Error("Migre esta pasta para o Drive antes de enviar novos arquivos");
+  if (!driveManager.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} antes de enviar arquivos`);
+  const driveParentId = folder
+    ? await ensureFolderOnDrive(folder, accountSlot)
+    : await driveManager.ensureRootFolder(accountSlot);
+  return { accountSlot, driveParentId };
 }
 
 async function getOrComputeUploadHash(file) {
@@ -2798,125 +3224,114 @@ function scheduleUploadItemRemoval(itemEl, delay = 2200) {
   }, delay);
 }
 
-function uploadOneFile(file) {
-  return new Promise(resolve => {
-    const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const itemEl = document.createElement("div");
-    itemEl.className = "upload-item";
-    itemEl.innerHTML = `
-      <div class="upload-item-top">
-        <div class="upload-item-name">${esc(file.name)}</div>
-        <button class="upload-cancel">Cancelar</button>
-      </div>
-      <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
-      <div class="upload-item-status">Aguardando...</div>`;
-    uploadList.appendChild(itemEl);
-    const bar    = itemEl.querySelector(".upload-item-bar");
-    const status = itemEl.querySelector(".upload-item-status");
-    const cancelBtn = itemEl.querySelector(".upload-cancel");
+async function uploadOneFile(file, accountSlot, driveParentId) {
+  const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const itemEl = document.createElement("div");
+  itemEl.className = "upload-item";
+  itemEl.innerHTML = `
+    <div class="upload-item-top">
+      <div class="upload-item-name"><span class="account-badge">${slotTag(accountSlot)}</span> ${esc(file.name)}</div>
+      <button class="upload-cancel">Cancelar</button>
+    </div>
+    <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
+    <div class="upload-item-status">Preparando Drive...</div>`;
+  uploadList.appendChild(itemEl);
+  const bar = itemEl.querySelector(".upload-item-bar");
+  const status = itemEl.querySelector(".upload-item-status");
+  const cancelBtn = itemEl.querySelector(".upload-cancel");
+  let xhr = null;
+  let cancelled = false;
+  cancelBtn.onclick = () => {
+    cancelled = true;
+    xhr?.abort();
+    activeUploads.delete(uploadId);
+    status.textContent = "Cancelado";
+    cancelBtn.remove();
+    itemEl.classList.add("upload-complete");
+    scheduleUploadItemRemoval(itemEl, 900);
+  };
 
-    const resourceType = file.type.startsWith("video/") ? "video"
-                       : isPhotoFile(file) ? "image" : "raw";
-
-    const url  = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
-    const form = new FormData();
-    form.append("file", file);
-    form.append("upload_preset", uploadPreset);
-    form.append("folder", "vault");
-
-    const xhr = new XMLHttpRequest();
-    activeUploads.set(uploadId, xhr);
-    xhr.open("POST", url);
-    cancelBtn.onclick = () => {
-      xhr.abort();
-      activeUploads.delete(uploadId);
-      status.textContent = "Cancelado";
-      status.style.color = "var(--text3)";
-      cancelBtn.remove();
-      itemEl.classList.add("upload-complete");
-      scheduleUploadItemRemoval(itemEl, 900);
-      resolve();
+  try {
+    const metadata = await driveManager.uploadFile(accountSlot, file, driveParentId, {
+      onXhr: nextXhr => {
+        xhr = nextXhr;
+        activeUploads.set(uploadId, nextXhr);
+      },
+      onProgress: (loaded, total) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        bar.style.width = `${pct}%`;
+        status.textContent = `${pct}% · ${slotTag(accountSlot)}`;
+      },
+    });
+    if (cancelled) return;
+    const contentHash = uploadHashes.get(file) || "";
+    const photoInsights = photoMetadataCache.get(file) || { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+    const initialTags = photoInsights.isScreenshot ? ["captura-de-tela"] : [];
+    const imageMetadata = metadata.imageMediaMetadata || {};
+    const videoMetadata = metadata.videoMediaMetadata || {};
+    const savedFile = await addDoc(collection(db, "vault_files"), {
+      name: file.name,
+      provider: "google-drive",
+      accountSlot,
+      driveFileId: metadata.id,
+      driveThumbnailLink: metadata.thumbnailLink || "",
+      driveWebViewLink: metadata.webViewLink || "",
+      driveWebContentLink: metadata.webContentLink || "",
+      url: "",
+      cloudPublicId: "",
+      contentHash,
+      size: Number(metadata.size || file.size || 0),
+      width: Number(imageMetadata.width || videoMetadata.width || 0) || null,
+      height: Number(imageMetadata.height || videoMetadata.height || 0) || null,
+      fileType: getFileType(file),
+      mimeType: file.type || metadata.mimeType || "",
+      folderId: toFirestoreFolderId(navState.folderId),
+      favorite: false,
+      tags: initialTags,
+      description: "",
+      priority: "normal",
+      eventDate: photoInsights.capturedAt || "",
+      photoDateSource: photoInsights.dateSource || "",
+      isScreenshot: photoInsights.isScreenshot,
+      suggestedAlbumKey: photoInsights.albumKey || "",
+      suggestedAlbumLabel: photoInsights.albumLabel || "",
+      photoMetadataStatus: isPhotoFile(file) ? "processed" : "",
+      dueDate: "",
+      customFields: {},
+      notes: [],
+      createdAt: serverTimestamp(),
+    });
+    if (metadata.thumbnailLink) driveThumbnailCache.set(savedFile.id, metadata.thumbnailLink);
+    scheduleLocalIndex({
+      id: savedFile.id,
+      name: file.name,
+      provider: "google-drive",
+      accountSlot,
+      driveFileId: metadata.id,
+      contentHash,
+      size: file.size,
+      fileType: getFileType(file),
+      mimeType: file.type,
+    }, file);
+    addHistory(`Upload ${slotTag(accountSlot)}: ${file.name}`);
+    status.textContent = "Concluido no Drive";
+    status.style.color = "var(--accent)";
+    cancelBtn.remove();
+    itemEl.classList.add("upload-complete");
+    scheduleUploadItemRemoval(itemEl);
+  } catch (error) {
+    if (cancelled || error?.name === "AbortError") return;
+    itemEl.classList.add("upload-error");
+    status.innerHTML = `${esc(error.message)} <button class="upload-retry">Tentar novamente</button>`;
+    status.style.color = "var(--danger)";
+    status.querySelector(".upload-retry").onclick = () => {
+      itemEl.remove();
+      uploadOneFile(file, accountSlot, driveParentId);
     };
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        bar.style.width = pct + "%";
-        status.textContent = pct + "%";
-      }
-    };
-    xhr.onload = async () => {
-      if (xhr.status === 200) {
-        const res = JSON.parse(xhr.responseText);
-        const contentHash = uploadHashes.get(file) || "";
-        const photoInsights = photoMetadataCache.get(file) || { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
-        const initialTags = photoInsights.isScreenshot ? ["captura-de-tela"] : [];
-        const savedFile = await addDoc(collection(db, "vault_files"), {
-          name:          file.name,
-          url:           res.secure_url,
-          cloudPublicId: res.public_id,
-          contentHash,
-          size:          file.size,
-          width:         res.width || null,
-          height:        res.height || null,
-          fileType:      getFileType(file),
-          mimeType:      file.type,
-          folderId:      toFirestoreFolderId(navState.folderId),
-          favorite:      false,
-          tags:          initialTags,
-          description:   "",
-          priority:      "normal",
-          eventDate:     photoInsights.capturedAt || "",
-          photoDateSource: photoInsights.dateSource || "",
-          isScreenshot: photoInsights.isScreenshot,
-          suggestedAlbumKey: photoInsights.albumKey || "",
-          suggestedAlbumLabel: photoInsights.albumLabel || "",
-          photoMetadataStatus: isPhotoFile(file) ? "processed" : "",
-          dueDate:       "",
-          customFields:  {},
-          notes:         [],
-          createdAt:     serverTimestamp(),
-        });
-        scheduleLocalIndex({
-          id: savedFile.id,
-          name: file.name,
-          url: res.secure_url,
-          contentHash,
-          size: file.size,
-          fileType: getFileType(file),
-          mimeType: file.type,
-        }, file);
-        addHistory(`Upload: ${file.name}`);
-        status.textContent = "Concluido";
-        status.style.color = "var(--accent)";
-        cancelBtn.remove();
-        itemEl.classList.add("upload-complete");
-        scheduleUploadItemRemoval(itemEl);
-      } else {
-        itemEl.classList.add("upload-error");
-        status.innerHTML = `Erro no upload <button class="upload-retry">Tentar novamente</button>`;
-        status.style.color = "var(--danger)";
-        status.querySelector(".upload-retry").onclick = () => {
-          itemEl.remove();
-          uploadOneFile(file);
-        };
-        console.error(xhr.responseText);
-      }
-      activeUploads.delete(uploadId);
-      resolve();
-    };
-    xhr.onerror = () => {
-      itemEl.classList.add("upload-error");
-      status.innerHTML = `Erro de rede <button class="upload-retry">Tentar novamente</button>`;
-      status.style.color = "var(--danger)";
-      status.querySelector(".upload-retry").onclick = () => {
-        itemEl.remove();
-        uploadOneFile(file);
-      };
-      activeUploads.delete(uploadId);
-      resolve();
-    };
-    xhr.send(form);
-  });
+    console.error(error);
+  } finally {
+    activeUploads.delete(uploadId);
+  }
 }
 
 function getFileType(file) {
@@ -3060,6 +3475,25 @@ document.querySelectorAll(".chip").forEach(chip => {
 
 navHome?.addEventListener("click", openHomeSection);
 navFiles?.addEventListener("click", () => openFilesSection());
+accountViewSelect?.addEventListener("change", () => {
+  activeAccountView = accountViewSelect.value;
+  localStorage.setItem("vault_drive_account_view", activeAccountView);
+  navState.folderId = ROOT_ID;
+  navState.expandedFolders = new Set([ROOT_ID]);
+  selectedIds.clear();
+  rebuildFolderIndexes();
+  rebuildFileIndexes();
+  renderAccountControls();
+  renderFolderList();
+  populateFolderFilter();
+  updateStorageUI();
+  updateDashboard();
+  renderGrid();
+});
+accountConnectBtn?.addEventListener("click", () => {
+  if (activeAccountView === "all") openConfigModal(true);
+  else connectDriveSlot(activeAccountView);
+});
 
 function attachRootDrop() {
   const rootItem = folderList.firstElementChild;
@@ -3071,6 +3505,9 @@ function attachRootDrop() {
     const fileId = e.dataTransfer.getData("text/plain");
     if (!fileId) return;
     try {
+      const file = fileById.get(fileId);
+      if (!file) return;
+      await moveStoredFileTo(file, null);
       await updateDoc(doc(db, "vault_files", fileId), { folderId: null });
       showToast("Arquivo movido para a raiz", "success");
     } catch (err) {
@@ -3145,11 +3582,91 @@ $("clearSearchIndexBtn").onclick = () => {
 $("analyzePhotosBtn").onclick = () => {
   analyzeExistingPhotos().catch(error => showToast("Erro ao analisar fotos: " + error.message, "error"));
 };
+$("migrateCloudinaryBtn").onclick = () => {
+  migrateLegacyFilesToDrive().catch(error => showToast(error.message, "error"));
+};
 backupInput.onchange = e => {
   const file = e.target.files?.[0];
   if (file) importBackupJson(file);
   backupInput.value = "";
 };
+
+async function migrateLegacyFilesToDrive() {
+  if (!db || !driveManager) throw new Error("Configure o Google Drive primeiro");
+  const accountSlot = await chooseAccountSlot("Migrar arquivos antigos para qual conta?");
+  if (!driveManager.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} antes da migracao`);
+  const legacyFiles = files.filter(file => !file.deletedAt && !isGoogleDriveRecord(file) && file.url);
+  if (!legacyFiles.length) { showToast("Nao ha arquivos antigos para migrar"); return; }
+  const confirmed = await openConfirmDialog({
+    title: "Migrar Cloudinary para Drive",
+    message: `Copiar ${legacyFiles.length} arquivo(s) para ${slotTag(accountSlot)}? Os arquivos antigos nao serao apagados do Cloudinary automaticamente.`,
+    confirmText: "Migrar",
+  });
+  if (!confirmed) return;
+  uploadPanel.style.display = "block";
+  uploadList.innerHTML = "";
+  let migrated = 0;
+  let failed = 0;
+  await runLimitedQueue(legacyFiles, async record => {
+    try {
+      await migrateLegacyFile(record, accountSlot);
+      migrated += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`Falha ao migrar ${record.name}`, error);
+    }
+  }, 2);
+  addHistory(`Migracao para ${slotTag(accountSlot)}: ${migrated} concluido(s), ${failed} falha(s)`);
+  showToast(`${migrated} migrado(s) para ${slotTag(accountSlot)}${failed ? ` · ${failed} falha(s)` : ""}`, failed ? "error" : "success");
+}
+
+async function migrateLegacyFile(record, accountSlot) {
+  const itemEl = document.createElement("div");
+  itemEl.className = "upload-item";
+  itemEl.innerHTML = `
+    <div class="upload-item-top"><div class="upload-item-name"><span class="account-badge">${slotTag(accountSlot)}</span> ${esc(record.name)}</div></div>
+    <div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div>
+    <div class="upload-item-status">Baixando do Cloudinary...</div>`;
+  uploadList.appendChild(itemEl);
+  const bar = itemEl.querySelector(".upload-item-bar");
+  const status = itemEl.querySelector(".upload-item-status");
+  try {
+    const blob = await fetchStoredBlob(record);
+    const source = new File([blob], record.name || "arquivo", { type: record.mimeType || blob.type || "application/octet-stream" });
+    const folder = record.folderId ? getFolder(record.folderId) : null;
+    const driveParentId = folder
+      ? await ensureFolderOnDrive(folder, accountSlot)
+      : await driveManager.ensureRootFolder(accountSlot);
+    const metadata = await driveManager.uploadFile(accountSlot, source, driveParentId, {
+      onProgress: (loaded, total) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        bar.style.width = `${pct}%`;
+        status.textContent = `Enviando ao Drive · ${pct}%`;
+      },
+    });
+    await updateDoc(doc(db, "vault_files", record.id), {
+      provider: "google-drive",
+      accountSlot,
+      driveFileId: metadata.id,
+      driveThumbnailLink: metadata.thumbnailLink || "",
+      driveWebViewLink: metadata.webViewLink || "",
+      driveWebContentLink: metadata.webContentLink || "",
+      legacyUrl: record.url || "",
+      legacyCloudPublicId: record.cloudPublicId || "",
+      url: "",
+      cloudPublicId: "",
+      migratedAt: serverTimestamp(),
+    });
+    if (metadata.thumbnailLink) driveThumbnailCache.set(record.id, metadata.thumbnailLink);
+    status.textContent = "Migrado para o Drive";
+    itemEl.classList.add("upload-complete");
+    scheduleUploadItemRemoval(itemEl, 1600);
+  } catch (error) {
+    itemEl.classList.add("upload-error");
+    status.textContent = error.message;
+    throw error;
+  }
+}
 
 async function importFromUrl() {
   if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
@@ -3165,31 +3682,16 @@ async function importFromUrl() {
   const url = values.url.trim();
   const name = (values.name || url.split("/").pop()?.split("?")[0] || "arquivo-url").trim();
   if (!name) return;
-  const fileType = guessFileTypeFromUrl(url);
   try {
-    await addDoc(collection(db, "vault_files"), {
-      name: name.trim(),
-      url: url.trim(),
-      cloudPublicId: "",
-      contentHash: "",
-      size: 0,
-      width: null,
-      height: null,
-      fileType,
-      mimeType: "",
-      folderId: toFirestoreFolderId(navState.folderId),
-      favorite: false,
-      tags: [],
-      description: "Importado por URL",
-      priority: "normal",
-      eventDate: "",
-      dueDate: "",
-      customFields: {},
-      notes: [],
-      createdAt: serverTimestamp(),
-    });
-    addHistory(`URL importada: ${name}`);
-    showToast("URL importada", "success");
+    showToast("Baixando a URL para enviar ao Drive...");
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`A URL respondeu com erro ${response.status}`);
+    const blob = await response.blob();
+    const source = new File([blob], name, { type: blob.type || "application/octet-stream" });
+    const destination = await resolveUploadDestination();
+    uploadPanel.style.display = "block";
+    await uploadOneFile(source, destination.accountSlot, destination.driveParentId);
+    addHistory(`URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`);
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -3224,12 +3726,14 @@ async function importBackupJson(file) {
         name: folder.name || "Pasta",
         parentId: folder.parentId || null,
         coverFileId: folder.coverFileId || null,
+        accountSlot: folder.accountSlot || "",
+        driveFolderId: folder.driveFolderId || "",
         createdAt: folder.createdAt || serverTimestamp(),
       }, { merge: true });
     }
 
     for (const fileRecord of filesToImport) {
-      if (!fileRecord.id || !fileRecord.url) continue;
+      if (!fileRecord.id || (!fileRecord.url && !fileRecord.driveFileId)) continue;
       await setDoc(doc(db, "vault_files", fileRecord.id), normalizeBackupFile(fileRecord), { merge: true });
     }
 
@@ -3245,6 +3749,14 @@ function normalizeBackupFile(fileRecord) {
     name: fileRecord.name || "Arquivo",
     url: fileRecord.url || "",
     cloudPublicId: fileRecord.cloudPublicId || "",
+    provider: fileRecord.provider || (fileRecord.driveFileId ? "google-drive" : fileRecord.cloudPublicId ? "cloudinary" : "url"),
+    accountSlot: fileRecord.accountSlot || "",
+    driveFileId: fileRecord.driveFileId || "",
+    driveWebViewLink: fileRecord.driveWebViewLink || "",
+    driveWebContentLink: fileRecord.driveWebContentLink || "",
+    driveThumbnailLink: fileRecord.driveThumbnailLink || "",
+    legacyUrl: fileRecord.legacyUrl || "",
+    legacyCloudPublicId: fileRecord.legacyCloudPublicId || "",
     contentHash: fileRecord.contentHash || "",
     size: Number(fileRecord.size || 0),
     width: fileRecord.width || null,
@@ -3278,7 +3790,7 @@ function guessFileTypeFromUrl(url) {
 }
 
 async function verifyFiles() {
-  const liveFiles = files.filter(f => !f.deletedAt && f.url);
+  const liveFiles = files.filter(f => !f.deletedAt && matchesAccountView(f) && (f.url || isGoogleDriveRecord(f)));
   if (!liveFiles.length) { showToast("Nenhum arquivo para verificar"); return; }
   showToast("Verificando arquivos...");
   let missing = 0;
@@ -3295,7 +3807,15 @@ async function verifyFiles() {
   showToast(missing ? `${missing} arquivo(s) indisponivel(is)` : "Todos os arquivos carregaram", missing ? "error" : "success");
 }
 
-function checkFileExists(file) {
+async function checkFileExists(file) {
+  if (isGoogleDriveRecord(file)) {
+    const slot = recordAccountSlot(file);
+    if (!driveManager?.isConnected(slot)) return false;
+    try {
+      const metadata = await driveManager.getMetadata(slot, file.driveFileId, "id,trashed");
+      return !metadata.trashed;
+    } catch { return false; }
+  }
   if (file.fileType === "image") {
     return new Promise(resolve => {
       const img = new Image();
@@ -3320,11 +3840,11 @@ function checkFileExists(file) {
 
 // ??? Storage UI ???????????????????????????????????????????
 function updateStorageUI() {
-  const total = files.filter(f => !f.deletedAt).reduce((s, f) => s + (f.size || 0), 0);
-  const MAX   = 25 * 1024 * 1024 * 1024;
+  const total = files.filter(f => !f.deletedAt && matchesAccountView(f)).reduce((s, f) => s + (f.size || 0), 0);
+  const MAX   = (activeAccountView === "all" ? 60 : 15) * 1024 * 1024 * 1024;
   const pct   = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
-  storageText.textContent = `${fmtSize(total)} de 25 GB`;
+  storageText.textContent = `${fmtSize(total)} no acervo${activeAccountView === "all" ? " das 4 contas" : ` · ${slotTag(activeAccountView)}`}`;
 }
 
 function scheduleDashboardUpdate() {
@@ -3341,7 +3861,7 @@ function scheduleDashboardUpdate() {
 
 function updateDashboard() {
   if (navState.section !== "home") return;
-  const active = files.filter(f => !f.deletedAt);
+  const active = files.filter(f => !f.deletedAt && matchesAccountView(f));
   $("dashTotal").textContent = active.length;
   $("dashImages").textContent = active.filter(f => f.fileType === "image").length;
   $("dashVideos").textContent = active.filter(f => f.fileType === "video").length;
@@ -3356,6 +3876,7 @@ function updateDashboard() {
   renderHistory();
   renderPhotoDashboard(active);
   renderDashboardHighlights(active);
+  hydrateDriveThumbnails(dashboard);
 }
 
 function renderPhotoDashboard(active) {
@@ -3375,7 +3896,7 @@ function renderPhotoDashboard(active) {
   if (memory) {
     const thumb = dashboardThumb(memory, 900, 620);
     memoriesEl.innerHTML = `
-      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" alt="${esc(memory.name)}" decoding="async" />` : ""}</div>
+      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}" alt="${esc(memory.name)}" decoding="async" />` : `<span data-drive-thumb-id="${esc(memory.id)}"></span>`}</div>
       <div class="memory-copy"><em>${fileDate(memory).getFullYear()} · ${memories.length} memoria(s) hoje</em><strong>${esc(memory.name)}</strong><span>Uma lembrança registrada neste mesmo dia, em outro ano.</span></div>`;
     memoriesEl.onclick = () => {
       lightboxFiles = [memory];
@@ -3403,7 +3924,7 @@ function renderPhotoDashboard(active) {
     ? suggestions.map(album => {
       const thumb = album.cover ? dashboardThumb(album.cover, 360, 220) : "";
       return `<button class="home-album-card" type="button" data-album-key="${esc(album.key || "")}" data-date-from="${esc(album.dateFrom || "")}" data-date-to="${esc(album.dateTo || "")}">
-        <span class="home-album-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" />` : ""}</span>
+        <span class="home-album-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(album.cover) ? esc(album.cover.id) : ""}" alt="" />` : `<span data-drive-thumb-id="${esc(album.cover?.id || "")}"></span>`}</span>
         <strong>${esc(album.label)}</strong><span>${album.count ? `${album.count} fotos` : "Sugestão automática"}</span>
       </button>`;
     }).join("")
@@ -3417,9 +3938,7 @@ function renderPhotoDashboard(active) {
 }
 
 function dashboardThumb(file, width, height) {
-  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", width, height) || file.url;
-  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", width, height, file.coverTime) || "";
-  return "";
+  return mediaThumbUrl(file, width, height);
 }
 
 function openSuggestedAlbum(key) {
@@ -3461,7 +3980,7 @@ function renderDashboardHighlights(active) {
       const thumb = dashboardThumb(file, 160, 160);
       const label = file.favorite ? "Favorito" : file.priority === "critical" ? "Muito importante" : file.priority === "important" ? "Importante" : monthLabel(file);
       return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
-        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" />` : ""}</span>
+        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />` : `<span data-drive-thumb-id="${esc(file.id)}"></span>`}</span>
         <span class="home-highlight-copy"><strong>${esc(file.name)}</strong><span>${esc(label)}</span></span>
       </button>`;
     }).join("")

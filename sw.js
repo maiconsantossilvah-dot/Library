@@ -1,4 +1,4 @@
-const CACHE_NAME = "vault-shell-v4";
+const CACHE_NAME = "vault-shell-v6-drive";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const APP_SHELL = [
   "./modules/page-order.js",
   "./modules/local-text-search.js",
   "./modules/photo-metadata.js",
+  "./modules/google-drive.js",
   "./manifest.webmanifest",
   "./icons/vault-icon.svg",
 ];

@@ -396,6 +396,56 @@ html, body {
   white-space: nowrap;
 }
 
+/* ===== GOOGLE DRIVE MULTI-CONTA ===== */
+.account-cluster { display: inline-flex; align-items: center; gap: 7px; }
+.account-view-select { min-width: 170px !important; border-left: 1px solid var(--border) !important; }
+.account-connect-btn.is-connected { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 31px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--accent2) 48%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent2) 13%, var(--surface));
+  color: var(--accent2);
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: .7px;
+  white-space: nowrap;
+}
+.folder-account-badge { flex: 0 0 auto; margin-right: 1px; }
+.file-account-badge { position: absolute; left: 9px; bottom: 9px; z-index: 3; backdrop-filter: blur(8px); }
+.folder-card-account { position: absolute; top: 10px; left: 10px; z-index: 4; backdrop-filter: blur(8px); }
+.drive-account-slots { display: grid; gap: 8px; margin-top: 10px; }
+.drive-account-slot {
+  display: grid;
+  grid-template-columns: auto minmax(170px, 1fr) auto minmax(105px, auto);
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+}
+.drive-account-slot .modal-input { margin: 0; min-width: 0; }
+.drive-connect-slot { padding: 8px 11px; }
+.drive-slot-status { color: var(--text3); font: 10px/1.2 var(--font-mono); }
+.drive-slot-status.connected { color: var(--accent); }
+.legacy-cloudinary-config { margin-top: 12px; color: var(--text3); font-size: 12px; }
+.legacy-cloudinary-config summary { cursor: pointer; margin-bottom: 9px; }
+.folder-account-field { display: grid; gap: 6px; margin-top: 10px; }
+.folder-account-field[hidden] { display: none; }
+.drive-preview-frame { width: min(94vw, 1180px); height: min(82vh, 780px); border: 0; border-radius: 10px; background: #111; }
+
+@media (max-width: 900px) {
+  .account-cluster { width: 100%; }
+  .account-view-select { flex: 1; min-width: 0 !important; }
+  .drive-account-slot { grid-template-columns: auto 1fr auto; }
+  .drive-slot-status { grid-column: 2 / -1; }
+}
+
 /* ========================================================================== */
 /* VAULT — NOVA EXPERIÊNCIA: ARQUIVO PESSOAL EDITORIAL                        */
 /* A camada abaixo substitui integralmente a aparência sem tocar nos fluxos.  */
@@ -2842,6 +2892,17 @@ html, body {
 
 .config-step .modal-input {
   margin-bottom: 0;
+}
+
+.config-step.drive-config-step {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.drive-config-step > .field-label,
+.drive-config-step > .drive-account-slots,
+.drive-config-step > .legacy-cloudinary-config {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .form-error {

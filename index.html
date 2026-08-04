@@ -9,10 +9,11 @@
   <title>VAULT - Seu Cofre Digital</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=drive1" />
   <link rel="stylesheet" href="layout.css" />
   <link rel="stylesheet" href="theme.css" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+  <script src="https://accounts.google.com/gsi/client" async defer data-vault-google-identity="true"></script>
 </head>
 <body class="vault-reimagined">
   <div class="app-frame">
@@ -82,7 +83,7 @@
         <section class="sidebar-section maintenance-section">
           <p class="sidebar-label">Cuidado do acervo</p>
           <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
-          <p class="storage-text helper-text">Marca itens que foram apagados no Cloudinary.</p>
+          <p class="storage-text helper-text">Confere os arquivos da conta ou da visão atual.</p>
         </section>
         <div class="sidebar-storage">
           <p class="sidebar-label">Espaço do acervo</p>
@@ -147,6 +148,17 @@
           </div>
 
           <div class="toolbar-spacer"></div>
+          <div class="control-cluster account-cluster">
+            <label class="sr-only" for="accountViewSelect">Conta do Google Drive</label>
+            <select class="sort-select account-view-select" id="accountViewSelect" title="Visualizar uma conta ou todas">
+              <option value="all">Todas as contas</option>
+              <option value="ac1">Ac1</option>
+              <option value="ac2">Ac2</option>
+              <option value="ac3">Ac3</option>
+              <option value="ac4">Ac4</option>
+            </select>
+            <button class="utility-btn account-connect-btn" id="accountConnectBtn" type="button">Contas</button>
+          </div>
           <div class="control-cluster sort-cluster">
             <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
             <select class="sort-select" id="sortSelect" title="Ordenar" aria-label="Ordenar arquivos">
@@ -217,6 +229,7 @@
             <button class="utility-btn" id="indexSearchBtn" type="button" title="Extrai texto localmente de imagens, PDFs e TXT">Indexar busca local</button>
             <button class="utility-btn" id="clearSearchIndexBtn" type="button" title="Remove apenas os textos extraídos deste navegador">Limpar índice local</button>
             <button class="utility-btn" id="analyzePhotosBtn" type="button" title="Lê a data EXIF e identifica capturas de tela">Analisar fotos</button>
+            <button class="utility-btn" id="migrateCloudinaryBtn" type="button" title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada">Migrar Cloudinary → Drive</button>
             <input id="backupInput" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
@@ -333,6 +346,14 @@
       <h2 class="modal-title" id="folderModalTitle">Nova Pasta</h2>
       <p class="folder-modal-context" id="folderModalContext"></p>
       <input type="text" class="modal-input" id="folderNameInput" placeholder="Nome da pasta..." maxlength="40" />
+      <label class="field-label folder-account-field" id="folderAccountField" for="folderAccountSelect">Conta do Drive
+        <select class="modal-input" id="folderAccountSelect">
+          <option value="ac1">Ac1</option>
+          <option value="ac2">Ac2</option>
+          <option value="ac3">Ac3</option>
+          <option value="ac4">Ac4</option>
+        </select>
+      </label>
       <div class="modal-actions">
         <button class="modal-btn cancel" id="cancelFolder">Cancelar</button>
         <button class="modal-btn confirm" id="confirmFolder">Criar</button>
@@ -357,7 +378,7 @@
           <h2 class="modal-title">Conectar o VAULT</h2>
         </div>
       </div>
-      <p class="config-desc">Conecte os metadados no Firebase e os uploads no Cloudinary. As credenciais ficam salvas apenas neste navegador.</p>
+      <p class="config-desc">Conecte os metadados no Firebase e até quatro contas Google Drive. O OAuth Client ID e os emails ficam salvos apenas neste navegador; os tokens permanecem somente durante a sessão.</p>
       <div class="config-fields">
         <section class="config-step">
           <p class="cfg-section-label">1. Firebase Firestore</p>
@@ -368,10 +389,22 @@
           <label class="field-label" for="cfg_messagingSenderId">messagingSenderId <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" autocomplete="off" /></label>
           <label class="field-label" for="cfg_appId">appId <input class="modal-input" id="cfg_appId" placeholder="appId" autocomplete="off" /></label>
         </section>
-        <section class="config-step">
-          <p class="cfg-section-label">2. Cloudinary</p>
-          <label class="field-label" for="cfg_cloudName">Cloud Name <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_uploadPreset">Upload Preset <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset (modo Unsigned)" autocomplete="off" /></label>
+        <section class="config-step drive-config-step">
+          <p class="cfg-section-label">2. Google Drive</p>
+          <label class="field-label" for="cfg_googleClientId">OAuth Client ID
+            <input class="modal-input" id="cfg_googleClientId" placeholder="000000000000-xxx.apps.googleusercontent.com" autocomplete="off" />
+          </label>
+          <div class="drive-account-slots" id="driveAccountSlots">
+            <div class="drive-account-slot" data-slot="ac1"><span class="account-badge">Ac1</span><input class="modal-input" id="cfg_driveEmail1" type="email" placeholder="email da conta 1" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac1">Conectar</button><span class="drive-slot-status" id="driveStatus1">Desconectada</span></div>
+            <div class="drive-account-slot" data-slot="ac2"><span class="account-badge">Ac2</span><input class="modal-input" id="cfg_driveEmail2" type="email" placeholder="email da conta 2" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac2">Conectar</button><span class="drive-slot-status" id="driveStatus2">Desconectada</span></div>
+            <div class="drive-account-slot" data-slot="ac3"><span class="account-badge">Ac3</span><input class="modal-input" id="cfg_driveEmail3" type="email" placeholder="email da conta 3" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac3">Conectar</button><span class="drive-slot-status" id="driveStatus3">Desconectada</span></div>
+            <div class="drive-account-slot" data-slot="ac4"><span class="account-badge">Ac4</span><input class="modal-input" id="cfg_driveEmail4" type="email" placeholder="email da conta 4" autocomplete="off" /><button class="modal-btn drive-connect-slot" type="button" data-slot="ac4">Conectar</button><span class="drive-slot-status" id="driveStatus4">Desconectada</span></div>
+          </div>
+          <details class="legacy-cloudinary-config">
+            <summary>Credenciais antigas do Cloudinary (somente migração)</summary>
+            <label class="field-label" for="cfg_cloudName">Cloud Name <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" autocomplete="off" /></label>
+            <label class="field-label" for="cfg_uploadPreset">Upload Preset <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset antigo" autocomplete="off" /></label>
+          </details>
         </section>
       </div>
       <p class="form-error" id="configError" role="alert"></p>
@@ -382,7 +415,7 @@
       </div>
       <p class="config-help">
         Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> > Configuracoes > SDK<br/>
-        Cloudinary: <a href="https://cloudinary.com" target="_blank">cloudinary.com</a> > Settings > Upload Presets > modo <strong>Unsigned</strong>
+        Drive: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a> > ative a Google Drive API > crie um Cliente OAuth para aplicativo Web e cadastre a URL deste VAULT como origem JavaScript autorizada.
       </p>
     </div>
   </div>
@@ -507,6 +540,6 @@
     <div id="uploadList"></div>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=drive1"></script>
 </body>
 </html>
