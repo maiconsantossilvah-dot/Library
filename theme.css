@@ -431,6 +431,91 @@ body.vault-reimagined[data-theme="dark"] {
   color: #ffc0b9;
 }
 
+/* Cards e destaques no tema escuro */
+.vault-reimagined[data-theme="dark"] .home-highlight-item:hover,
+.vault-reimagined[data-theme="dark"] .home-highlight-item:focus-visible {
+  border-color: #5c7063;
+  background: #2a3931;
+}
+.vault-reimagined[data-theme="dark"] .home-highlight-thumb {
+  border: 1px solid #46594d;
+  background: #314139;
+}
+.vault-reimagined[data-theme="dark"] .home-highlight-copy strong { color: #f7f5ef; }
+.vault-reimagined[data-theme="dark"] .home-highlight-copy span { color: #aee0c1; }
+
+.vault-reimagined[data-theme="dark"] .home-album-card {
+  border-color: #425348;
+  background: #243129;
+}
+.vault-reimagined[data-theme="dark"] .home-album-card:hover {
+  border-color: #71917f;
+  background: #2b3a31;
+}
+.vault-reimagined[data-theme="dark"] .home-album-thumb { background: #314139; }
+.vault-reimagined[data-theme="dark"] .home-album-card strong { color: var(--text); }
+.vault-reimagined[data-theme="dark"] .home-album-card span { color: var(--text3); }
+
+.vault-reimagined[data-theme="dark"] .file-type-badge {
+  border-color: #65786c;
+  background: rgba(18, 27, 22, .94);
+  color: #e4ebe5;
+}
+.vault-reimagined[data-theme="dark"] .fav-btn,
+.vault-reimagined[data-theme="dark"] .select-checkbox {
+  border-color: #65786c;
+  background: rgba(18, 27, 22, .94);
+  color: #d0dad2;
+}
+.vault-reimagined[data-theme="dark"] .fav-btn:hover,
+.vault-reimagined[data-theme="dark"] .fav-btn.active {
+  border-color: #f08a64;
+  background: #432c24;
+  color: #ffad8d;
+  text-shadow: none;
+}
+.vault-reimagined[data-theme="dark"] .file-action-btn,
+.vault-reimagined[data-theme="dark"] .folder-card-menu-btn {
+  border-color: #56695d;
+  background: #2a3830;
+  color: #e1e7e2;
+}
+.vault-reimagined[data-theme="dark"] .file-action-btn:hover,
+.vault-reimagined[data-theme="dark"] .folder-card-menu-btn:hover {
+  border-color: #7b9384;
+  background: #35463c;
+  color: #fff;
+}
+.vault-reimagined[data-theme="dark"] .file-action-menu {
+  border-color: #56695d;
+  background: #1a241f;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, .42);
+}
+.vault-reimagined[data-theme="dark"] .file-menu-item { color: #d5ddd7; }
+.vault-reimagined[data-theme="dark"] .file-menu-item:hover {
+  background: #304038;
+  color: #fff;
+}
+.vault-reimagined[data-theme="dark"] .tag-chip,
+.vault-reimagined[data-theme="dark"] .auto-badge {
+  border: 1px solid #587263;
+  background: #294036;
+  color: #c8ead5;
+}
+.vault-reimagined[data-theme="dark"] .priority-badge {
+  border: 1px solid #795f3f;
+  background: #3b3022;
+  color: #ffd2a0;
+}
+.vault-reimagined[data-theme="dark"] .file-card.is-favorite {
+  border-color: #67947c;
+}
+.vault-reimagined[data-theme="dark"] .media-description-top,
+.vault-reimagined[data-theme="dark"] .media-description-side {
+  background: #151e19;
+  color: var(--text2);
+}
+
 @media (max-width: 760px) {
   .vault-reimagined .app-navigation { margin: 0 10px 6px; }
   .vault-reimagined .library-page-header { min-height: 0; align-items: flex-start; margin-bottom: 18px; padding-bottom: 16px; }

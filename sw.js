@@ -1,4 +1,4 @@
-const CACHE_NAME = "vault-shell-v11-contrast";
+const CACHE_NAME = "vault-shell-v12-card-contrast";
 const APP_SHELL = [
   "./",
   "./index.html",
