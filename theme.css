@@ -236,6 +236,201 @@ body.vault-reimagined[data-theme="dark"] {
 .vault-reimagined[data-theme="dark"] .bulk-bar { border-color: #6a5040; background: #32291f; }
 .vault-reimagined[data-theme="dark"] .bulk-btn { border-color: #674f40; background: #28231e; color: #ddc8b6; }
 
+/* Contraste e legibilidade */
+body.vault-reimagined:not([data-theme="dark"]) {
+  --bg: #f3f0e8;
+  --bg2: #e8e3d8;
+  --bg3: #ddd5c7;
+  --surface: #fffdf8;
+  --border: #cfc5b5;
+  --border2: #b8aa98;
+  --accent: #b84f32;
+  --accent2: #236048;
+  --text: #172a24;
+  --text2: #40534a;
+  --text3: #5f6f67;
+  --danger: #a93632;
+}
+
+body.vault-reimagined[data-theme="dark"] {
+  --bg: #121814;
+  --bg2: #18211c;
+  --bg3: #25332b;
+  --surface: #1d2822;
+  --border: #425348;
+  --border2: #5a6d60;
+  --accent: #f08a64;
+  --accent2: #91cfaa;
+  --text: #f7f5ef;
+  --text2: #d1d8d2;
+  --text3: #aab5ac;
+  --danger: #ff9b91;
+}
+
+.vault-reimagined .sidebar-label,
+.vault-reimagined .brand-copy small,
+.vault-reimagined .helper-text,
+.vault-reimagined .storage-text,
+.vault-reimagined .folder-count,
+.vault-reimagined .folder-expand,
+.vault-reimagined .fbc-seg,
+.vault-reimagined .fbc-sep {
+  color: #bdc9c0;
+}
+.vault-reimagined .sidebar-label { font-size: 9px; font-weight: 700; }
+.vault-reimagined .brand-copy small { color: #cbd4cc; }
+.vault-reimagined .helper-text,
+.vault-reimagined .storage-text { font-size: 10px; line-height: 1.5; }
+.vault-reimagined .app-nav-item,
+.vault-reimagined .nav-chips .chip,
+.vault-reimagined .type-chips .chip { color: #c7d0c9; }
+
+.vault-reimagined .field-label,
+.vault-reimagined .account-card-fields label {
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 650;
+}
+.vault-reimagined .modal-input::placeholder,
+.vault-reimagined .search-input::placeholder { color: var(--text3); opacity: 1; }
+.vault-reimagined .cfg-section-label,
+.vault-reimagined .modal-kicker,
+.vault-reimagined .dash-label,
+.vault-reimagined .panel-kicker { font-weight: 700; }
+.vault-reimagined .dash-label,
+.vault-reimagined .dash-foot,
+.vault-reimagined .date-summary,
+.vault-reimagined .accounts-summary,
+.vault-reimagined .account-card-identity span,
+.vault-reimagined .account-meta-item span,
+.vault-reimagined .upload-item-status,
+.vault-reimagined .upload-item-destination { color: var(--text3); }
+.vault-reimagined .dash-label,
+.vault-reimagined .account-state,
+.vault-reimagined .account-meta-item span { font-size: 9px; }
+.vault-reimagined .dash-foot,
+.vault-reimagined .account-card-identity span,
+.vault-reimagined .account-review-banner span { font-size: 11px; }
+.vault-reimagined .account-card-message,
+.vault-reimagined .config-help,
+.vault-reimagined .legacy-cloudinary-config { color: var(--text2); }
+.vault-reimagined .config-help { font-size: 12px; }
+.vault-reimagined .legacy-cloudinary-config { font-size: 12px; }
+.vault-reimagined .account-meta-item {
+  border: 1px solid var(--border);
+}
+.vault-reimagined .account-card-actions :disabled {
+  opacity: .68;
+  color: var(--text3);
+}
+.vault-reimagined .modal-btn.confirm {
+  border-color: var(--accent2);
+  background: var(--accent2);
+  color: #fff;
+}
+.vault-reimagined .modal-btn.confirm:hover {
+  border-color: color-mix(in srgb, var(--accent2) 82%, #000);
+  background: color-mix(in srgb, var(--accent2) 82%, #000);
+  color: #fff;
+}
+.vault-reimagined .form-error { color: var(--danger); font-size: 12px; font-weight: 650; }
+.vault-reimagined .toast {
+  max-width: min(680px, calc(100vw - 24px));
+  white-space: normal;
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.vault-reimagined:not([data-theme="dark"]) .config-step {
+  border-color: #cfc5b5;
+  background: #f1ece2;
+}
+.vault-reimagined:not([data-theme="dark"]) .modal-input,
+.vault-reimagined:not([data-theme="dark"]) textarea.modal-input {
+  border-color: #c9beae;
+  background: #fffdf8;
+  color: var(--text);
+}
+.vault-reimagined:not([data-theme="dark"]) .modal-input:focus {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 3px rgba(35, 96, 72, .13);
+}
+.vault-reimagined:not([data-theme="dark"]) .config-account-link {
+  border-color: #c8c0b2;
+  background: #e7eee7;
+  color: #344a40;
+}
+.vault-reimagined:not([data-theme="dark"]) .account-meta-item { background: #f0ece3; }
+.vault-reimagined:not([data-theme="dark"]) .account-badge {
+  border-color: #8eaa9a;
+  background: #e0ebe3;
+  color: #1d563f;
+}
+.vault-reimagined:not([data-theme="dark"]) .toast.success {
+  border-color: #39775b;
+  background: #edf6ef;
+  color: #174c37;
+}
+.vault-reimagined:not([data-theme="dark"]) .toast.error {
+  border-color: #b85650;
+  background: #fff0ed;
+  color: #8f2827;
+}
+
+.vault-reimagined[data-theme="dark"] .config-step {
+  border-color: #4b5e52;
+  background: #151e19;
+}
+.vault-reimagined[data-theme="dark"] .modal-input,
+.vault-reimagined[data-theme="dark"] textarea.modal-input {
+  border-color: #53665a;
+  background: #121a16;
+  color: var(--text);
+}
+.vault-reimagined[data-theme="dark"] .modal-input:focus {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 3px rgba(145, 207, 170, .14);
+}
+.vault-reimagined[data-theme="dark"] .config-account-link {
+  border-color: #4d6054;
+  background: #26362e;
+  color: var(--text2);
+}
+.vault-reimagined[data-theme="dark"] .account-meta-item { background: #111814; }
+.vault-reimagined[data-theme="dark"] .account-badge {
+  border-color: #688878;
+  background: #2b4035;
+  color: #c4ead2;
+}
+.vault-reimagined[data-theme="dark"] .modal-btn.confirm {
+  color: #102219;
+}
+.vault-reimagined[data-theme="dark"] .modal-btn.confirm:hover {
+  color: #0b1711;
+}
+.vault-reimagined[data-theme="dark"] .modal-btn.cancel {
+  border-color: #56685c;
+  background: #2c3932;
+  color: var(--text);
+}
+.vault-reimagined[data-theme="dark"] .toast {
+  border-color: #5b6e61;
+  background: #26342d;
+  color: #f7f5ef;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .38);
+}
+.vault-reimagined[data-theme="dark"] .toast.success {
+  border-color: #72ad8d;
+  background: #1d3829;
+  color: #bfe8cf;
+}
+.vault-reimagined[data-theme="dark"] .toast.error {
+  border-color: #b9605b;
+  background: #422522;
+  color: #ffc0b9;
+}
+
 @media (max-width: 760px) {
   .vault-reimagined .app-navigation { margin: 0 10px 6px; }
   .vault-reimagined .library-page-header { min-height: 0; align-items: flex-start; margin-bottom: 18px; padding-bottom: 16px; }
@@ -245,4 +440,5 @@ body.vault-reimagined[data-theme="dark"] {
   .vault-reimagined .folder-children-section { margin-bottom: 20px; padding: 12px; }
   .vault-reimagined .folder-children-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .vault-reimagined .theme-toggle { width: 34px; height: 34px; }
+  .vault-reimagined .toast { bottom: 92px; width: calc(100vw - 32px); }
 }

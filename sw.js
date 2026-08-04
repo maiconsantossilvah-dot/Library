@@ -1,4 +1,4 @@
-const CACHE_NAME = "vault-shell-v10-google-oauth-only";
+const CACHE_NAME = "vault-shell-v11-contrast";
 const APP_SHELL = [
   "./",
   "./index.html",
