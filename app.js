@@ -3549,8 +3549,16 @@ document.onkeydown = e => {
 };
 function closeLightbox() {
   lightbox.classList.remove("active");
-  const vid = lightboxInner.querySelector("video");
-  if (vid) vid.pause();
+  lightboxInner.querySelectorAll("video, audio").forEach(media => {
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+  });
+  lightboxInner.querySelectorAll("iframe").forEach(frame => {
+    frame.src = "about:blank";
+  });
+  lightboxInner.innerHTML = "";
+  lightboxInfo.innerHTML = "";
 }
 
 // ??? Manga reader ?????????????????????????????????????????
