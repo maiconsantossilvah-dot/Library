@@ -1,5 +1,7 @@
 # Spec: Navegacao de Pastas
 
+> Documento histórico da versão 2. As referências a Firestore abaixo descrevem a arquitetura anterior. Na versão 3, metadados usam IndexedDB e sincronização direta com o Drive; consulte o README para instruções atuais.
+
 ## Contexto Atual
 
 Hoje a navegacao usa alguns estados globais em `app.js`:

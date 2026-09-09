@@ -1,101 +1,88 @@
-# VAULT — Cofre Digital
+# VAULT — biblioteca pessoal e mural visual
 
-Aplicativo web pessoal para armazenar fotos, vídeos e documentos usando até quatro contas Google Drive.
+Aplicativo estático, sem backend próprio: HTML, CSS, JavaScript e ícones **Lucide**. Os arquivos ficam no Google Drive; metadados, pastas e murais usam IndexedDB com sincronização direta para o Drive.
 
-**Stack:** Google Drive (arquivos e autenticação OAuth) + Firebase Firestore (metadados). Tudo compatível com o plano Spark.
+## Executar e gerar a versão estática
 
-## Como funciona
+Requer Node.js 22 ou superior.
 
-- Um único OAuth Client ID conecta até quatro contas Google diferentes.
-- As contas aparecem como `Ac1`, `Ac2`, `Ac3` e `Ac4`.
-- O seletor da barra superior alterna entre uma conta específica e a visão **Todas as contas**.
-- Cada pasta principal pertence a uma conta; suas subpastas herdam a mesma conta.
-- O app cria uma pasta física `VAULT` na raiz de cada Drive conectado.
-- O Firestore reúne os metadados das quatro contas para permitir a visão unificada.
-- A Central de contas mostra estado, nome amigável, email, última verificação, uso de armazenamento e conflitos por conta.
-- Tokens do Google não são gravados no navegador. Por isso, as contas precisam ser reconectadas quando a sessão expirar ou a página for reaberta.
-
-## 1. Configurar o Google Drive
-
-1. Abra o [Google Cloud Console](https://console.cloud.google.com/).
-2. Crie ou escolha um projeto.
-3. Em **APIs e serviços → Biblioteca**, ative a **Google Drive API**.
-4. Configure a **Tela de consentimento OAuth**.
-5. Durante testes, adicione os quatro emails em **Usuários de teste**.
-6. Em **Credenciais**, crie um **ID do cliente OAuth 2.0** do tipo **Aplicativo da Web**.
-7. Em **Origens JavaScript autorizadas**, cadastre a origem em que o VAULT é publicado, por exemplo:
-   - `http://localhost:8000`
-   - `https://seuusuario.github.io`
-8. Copie o Client ID terminado em `.apps.googleusercontent.com`.
-
-O aplicativo solicita apenas `drive.file`, que permite trabalhar com arquivos e pastas criados ou escolhidos pelo próprio VAULT, e a permissão de email usada para validar cada slot.
-
-## 2. Configurar o Firebase Firestore
-
-1. Acesse o [Firebase Console](https://console.firebase.google.com/).
-2. Crie um projeto e ative o Firestore Database.
-3. Registre um aplicativo Web.
-4. Copie os campos do `firebaseConfig` para a configuração do VAULT.
-
-O VAULT não usa Firebase Authentication. A conexão das contas é feita somente pelo OAuth configurado no Google Cloud. Por isso, as regras do Firestore precisam permitir as operações usadas pelo aplicativo; regras abertas permitem que qualquer pessoa com acesso ao projeto leia ou altere os metadados.
-
-## 3. Conectar as contas
-
-1. Abra **Configurações** no VAULT.
-2. Informe a configuração do Firebase Firestore e o OAuth Client ID e clique em **Salvar e Conectar**.
-3. A **Central de contas** será aberta separadamente.
-4. Configure nome amigável/email de cada slot.
-5. Clique em **Conectar** ou **Reconectar** em `Ac1`, `Ac2`, `Ac3` e `Ac4`.
-6. Se um email já estiver preenchido, o VAULT rejeitará uma conta diferente naquele slot.
-
-As sessões do Drive não permanecem: o modelo OAuth direto do Google emite access tokens temporários e exige nova conexão quando eles expiram.
-
-## Central de contas
-
-- Busca por tag, nome ou email e filtros por estado.
-- Cada conta funciona de forma independente; uma falha não interrompe as demais.
-- **Atualizar** consulta a quota oficial pela Drive API.
-- **Abrir VAULT no Drive** abre a pasta física da conta.
-- **Verificar** compara registros Firestore com arquivos existentes no Drive.
-- **Revisar contas com problema** conduz a reconexão uma conta por vez.
-- Nomes amigáveis são opcionais; `Ac1–Ac4` continuam sendo os identificadores estáveis.
-
-## Pastas e uploads
-
-- Ao criar uma coleção na visão **Todas as contas**, escolha a conta de destino.
-- Ao criar uma subpasta, a conta é herdada automaticamente.
-- Ao enviar na raiz com **Todas as contas** selecionado, o VAULT pergunta qual conta deve receber os arquivos.
-- Arquivos não podem ser movidos diretamente entre contas. Para trocar de conta é necessário copiar/migrar o conteúdo.
-- A ação **Copiar para outra conta** baixa o arquivo da origem e envia ao destino. Ela verifica possíveis duplicados e pode excluir o original somente depois da cópia concluída.
-- Upload, criação de pasta, cópia e migração mostram o destino completo antes da confirmação.
-
-## Centro de atividades
-
-Uploads, cópias, verificações e migrações aparecem em **Atividades**, com progresso e ação **Tentar novamente** quando possível. Fechar o painel não cancela operações em andamento.
-
-## Migração do Cloudinary
-
-O botão **Mais → Migrar Cloudinary → Drive** copia os registros antigos para a conta selecionada.
-
-- O VAULT baixa o arquivo pela URL antiga, envia ao Drive e atualiza o registro no Firestore.
-- A estrutura de pastas é recriada no Drive e recebe a tag da conta escolhida.
-- As URLs e IDs antigos são preservados nos campos de legado do backup.
-- O arquivo original não é apagado automaticamente do Cloudinary. Apague-o no painel do Cloudinary somente depois de conferir a migração.
-- Se o Cloudinary bloquear o download por CORS ou o arquivo já estiver ausente, o item será apresentado como falha e permanecerá com o registro antigo.
-
-## Arquivos principais
-
-```text
-index.html                 interface e configurações
-app.js                     navegação, Firestore e integração dos provedores
-modules/google-drive.js    OAuth e operações da Google Drive API
-modules/                   fila, hash, busca local e metadados
-sw.js                      cache do PWA
+```sh
+npm ci
+npm run dev
 ```
 
-## Observações
+Abra `http://127.0.0.1:8873`. Para verificar e gerar:
 
-- O espaço gratuito de uma Conta Google é compartilhado entre Drive, Gmail e Google Fotos.
-- Miniaturas do Drive são temporárias e são renovadas pelo aplicativo durante a sessão.
-- Vídeos e documentos usam a visualização autenticada do próprio Google Drive.
-- Download, exclusão, renomeação e movimentação física exigem que a conta correspondente esteja conectada.
+```sh
+npm run check
+npm test
+npm run build
+```
+
+Publique **o conteúdo de `dist/`**, não os arquivos-fonte da raiz. O build empacota Lucide e módulos, gera nomes de assets com hash e uma versão do service worker. Não há servidor de aplicação em produção; `serve.mjs` é apenas um servidor estático local. Nada é publicado automaticamente.
+
+## Proteção dos metadados
+
+- **Salvo neste navegador** não significa backup. Limpar os dados do site ou perder o dispositivo antes de sincronizar pode apagar alterações.
+- Ao conectar uma conta, o VAULT recupera seu índice no Drive e envia as alterações pendentes. Alterações posteriores são agrupadas para envio após uma breve pausa. **Arquivos → Mais → Sincronizar metadados** permite tentar novamente manualmente.
+- Com a página visível e a sessão válida, verifica novas alterações a cada minuto, ao voltar para a aba e ao recuperar a conexão. Não há sincronização com o aplicativo fechado.
+- Espere **Metadados sincronizados no Drive** antes de limpar dados ou trocar de dispositivo. Itens de contas desconectadas continuam pendentes.
+- **Exportar JSON** salva um backup completo dos metadados, murais, notas, conexões e exclusões. Não inclui os arquivos binários. CSV é uma listagem, não um backup completo.
+- Para recuperar em outro dispositivo, configure o **mesmo OAuth Client ID**, conecte as contas Google originais e aguarde a sincronização. Use os mesmos slots Ac1–Ac4 para facilitar a organização. As propriedades privadas dos índices pertencem ao aplicativo OAuth.
+- Não apague os arquivos `.vault-index-*.json` da pasta VAULT no Drive: eles compõem o histórico de metadados. A aplicação não os apaga nem compacta automaticamente.
+- O navegador pode solicitar armazenamento persistente ao sincronizar, mas isso não impede uma limpeza manual dos dados.
+
+### Como a sincronização resolve alterações
+
+O Drive recebe lotes JSON imutáveis, identificados por `appProperties.vaultIndex=3`. Não existe um único arquivo de índice sobrescrito por dois dispositivos. Cada registro possui revisão; vence a revisão mais recente (relógio local + identificador). Exclusões usam tombstones. Murais, itens e conexões são registros independentes, reduzindo conflitos.
+
+Isso não é colaboração em tempo real nem um CRDT: edições concorrentes no **mesmo item** usam a regra da revisão mais recente. Mantenha o relógio dos dispositivos correto e evite editar o mesmo item simultaneamente. Uma falha de rede mantém alterações pendentes; reconecte ou use a sincronização manual. O histórico cresce com o uso; mantenha backups JSON externos.
+
+## Configurar Google Drive
+
+1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), ative a Drive API e configure consentimento OAuth.
+2. Crie um cliente OAuth do tipo aplicativo Web. Cadastre a origem local ou publicada em **Origens JavaScript autorizadas**. Em modo de teste, cadastre os emails permitidos.
+3. Em Configurações do VAULT, informe o Client ID terminado em `.apps.googleusercontent.com` e salve.
+4. Na Central de contas, conecte até quatro contas. Os tokens ficam somente em memória; reconecte depois de reabrir o app ou expirar a sessão.
+
+O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limita o acesso aos arquivos disponibilizados ao aplicativo. Não é necessário criar Firebase nem fornecer um client secret. Os índices usam [propriedades privadas do Drive](https://developers.google.com/workspace/drive/api/guides/properties).
+
+## Mural
+
+- Crie vários murais e escolha a conta que guardará seus metadados.
+- Adicione várias fotos/vídeos existentes da biblioteca; os originais não são duplicados. Vídeos abrem no visualizador autenticado.
+- Crie notas com texto e cores; arraste cabeçalhos para mover, use o canto para redimensionar ou informe posição e dimensões no painel lateral.
+- Selecione um item, escolha outro em **Conectar a** e crie uma ligação. Remova ligações no mesmo painel.
+- Arraste o fundo para navegar, ajuste o zoom ou use **Enquadrar**. Setas movem o item focado; Shift aumenta o passo. Desfazer/refazer funciona durante a sessão do mural (até 60 operações).
+- Remover um item do mural não exclui o arquivo da biblioteca. Os originais precisam continuar acessíveis nas contas correspondentes.
+
+## Migrar da versão anterior
+
+Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Arquivos → Mais → Restaurar JSON** aceita o formato antigo e o completo v3. Registros com o mesmo ID podem ser substituídos após confirmação.
+
+Se a configuração antiga ainda estiver neste navegador, **Configurações → Importar biblioteca da versão anterior** lê o Firestore antigo, copia apenas IDs ainda ausentes e não altera a origem. Firebase é carregado somente nessa migração opcional; o uso normal não depende dele. As permissões do projeto antigo precisam permitir a leitura. Exporte um backup e sincronize as contas depois de importar. Não desative nem apague o projeto antigo antes de conferir o resultado.
+
+A migração Cloudinary → Drive continua em **Mais** e preserva as referências antigas; ela não exclui os originais automaticamente.
+
+## Estrutura
+
+```text
+app.js                    fluxos da biblioteca e integração
+styles.css                estilos consolidados, temas e responsividade
+modules/interface.js      diálogos, foco, navegação móvel e acessibilidade
+modules/icons.js          conjunto Lucide compartilhado
+modules/local-store.js    IndexedDB, revisões e sincronização
+modules/google-drive.js   OAuth e Drive API
+modules/mural.js           interface, notas e conexões dos murais
+modules/board-model.js     geometria, conexões e enquadramento
+modules/legacy-import.js  migração opcional e somente leitura
+modules/pwa.js             atualização explícita do aplicativo
+scripts/                  build e servidor estático de desenvolvimento
+tests/                    persistência, conflitos, mural e acessibilidade
+```
+
+O PWA busca HTML pela rede com fallback offline, preserva assets versionados e oferece **Atualizar aplicativo**. A atualização espera operações ativas terminarem. O shell offline não torna fotos, vídeos e integrações externas automaticamente disponíveis offline.
+
+## Validação e limites
+
+Testes automatizados incluem CRUD, tombstones, recuperação em outro navegador simulado, falha de envio/retry, edição durante sincronização, notas/conexões e análise estrutural axe. Contraste e layout exigem inspeção no navegador real; a suíte não certifica conformidade completa WCAG. A integração real OAuth/Drive deve ser conferida com suas contas antes de depender dela como única cópia. Nunca publique backups ou credenciais na pasta `dist/`.

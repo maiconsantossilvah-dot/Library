@@ -12,10 +12,16 @@ function loadGoogleIdentity() {
   if (globalThis.google?.accounts?.oauth2) return Promise.resolve();
   if (identityPromise) return identityPromise;
   identityPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-vault-google-identity]');
+    const existing = document.querySelector(
+      "script[data-vault-google-identity]",
+    );
     const script = existing || document.createElement("script");
     script.addEventListener("load", () => resolve(), { once: true });
-    script.addEventListener("error", () => reject(new Error("Nao foi possivel carregar o login do Google")), { once: true });
+    script.addEventListener(
+      "error",
+      () => reject(new Error("Nao foi possivel carregar o login do Google")),
+      { once: true },
+    );
     if (!existing) {
       script.src = "https://accounts.google.com/gsi/client";
       script.async = true;
@@ -34,7 +40,12 @@ function normalizeSlot(slot) {
 }
 
 function driveErrorMessage(payload, fallback) {
-  return payload?.error?.message || payload?.error_description || payload?.message || fallback;
+  return (
+    payload?.error?.message ||
+    payload?.error_description ||
+    payload?.message ||
+    fallback
+  );
 }
 
 async function parseResponse(response) {
@@ -44,11 +55,19 @@ async function parseResponse(response) {
 }
 
 export class GoogleDriveManager {
-  constructor({ clientId = "", accounts = [], onAccountsChange, onSessionInvalid } = {}) {
+  constructor({
+    clientId = "",
+    accounts = [],
+    onAccountsChange,
+    onSessionInvalid,
+  } = {}) {
     this.clientId = clientId;
     this.accounts = Array.from({ length: 4 }, (_, index) => {
       const slot = `ac${index + 1}`;
-      const saved = accounts.find(account => account.slot === slot) || accounts[index] || {};
+      const saved =
+        accounts.find((account) => account.slot === slot) ||
+        accounts[index] ||
+        {};
       return {
         slot,
         email: saved.email || "",
@@ -66,17 +85,23 @@ export class GoogleDriveManager {
 
   configure({ clientId = "", accounts = [] } = {}) {
     this.clientId = clientId;
-    const previous = new Map(this.accounts.map(account => [account.slot, account]));
+    const previous = new Map(
+      this.accounts.map((account) => [account.slot, account]),
+    );
     this.accounts = Array.from({ length: 4 }, (_, index) => {
       const slot = `ac${index + 1}`;
-      const incoming = accounts.find(account => account.slot === slot) || accounts[index] || {};
+      const incoming =
+        accounts.find((account) => account.slot === slot) ||
+        accounts[index] ||
+        {};
       const saved = previous.get(slot) || {};
       return {
         slot,
         email: incoming.email ?? saved.email ?? "",
         friendlyName: incoming.friendlyName ?? saved.friendlyName ?? "",
         rootFolderId: incoming.rootFolderId ?? saved.rootFolderId ?? "",
-        lastConnectedAt: incoming.lastConnectedAt ?? saved.lastConnectedAt ?? "",
+        lastConnectedAt:
+          incoming.lastConnectedAt ?? saved.lastConnectedAt ?? "",
         lastCheckedAt: incoming.lastCheckedAt ?? saved.lastCheckedAt ?? "",
         quota: incoming.quota ?? saved.quota ?? null,
       };
@@ -84,12 +109,15 @@ export class GoogleDriveManager {
   }
 
   getAccounts() {
-    return this.accounts.map(account => ({ ...account, connected: this.isConnected(account.slot) }));
+    return this.accounts.map((account) => ({
+      ...account,
+      connected: this.isConnected(account.slot),
+    }));
   }
 
   getAccount(slot) {
     const normalized = normalizeSlot(slot);
-    return this.accounts.find(account => account.slot === normalized);
+    return this.accounts.find((account) => account.slot === normalized);
   }
 
   isConnected(slot) {
@@ -99,29 +127,53 @@ export class GoogleDriveManager {
 
   async connect(slot, expectedEmail = "") {
     const normalized = normalizeSlot(slot);
-    if (!this.clientId) throw new Error("Informe e salve o OAuth Client ID do Google");
+    if (!this.clientId)
+      throw new Error("Informe e salve o OAuth Client ID do Google");
     await loadGoogleIdentity();
 
     const tokenResponse = await new Promise((resolve, reject) => {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: this.clientId,
         scope: DRIVE_SCOPE,
-        callback: response => response?.error ? reject(new Error(driveErrorMessage(response, "Login cancelado"))) : resolve(response),
-        error_callback: error => reject(new Error(error?.message || error?.type || "Nao foi possivel abrir o login do Google")),
+        callback: (response) =>
+          response?.error
+            ? reject(new Error(driveErrorMessage(response, "Login cancelado")))
+            : resolve(response),
+        error_callback: (error) =>
+          reject(
+            new Error(
+              error?.message ||
+                error?.type ||
+                "Nao foi possivel abrir o login do Google",
+            ),
+          ),
       });
       client.requestAccessToken({ prompt: "select_account" });
     });
 
-    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-    });
+    const profileResponse = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      {
+        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+      },
+    );
     const profile = await parseResponse(profileResponse);
     if (!profileResponse.ok || !profile?.email) {
-      throw new Error(driveErrorMessage(profile, "Nao foi possivel identificar o email conectado"));
+      throw new Error(
+        driveErrorMessage(
+          profile,
+          "Nao foi possivel identificar o email conectado",
+        ),
+      );
     }
-    if (expectedEmail && profile.email.toLowerCase() !== expectedEmail.trim().toLowerCase()) {
+    if (
+      expectedEmail &&
+      profile.email.toLowerCase() !== expectedEmail.trim().toLowerCase()
+    ) {
       google.accounts.oauth2.revoke(tokenResponse.access_token, () => {});
-      throw new Error(`A conta escolhida foi ${profile.email}, mas ${normalized.toUpperCase()} esta configurada como ${expectedEmail}`);
+      throw new Error(
+        `A conta escolhida foi ${profile.email}, mas ${normalized.toUpperCase()} esta configurada como ${expectedEmail}`,
+      );
     }
 
     this.sessions.set(normalized, {
@@ -150,7 +202,9 @@ export class GoogleDriveManager {
     const session = this.sessions.get(normalized);
     if (!session || session.expiresAt <= Date.now() + 60_000) {
       this.sessions.delete(normalized);
-      throw new Error(`Conecte ${normalized.toUpperCase()} ao Google Drive para continuar`);
+      throw new Error(
+        `Conecte ${normalized.toUpperCase()} ao Google Drive para continuar`,
+      );
     }
     return session;
   }
@@ -167,7 +221,9 @@ export class GoogleDriveManager {
         this.sessions.delete(normalized);
         this.onSessionInvalid?.(normalized, payload);
       }
-      throw new Error(driveErrorMessage(payload, `Erro ${response.status} no Google Drive`));
+      throw new Error(
+        driveErrorMessage(payload, `Erro ${response.status} no Google Drive`),
+      );
     }
     return payload;
   }
@@ -177,14 +233,24 @@ export class GoogleDriveManager {
     const account = this.getAccount(normalized);
     if (account.rootFolderId) {
       try {
-        const current = await this.getMetadata(normalized, account.rootFolderId, "id,trashed,mimeType");
-        if (!current.trashed && current.mimeType === FOLDER_MIME) return account.rootFolderId;
+        const current = await this.getMetadata(
+          normalized,
+          account.rootFolderId,
+          "id,trashed,mimeType",
+        );
+        if (!current.trashed && current.mimeType === FOLDER_MIME)
+          return account.rootFolderId;
       } catch {}
       account.rootFolderId = "";
     }
 
-    const query = encodeURIComponent(`name = 'VAULT' and mimeType = '${FOLDER_MIME}' and trashed = false and 'root' in parents`);
-    const result = await this.request(normalized, `${DRIVE_API}/files?q=${query}&spaces=drive&fields=files(id,name)&pageSize=10`);
+    const query = encodeURIComponent(
+      `name = 'VAULT' and mimeType = '${FOLDER_MIME}' and trashed = false and 'root' in parents`,
+    );
+    const result = await this.request(
+      normalized,
+      `${DRIVE_API}/files?q=${query}&spaces=drive&fields=files(id,name)&pageSize=10`,
+    );
     const existing = result.files?.[0];
     if (existing?.id) {
       account.rootFolderId = existing.id;
@@ -198,49 +264,117 @@ export class GoogleDriveManager {
     return created.id;
   }
 
+  async listIndexFiles(slot, parentId) {
+    const files = [];
+    let pageToken = "";
+    do {
+      const params = new URLSearchParams({
+        q: "trashed = false and appProperties has { key='vaultIndex' and value='3' }",
+        pageSize: "1000",
+        fields: "nextPageToken,files(id,name)",
+        ...(pageToken ? { pageToken } : {}),
+      });
+      const page = await this.request(slot, `${DRIVE_API}/files?${params}`);
+      files.push(...(page.files || []));
+      pageToken = page.nextPageToken || "";
+    } while (pageToken);
+    return files;
+  }
+
+  uploadIndex(slot, parentId, content) {
+    const boundary = `vault_${crypto.randomUUID()}`;
+    const metadata = {
+      name: `.vault-index-${crypto.randomUUID()}.json`,
+      mimeType: "application/json",
+      parents: [parentId],
+      appProperties: { vaultIndex: "3" },
+    };
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    return this.request(
+      slot,
+      `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`,
+      {
+        method: "POST",
+        headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+        body,
+      },
+    );
+  }
+
   createFolder(slot, name, parentId) {
     return this.request(slot, `${DRIVE_API}/files?fields=id,name,parents`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+      body: JSON.stringify({
+        name,
+        mimeType: FOLDER_MIME,
+        parents: [parentId],
+      }),
     });
   }
 
   updateName(slot, fileId, name) {
-    return this.request(slot, `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
+    return this.request(
+      slot,
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      },
+    );
   }
 
   async moveFile(slot, fileId, targetParentId) {
     const current = await this.getMetadata(slot, fileId, "id,parents");
     const removeParents = (current.parents || []).join(",");
-    const params = new URLSearchParams({ addParents: targetParentId, fields: "id,parents" });
+    const params = new URLSearchParams({
+      addParents: targetParentId,
+      fields: "id,parents",
+    });
     if (removeParents) params.set("removeParents", removeParents);
-    return this.request(slot, `${DRIVE_API}/files/${encodeURIComponent(fileId)}?${params}`, { method: "PATCH" });
+    return this.request(
+      slot,
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}?${params}`,
+      { method: "PATCH" },
+    );
   }
 
   deleteFile(slot, fileId) {
-    return this.request(slot, `${DRIVE_API}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+    return this.request(
+      slot,
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}`,
+      { method: "DELETE" },
+    );
   }
 
-  getMetadata(slot, fileId, fields = "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents,trashed") {
-    return this.request(slot, `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fields)}`);
+  getMetadata(
+    slot,
+    fileId,
+    fields = "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents,trashed",
+  ) {
+    return this.request(
+      slot,
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fields)}`,
+    );
   }
 
   async getAbout(slot) {
     const normalized = normalizeSlot(slot);
-    const about = await this.request(normalized, `${DRIVE_API}/about?fields=user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)`);
+    const about = await this.request(
+      normalized,
+      `${DRIVE_API}/about?fields=user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)`,
+    );
     const account = this.getAccount(normalized);
     account.lastCheckedAt = new Date().toISOString();
-    account.quota = about.storageQuota ? {
-      limit: Number(about.storageQuota.limit || 0),
-      usage: Number(about.storageQuota.usage || 0),
-      usageInDrive: Number(about.storageQuota.usageInDrive || 0),
-      usageInDriveTrash: Number(about.storageQuota.usageInDriveTrash || 0),
-    } : null;
+    account.quota = about.storageQuota
+      ? {
+          limit: Number(about.storageQuota.limit || 0),
+          usage: Number(about.storageQuota.usage || 0),
+          usageInDrive: Number(about.storageQuota.usageInDrive || 0),
+          usageInDriveTrash: Number(about.storageQuota.usageInDriveTrash || 0),
+        }
+      : null;
     await this.notifyAccountsChanged();
     return about;
   }
@@ -249,7 +383,9 @@ export class GoogleDriveManager {
     const normalized = normalizeSlot(slot);
     const account = this.getAccount(normalized);
     const folderId = await this.ensureRootFolder(normalized);
-    const authUser = account.email ? `?authuser=${encodeURIComponent(account.email)}` : "";
+    const authUser = account.email
+      ? `?authuser=${encodeURIComponent(account.email)}`
+      : "";
     return `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}${authUser}`;
   }
 
@@ -257,7 +393,7 @@ export class GoogleDriveManager {
     const session = this.requireSession(slot);
     return fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
-    }).then(async response => {
+    }).then(async (response) => {
       if (!response.ok) {
         const payload = await parseResponse(response);
         if (response.status === 401) {
@@ -265,7 +401,12 @@ export class GoogleDriveManager {
           this.sessions.delete(normalized);
           this.onSessionInvalid?.(normalized, payload);
         }
-        throw new Error(driveErrorMessage(payload, "Nao foi possivel baixar o arquivo do Drive"));
+        throw new Error(
+          driveErrorMessage(
+            payload,
+            "Nao foi possivel baixar o arquivo do Drive",
+          ),
+        );
       }
       return response.blob();
     });
@@ -274,60 +415,86 @@ export class GoogleDriveManager {
   async uploadFile(slot, file, parentId, { onProgress, onXhr } = {}) {
     const normalized = normalizeSlot(slot);
     const session = this.requireSession(normalized);
-    const fields = "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents";
-    const startResponse = await fetch(`${DRIVE_UPLOAD_API}/files?uploadType=resumable&fields=${encodeURIComponent(fields)}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-        "X-Upload-Content-Type": file.type || "application/octet-stream",
-        "X-Upload-Content-Length": String(file.size),
+    const fields =
+      "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents";
+    const startResponse = await fetch(
+      `${DRIVE_UPLOAD_API}/files?uploadType=resumable&fields=${encodeURIComponent(fields)}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": file.type || "application/octet-stream",
+          "X-Upload-Content-Length": String(file.size),
+        },
+        body: JSON.stringify({
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          parents: [parentId],
+        }),
       },
-      body: JSON.stringify({
-        name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        parents: [parentId],
-      }),
-    });
+    );
     if (!startResponse.ok) {
       const payload = await parseResponse(startResponse);
       if (startResponse.status === 401) {
         this.sessions.delete(normalized);
         this.onSessionInvalid?.(normalized, payload);
       }
-      throw new Error(driveErrorMessage(payload, "Nao foi possivel iniciar o upload no Drive"));
+      throw new Error(
+        driveErrorMessage(
+          payload,
+          "Nao foi possivel iniciar o upload no Drive",
+        ),
+      );
     }
     const uploadUrl = startResponse.headers.get("location");
-    if (!uploadUrl) throw new Error("O Google Drive nao retornou a sessao de upload");
+    if (!uploadUrl)
+      throw new Error("O Google Drive nao retornou a sessao de upload");
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       onXhr?.(xhr);
       xhr.open("PUT", uploadUrl);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-      xhr.upload.onprogress = event => {
+      xhr.setRequestHeader(
+        "Content-Type",
+        file.type || "application/octet-stream",
+      );
+      xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(event.loaded, event.total);
       };
       xhr.onload = () => {
         let payload = {};
-        try { payload = JSON.parse(xhr.responseText || "{}"); } catch {}
+        try {
+          payload = JSON.parse(xhr.responseText || "{}");
+        } catch {}
         if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
         else {
           if (xhr.status === 401) {
             this.sessions.delete(normalized);
             this.onSessionInvalid?.(normalized, payload);
           }
-          reject(new Error(driveErrorMessage(payload, `Erro ${xhr.status} no upload para o Drive`)));
+          reject(
+            new Error(
+              driveErrorMessage(
+                payload,
+                `Erro ${xhr.status} no upload para o Drive`,
+              ),
+            ),
+          );
         }
       };
-      xhr.onerror = () => reject(new Error("Erro de rede durante o upload para o Drive"));
-      xhr.onabort = () => reject(new DOMException("Upload cancelado", "AbortError"));
+      xhr.onerror = () =>
+        reject(new Error("Erro de rede durante o upload para o Drive"));
+      xhr.onabort = () =>
+        reject(new DOMException("Upload cancelado", "AbortError"));
       xhr.send(file);
     });
   }
 
   async notifyAccountsChanged() {
-    await this.onAccountsChange?.(this.accounts.map(account => ({ ...account })));
+    await this.onAccountsChange?.(
+      this.accounts.map((account) => ({ ...account })),
+    );
   }
 }
 
@@ -337,10 +504,17 @@ export function isGoogleDriveRecord(record) {
 
 export function drivePreviewUrl(record, accountEmail = "") {
   if (!record?.driveFileId) return "";
-  const authUser = accountEmail ? `?authuser=${encodeURIComponent(accountEmail)}` : "";
+  const authUser = accountEmail
+    ? `?authuser=${encodeURIComponent(accountEmail)}`
+    : "";
   return `https://drive.google.com/file/d/${encodeURIComponent(record.driveFileId)}/preview${authUser}`;
 }
 
 export function driveViewUrl(record) {
-  return record?.driveWebViewLink || (record?.driveFileId ? `https://drive.google.com/file/d/${encodeURIComponent(record.driveFileId)}/view` : "");
+  return (
+    record?.driveWebViewLink ||
+    (record?.driveFileId
+      ? `https://drive.google.com/file/d/${encodeURIComponent(record.driveFileId)}/view`
+      : "")
+  );
 }

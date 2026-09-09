@@ -1,0 +1,22 @@
+{
+  "name": "vault-personal-library",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check app.js && node --check modules/local-store.js && node --check modules/interface.js"
+  },
+  "dependencies": {
+    "lucide": "1.43.0"
+  },
+  "devDependencies": {
+    "axe-core": "4.13.0",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "30.0.1",
+    "prettier": "3.9.6"
+  }
+}

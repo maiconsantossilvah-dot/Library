@@ -1,596 +1,1384 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f3f0e8" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>VAULT - Seu Cofre Digital</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="style.css?v=contrast2" />
-  <link rel="stylesheet" href="layout.css?v=contrast2" />
-  <link rel="stylesheet" href="theme.css?v=contrast2" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
-  <script src="https://accounts.google.com/gsi/client" async defer data-vault-google-identity="true"></script>
-</head>
-<body class="vault-reimagined">
-  <div class="app-frame">
-    <!-- NAVEGAÇÃO DO ACERVO -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <span class="logo-icon">V</span>
-          <span class="brand-copy"><span class="logo-text">VAULT</span><small>arquivo pessoal</small></span>
-        </div>
-        <div class="sidebar-header-actions">
-          <button class="sidebar-cfg-btn" id="openConfigBtn" type="button" title="Configuracoes" aria-label="Abrir configuracoes">⚙</button>
-          <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Fechar menu" aria-label="Fechar menu">&#9776;</button>
-        </div>
-      </div>
-
-      <nav class="app-navigation" aria-label="Seções principais">
-        <button class="app-nav-item active" id="navHome" type="button" aria-current="page">
-          <span class="app-nav-icon" aria-hidden="true">⌂</span><span>Início</span>
-        </button>
-        <button class="app-nav-item" id="navFiles" type="button">
-          <span class="app-nav-icon" aria-hidden="true">▦</span><span>Arquivos</span>
-        </button>
-      </nav>
-
-      <div class="sidebar-scroll">
-        <nav class="sidebar-section sidebar-library-section" aria-label="Navegação principal">
-          <p class="sidebar-label">Atalhos</p>
-          <div class="filter-chips nav-chips">
-            <button class="chip active" data-filter="all"><span class="nav-chip-icon">◈</span><span>Todos os arquivos</span></button>
-            <button class="chip" data-filter="recent"><span class="nav-chip-icon">◷</span><span>Recentes</span></button>
-            <button class="chip" data-filter="favorites"><span class="nav-chip-icon">♥</span><span>Favoritos</span></button>
-            <button class="chip" data-filter="important"><span class="nav-chip-icon">!</span><span>Importantes</span></button>
-            <button class="chip" data-filter="duplicates"><span class="nav-chip-icon">≋</span><span>Duplicados</span></button>
-            <button class="chip" data-filter="screenshots"><span class="nav-chip-icon">▣</span><span>Capturas</span></button>
-            <button class="chip" data-filter="trash"><span class="nav-chip-icon">⌫</span><span>Lixeira</span></button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>VAULT - Seu Cofre Digital</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/vault-icon.svg" type="image/svg+xml" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="vault-reimagined">
+    <a class="skip-link" href="#content">Pular para o conteúdo</a>
+    <div class="app-frame">
+      <!-- NAVEGAÇÃO DO ACERVO -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <span class="logo-icon">V</span>
+            <span class="brand-copy"
+              ><span class="logo-text">VAULT</span
+              ><small>arquivo pessoal</small></span
+            >
           </div>
+          <div class="sidebar-header-actions">
+            <button
+              class="sidebar-cfg-btn"
+              id="openConfigBtn"
+              type="button"
+              title="Configuracoes"
+              aria-label="Abrir configuracoes"
+            >
+              <span data-icon="Settings"></span>
+            </button>
+            <button
+              class="sidebar-toggle"
+              id="sidebarToggle"
+              type="button"
+              title="Fechar menu"
+              aria-label="Fechar menu"
+            >
+              <span data-icon="PanelLeftClose"></span>
+            </button>
+          </div>
+        </div>
+
+        <nav class="app-navigation" aria-label="Seções principais">
+          <button
+            class="app-nav-item active"
+            id="navHome"
+            type="button"
+            aria-current="page"
+          >
+            <span
+              class="app-nav-icon"
+              data-icon="House"
+              aria-hidden="true"
+            ></span
+            ><span>Início</span>
+          </button>
+          <button class="app-nav-item" id="navFiles" type="button">
+            <span
+              class="app-nav-icon"
+              data-icon="Files"
+              aria-hidden="true"
+            ></span
+            ><span>Arquivos</span>
+          </button>
+          <button class="app-nav-item" id="navPhotos" type="button">
+            <span data-icon="Images" aria-hidden="true"></span
+            ><span>Fotos</span>
+          </button>
+          <button class="app-nav-item" id="navMural" type="button">
+            <span data-icon="LayoutGrid" aria-hidden="true"></span
+            ><span>Mural</span>
+          </button>
         </nav>
 
-        <section class="sidebar-section sidebar-collections">
-          <div class="sidebar-section-title">
-            <p class="sidebar-label">Coleções</p>
-            <button class="collection-add" id="btnNewFolder" type="button" title="Criar coleção" aria-label="Criar coleção">+</button>
-          </div>
-          <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
-          <ul class="folder-list" id="folderList">
-            <li class="folder-item active" data-folder="root">
-              <span class="folder-icon">#</span> Todos os Arquivos
-            </li>
-          </ul>
-        </section>
-
-        <section class="sidebar-section filter-section sidebar-file-types">
-          <p class="sidebar-label">Por tipo</p>
-          <div class="filter-chips type-chips">
-            <button class="chip" data-filter="media">Mídia</button>
-            <button class="chip" data-filter="image">Imagens</button>
-            <button class="chip" data-filter="video">Vídeos</button>
-            <button class="chip" data-filter="document">Documentos</button>
-            <button class="chip" data-filter="untagged">Sem tags</button>
-            <button class="chip" data-filter="largeVideos">Vídeos grandes</button>
-          </div>
-        </section>
-      </div>
-
-      <footer class="sidebar-footer">
-        <section class="sidebar-section maintenance-section">
-          <p class="sidebar-label">Cuidado do acervo</p>
-          <button class="btn-new-folder" id="btnCheckFiles">Verificar arquivos</button>
-          <p class="storage-text helper-text">Confere os arquivos da conta ou da visão atual.</p>
-        </section>
-        <div class="sidebar-storage">
-          <p class="sidebar-label">Espaço do acervo</p>
-          <div class="storage-bar-wrap">
-            <div class="storage-bar" id="storageBar" style="width:0%"></div>
-          </div>
-          <p class="storage-text" id="storageText">0 MB usados</p>
-        </div>
-      </footer>
-    </aside>
-
-    <!-- ÁREA PRINCIPAL -->
-    <main class="main" id="main">
-      <header class="topbar">
-        <div class="workspace-masthead">
-          <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" title="Abrir menu" aria-label="Abrir menu">&#9776;</button>
-          <div class="topbar-context">
-            <span class="topbar-kicker">MEU ARQUIVO</span>
-            <div class="breadcrumb" id="breadcrumb">
-              <span>Todos os Arquivos</span>
+        <div class="sidebar-scroll">
+          <nav
+            class="sidebar-section sidebar-library-section"
+            aria-label="Navegação principal"
+          >
+            <p class="sidebar-label">Atalhos</p>
+            <div class="filter-chips nav-chips">
+              <button class="chip active" data-filter="all">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Files"
+                  aria-hidden="true"
+                ></span
+                ><span>Todos os arquivos</span>
+              </button>
+              <button class="chip" data-filter="recent">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Clock3"
+                  aria-hidden="true"
+                ></span
+                ><span>Recentes</span>
+              </button>
+              <button class="chip" data-filter="favorites">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Star"
+                  aria-hidden="true"
+                ></span
+                ><span>Favoritos</span>
+              </button>
+              <button class="chip" data-filter="important">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="ShieldAlert"
+                  aria-hidden="true"
+                ></span
+                ><span>Importantes</span>
+              </button>
+              <button class="chip" data-filter="duplicates">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Copy"
+                  aria-hidden="true"
+                ></span
+                ><span>Duplicados</span>
+              </button>
+              <button class="chip" data-filter="screenshots">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="ScanLine"
+                  aria-hidden="true"
+                ></span
+                ><span>Capturas</span>
+              </button>
+              <button class="chip" data-filter="trash">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Trash2"
+                  aria-hidden="true"
+                ></span
+                ><span>Lixeira</span>
+              </button>
             </div>
-          </div>
+          </nav>
 
-          <div class="global-search">
-            <label class="sr-only" for="searchInput">Buscar arquivo, tag ou conteúdo indexado</label>
-            <span class="search-symbol" aria-hidden="true">⌕</span>
-            <input class="search-input" id="searchInput" placeholder="Buscar no seu acervo..." aria-label="Buscar arquivo, tag ou conteúdo indexado" />
-          </div>
+          <section class="sidebar-section sidebar-collections">
+            <div class="sidebar-section-title">
+              <p class="sidebar-label">Pastas</p>
+              <button
+                class="collection-add"
+                id="btnNewFolder"
+                type="button"
+                title="Criar pasta"
+                aria-label="Criar pasta"
+              >
+                <span data-icon="FolderPlus"></span>
+              </button>
+            </div>
+            <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
+            <ul class="folder-list" id="folderList">
+              <li class="folder-item active" data-folder="root">
+                <span class="folder-icon" data-icon="Folder"></span> Todos os
+                Arquivos
+              </li>
+            </ul>
+          </section>
 
-          <div class="masthead-actions">
-            <button class="theme-toggle" id="themeToggle" type="button" aria-label="Ativar modo escuro" title="Ativar modo escuro">
-              <svg class="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path class="theme-icon-moon" d="M20.6 14.6A8.5 8.5 0 0 1 9.4 3.4a8.5 8.5 0 1 0 11.2 11.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                <g class="theme-icon-sun" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-                  <circle cx="12" cy="12" r="3.6"/>
-                  <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"/>
-                </g>
-              </svg>
-              <span class="sr-only" id="themeToggleText">Ativar modo escuro</span>
+          <section class="sidebar-section filter-section sidebar-file-types">
+            <p class="sidebar-label">Por tipo</p>
+            <div class="filter-chips type-chips">
+              <button class="chip" data-filter="media">Mídia</button>
+              <button class="chip" data-filter="image">Imagens</button>
+              <button class="chip" data-filter="video">Vídeos</button>
+              <button class="chip" data-filter="document">Documentos</button>
+              <button class="chip" data-filter="untagged">Sem tags</button>
+              <button class="chip" data-filter="largeVideos">
+                Vídeos grandes
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <footer class="sidebar-footer">
+          <section class="sidebar-section maintenance-section">
+            <p class="sidebar-label">Cuidado do acervo</p>
+            <button class="btn-new-folder" id="btnCheckFiles">
+              Verificar arquivos
             </button>
-            <span class="connection-status" id="connectionStatus" role="status" aria-live="polite">Verificando conexao</span>
-            <div class="primary-actions">
-              <label class="action-btn action-primary" for="fileInput">
-                <span>Adicionar</span><span aria-hidden="true">+</span>
-                <input type="file" id="fileInput" multiple accept="image/*,.heic,.heif,.avif,.webp,.tif,.tiff,.dng,.cr2,.cr3,.arw,.nef,.orf,.raf,.rw2,video/*,.pdf,.doc,.docx,.txt,.zip,.rar" />
-              </label>
+            <p class="storage-text helper-text">
+              Confere os arquivos da conta ou da visão atual.
+            </p>
+          </section>
+          <div class="sidebar-storage">
+            <p class="sidebar-label">Espaço do acervo</p>
+            <div class="storage-bar-wrap">
+              <div class="storage-bar" id="storageBar" style="width: 0%"></div>
+            </div>
+            <p class="storage-text" id="storageText">0 MB usados</p>
+          </div>
+        </footer>
+      </aside>
+
+      <!-- ÁREA PRINCIPAL -->
+      <main class="main" id="main">
+        <header class="topbar">
+          <div class="workspace-masthead">
+            <button
+              class="sidebar-open-btn"
+              id="sidebarOpenBtn"
+              type="button"
+              title="Abrir menu"
+              aria-label="Abrir menu"
+            >
+              <span data-icon="Menu"></span>
+            </button>
+            <div class="topbar-context">
+              <span class="topbar-kicker">MEU ARQUIVO</span>
+              <div class="breadcrumb" id="breadcrumb">
+                <span>Todos os Arquivos</span>
+              </div>
+            </div>
+
+            <div class="global-search">
+              <label class="sr-only" for="searchInput"
+                >Buscar arquivo, tag ou conteúdo indexado</label
+              >
+              <span
+                class="search-symbol"
+                data-icon="Search"
+                aria-hidden="true"
+              ></span>
+              <input
+                class="search-input"
+                id="searchInput"
+                placeholder="Buscar no seu acervo..."
+                aria-label="Buscar arquivo, tag ou conteúdo indexado"
+              />
+            </div>
+
+            <div class="masthead-actions">
+              <button
+                class="theme-toggle"
+                id="themeToggle"
+                type="button"
+                aria-label="Ativar modo escuro"
+                title="Ativar modo escuro"
+              >
+                <span class="theme-icon-moon" data-icon="Moon"></span
+                ><span class="theme-icon-sun" data-icon="Sun"></span>
+                <span class="sr-only" id="themeToggleText"
+                  >Ativar modo escuro</span
+                >
+              </button>
+              <span
+                class="sync-status"
+                id="syncStatus"
+                role="status"
+                aria-live="polite"
+                >Carregando biblioteca local…</span
+              >
+              <button
+                id="updateAppBtn"
+                class="utility-btn"
+                type="button"
+                hidden
+              >
+                Atualizar aplicativo
+              </button>
+              <span
+                class="connection-status"
+                id="connectionStatus"
+                role="status"
+                aria-live="polite"
+                >Verificando conexao</span
+              >
+              <div class="primary-actions">
+                <button
+                  class="action-btn action-primary"
+                  type="button"
+                  data-upload
+                >
+                  <span data-icon="Plus"></span><span>Adicionar</span></button
+                ><input type="file" id="fileInput" multiple hidden />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="workspace-toolbar">
-          <div class="view-toggle" aria-label="Modos de visualizacao">
-            <span class="toolbar-label">Visualizar</span>
-            <button class="view-btn active" id="viewGrid" type="button" title="Grade" aria-label="Visualizar em grade" aria-pressed="true">▦</button>
-            <button class="view-btn" id="viewList" type="button" title="Lista" aria-label="Visualizar em lista" aria-pressed="false">☰</button>
-            <button class="view-btn" id="viewGallery" type="button" title="Galeria" aria-label="Visualizar galeria de midia" aria-pressed="false">▣</button>
-            <button class="view-btn view-text" id="viewFolders" type="button" title="Mostrar apenas pastas" aria-pressed="false">Coleções</button>
-            <button class="view-btn view-text" id="viewTimeline" type="button" title="Linha do tempo" aria-pressed="false">Linha do tempo</button>
-            <button class="view-btn view-text" id="viewManga" type="button" title="Ler imagens da pasta como mangá" aria-pressed="false">Mangá</button>
-            <button class="view-btn view-text compact-toggle" id="viewDensity" type="button" title="Alternar compacto/detalhado" aria-pressed="false">Compacto</button>
-            <button class="view-btn" id="viewSelect" type="button" title="Selecionar em lote" aria-label="Selecionar em lote" aria-pressed="false">☑</button>
-          </div>
+          <div class="workspace-toolbar">
+            <div class="view-toggle" aria-label="Modos de visualizacao">
+              <span class="toolbar-label">Visualizar</span>
+              <button
+                class="view-btn active"
+                id="viewGrid"
+                type="button"
+                title="Grade"
+                aria-label="Visualizar em grade"
+                aria-pressed="true"
+              >
+                <span data-icon="LayoutGrid"></span>
+              </button>
+              <button
+                class="view-btn"
+                id="viewList"
+                type="button"
+                title="Lista"
+                aria-label="Visualizar em lista"
+                aria-pressed="false"
+              >
+                <span data-icon="List"></span>
+              </button>
+            </div>
 
-          <div class="toolbar-spacer"></div>
-          <div class="control-cluster account-cluster">
-            <label class="sr-only" for="accountViewSelect">Conta do Google Drive</label>
-            <select class="sort-select account-view-select" id="accountViewSelect" title="Visualizar uma conta ou todas">
-              <option value="all">Todas as contas</option>
-              <option value="ac1">Ac1</option>
-              <option value="ac2">Ac2</option>
-              <option value="ac3">Ac3</option>
-              <option value="ac4">Ac4</option>
-            </select>
-            <button class="utility-btn account-connect-btn" id="accountConnectBtn" type="button" aria-haspopup="dialog">Central de contas</button>
-            <button class="utility-btn activity-center-btn" id="activityCenterBtn" type="button" aria-controls="uploadPanel" aria-expanded="false">Atividades <span id="activityCount" hidden>0</span></button>
-          </div>
-          <div class="control-cluster sort-cluster">
-            <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
-            <select class="sort-select" id="sortSelect" title="Ordenar" aria-label="Ordenar arquivos">
-              <option value="newest">Mais recentes</option>
-              <option value="oldest">Mais antigos</option>
-              <option value="name">Nome A-Z</option>
-              <option value="size">Tamanho</option>
-              <option value="type">Tipo</option>
-            </select>
-          </div>
-          <div class="toolbar-actions">
-            <button class="utility-btn" id="filterPanelToggle" type="button" aria-expanded="false" aria-controls="filterPanel">Filtros</button>
-            <button class="utility-btn" id="toolsPanelToggle" type="button" aria-expanded="false" aria-controls="toolsPanel">Mais</button>
-          </div>
-          <div class="trash-actions" id="trashActions" hidden>
-            <button class="utility-btn" id="btnRestoreTrash" type="button">Restaurar</button>
-            <button class="utility-btn danger-inline" id="btnEmptyTrash" type="button">Esvaziar</button>
-          </div>
-        </div>
+            <div class="toolbar-spacer"></div>
 
-        <div class="topbar-panel filter-panel" id="filterPanel" hidden>
-          <div class="panel-heading">
-            <span>Organizar a visualização</span>
-            <button class="panel-close" id="closeFilterPanel" type="button" aria-label="Fechar filtros">×</button>
-          </div>
-          <div class="panel-grid">
-            <label class="field-label" for="qualitySelect">Miniaturas
-              <select class="sort-select" id="qualitySelect" title="Qualidade das miniaturas">
-                <option value="medium">Qualidade média</option>
-                <option value="low">Qualidade baixa</option>
-                <option value="high">Qualidade alta</option>
+            <div class="control-cluster sort-cluster">
+              <label class="sr-only" for="sortSelect">Ordenar arquivos</label>
+              <select
+                class="sort-select"
+                id="sortSelect"
+                title="Ordenar"
+                aria-label="Ordenar arquivos"
+              >
+                <option value="newest">Mais recentes</option>
+                <option value="oldest">Mais antigos</option>
+                <option value="name">Nome A-Z</option>
+                <option value="size">Tamanho</option>
+                <option value="type">Tipo</option>
               </select>
-            </label>
-            <label class="field-label" for="advFolderSelect">Coleção
-              <select class="sort-select adv-select" id="advFolderSelect" title="Filtrar por pasta">
-                <option value="">Todas as coleções</option>
+            </div>
+            <div class="toolbar-actions">
+              <button
+                class="utility-btn"
+                id="filterPanelToggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="filterPanel"
+              >
+                Filtros
+              </button>
+              <button
+                class="utility-btn"
+                id="toolsPanelToggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="toolsPanel"
+              >
+                Mais
+              </button>
+            </div>
+            <div class="trash-actions" id="trashActions" hidden>
+              <button class="utility-btn" id="btnRestoreTrash" type="button">
+                Restaurar
+              </button>
+              <button
+                class="utility-btn danger-inline"
+                id="btnEmptyTrash"
+                type="button"
+              >
+                Esvaziar
+              </button>
+            </div>
+          </div>
+
+          <div class="topbar-panel filter-panel" id="filterPanel" hidden>
+            <div class="panel-heading">
+              <span>Organizar a visualização</span>
+              <button
+                class="panel-close"
+                id="closeFilterPanel"
+                type="button"
+                aria-label="Fechar filtros"
+              >
+                <span data-icon="X"></span>
+              </button>
+            </div>
+            <div class="panel-grid">
+              <label class="field-label" for="qualitySelect"
+                >Miniaturas
+                <select
+                  class="sort-select"
+                  id="qualitySelect"
+                  title="Qualidade das miniaturas"
+                >
+                  <option value="medium">Qualidade média</option>
+                  <option value="low">Qualidade baixa</option>
+                  <option value="high">Qualidade alta</option>
+                </select>
+              </label>
+              <label class="field-label" for="advFolderSelect"
+                >Coleção
+                <select
+                  class="sort-select adv-select"
+                  id="advFolderSelect"
+                  title="Filtrar por pasta"
+                >
+                  <option value="">Todas as pastas</option>
+                </select>
+              </label>
+              <label class="field-label" for="advPrioritySelect"
+                >Prioridade
+                <select
+                  class="sort-select adv-select"
+                  id="advPrioritySelect"
+                  title="Filtrar por prioridade"
+                >
+                  <option value="">Qualquer prioridade</option>
+                  <option value="normal">Normal</option>
+                  <option value="important">Importante</option>
+                  <option value="critical">Crítico</option>
+                </select>
+              </label>
+              <label class="field-label" for="advDateFrom"
+                >A partir de
+                <input
+                  class="date-input adv-select"
+                  id="advDateFrom"
+                  type="date"
+                  title="Data inicial"
+                />
+              </label>
+              <label class="field-label" for="advDateTo"
+                >Até
+                <input
+                  class="date-input adv-select"
+                  id="advDateTo"
+                  type="date"
+                  title="Data final"
+                />
+              </label>
+              <button
+                class="utility-btn panel-clear"
+                id="clearAdvancedBtn"
+                type="button"
+                title="Limpar filtros avancados"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </div>
+
+          <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
+            <div class="panel-heading">
+              <span>Seu acervo</span>
+              <button
+                class="panel-close"
+                id="closeToolsPanel"
+                type="button"
+                aria-label="Fechar ferramentas"
+              >
+                <span data-icon="X"></span>
+              </button>
+            </div>
+            <div class="advanced-views" aria-label="Mais visualizações">
+              <button
+                class="view-btn"
+                id="viewGallery"
+                type="button"
+                title="Galeria"
+                aria-label="Visualizar galeria de midia"
+                aria-pressed="false"
+              >
+                <span data-icon="Images"></span>
+              </button>
+              <button
+                class="view-btn view-text"
+                id="viewFolders"
+                type="button"
+                title="Mostrar apenas pastas"
+                aria-pressed="false"
+              >
+                Pastas
+              </button>
+              <button
+                class="view-btn view-text"
+                id="viewTimeline"
+                type="button"
+                title="Linha do tempo"
+                aria-pressed="false"
+              >
+                Linha do tempo
+              </button>
+              <button
+                class="view-btn view-text"
+                id="viewManga"
+                type="button"
+                title="Ler imagens da pasta como mangá"
+                aria-pressed="false"
+              >
+                Mangá
+              </button>
+              <button
+                class="view-btn view-text compact-toggle"
+                id="viewDensity"
+                type="button"
+                title="Alternar compacto/detalhado"
+                aria-pressed="false"
+              >
+                Compacto
+              </button>
+              <button
+                class="view-btn"
+                id="viewSelect"
+                type="button"
+                title="Selecionar em lote"
+                aria-label="Selecionar em lote"
+                aria-pressed="false"
+              >
+                <span data-icon="CheckSquare"></span>
+              </button>
+            </div>
+            <div class="control-cluster account-cluster">
+              <label class="sr-only" for="accountViewSelect"
+                >Conta do Google Drive</label
+              >
+              <select
+                class="sort-select account-view-select"
+                id="accountViewSelect"
+                title="Visualizar uma conta ou todas"
+              >
+                <option value="all">Todas as contas</option>
+                <option value="ac1">Ac1</option>
+                <option value="ac2">Ac2</option>
+                <option value="ac3">Ac3</option>
+                <option value="ac4">Ac4</option>
               </select>
-            </label>
-            <label class="field-label" for="advPrioritySelect">Prioridade
-              <select class="sort-select adv-select" id="advPrioritySelect" title="Filtrar por prioridade">
-                <option value="">Qualquer prioridade</option>
-                <option value="normal">Normal</option>
-                <option value="important">Importante</option>
-                <option value="critical">Crítico</option>
-              </select>
-            </label>
-            <label class="field-label" for="advDateFrom">A partir de
-              <input class="date-input adv-select" id="advDateFrom" type="date" title="Data inicial" />
-            </label>
-            <label class="field-label" for="advDateTo">Até
-              <input class="date-input adv-select" id="advDateTo" type="date" title="Data final" />
-            </label>
-            <button class="utility-btn panel-clear" id="clearAdvancedBtn" type="button" title="Limpar filtros avancados">Limpar filtros</button>
+              <button
+                class="utility-btn account-connect-btn"
+                id="accountConnectBtn"
+                type="button"
+                aria-haspopup="dialog"
+              >
+                Central de contas
+              </button>
+              <button
+                class="utility-btn activity-center-btn"
+                id="activityCenterBtn"
+                type="button"
+                aria-controls="uploadPanel"
+                aria-expanded="false"
+              >
+                Atividades <span id="activityCount" hidden>0</span>
+              </button>
+            </div>
+            <div class="tool-grid">
+              <button class="utility-btn" id="syncNowBtn" type="button">
+                Sincronizar metadados
+              </button>
+              <button class="utility-btn" id="exportJsonBtn" type="button">
+                Exportar JSON
+              </button>
+              <button class="utility-btn" id="exportCsvBtn" type="button">
+                Exportar CSV
+              </button>
+              <button class="utility-btn" id="importJsonBtn" type="button">
+                Restaurar JSON
+              </button>
+              <button class="utility-btn" id="importUrlBtn" type="button">
+                Importar URL
+              </button>
+              <button class="utility-btn" id="btnSlideshow" type="button">
+                Apresentar
+              </button>
+              <button
+                class="utility-btn"
+                id="indexSearchBtn"
+                type="button"
+                title="Extrai texto localmente de imagens, PDFs e TXT"
+              >
+                Indexar busca local
+              </button>
+              <button
+                class="utility-btn"
+                id="clearSearchIndexBtn"
+                type="button"
+                title="Remove apenas os textos extraídos deste navegador"
+              >
+                Limpar índice local
+              </button>
+              <button
+                class="utility-btn"
+                id="analyzePhotosBtn"
+                type="button"
+                title="Lê a data EXIF e identifica capturas de tela"
+              >
+                Analisar fotos
+              </button>
+              <button
+                class="utility-btn"
+                id="migrateCloudinaryBtn"
+                type="button"
+                title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
+              >
+                Migrar Cloudinary → Drive
+              </button>
+              <input
+                id="backupInput"
+                type="file"
+                accept="application/json,.json"
+                hidden
+              />
+            </div>
           </div>
-        </div>
 
-        <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
-          <div class="panel-heading">
-            <span>Seu acervo</span>
-            <button class="panel-close" id="closeToolsPanel" type="button" aria-label="Fechar ferramentas">×</button>
-          </div>
-          <div class="tool-grid">
-            <button class="utility-btn" id="exportJsonBtn" type="button">Exportar JSON</button>
-            <button class="utility-btn" id="exportCsvBtn" type="button">Exportar CSV</button>
-            <button class="utility-btn" id="importJsonBtn" type="button">Restaurar JSON</button>
-            <button class="utility-btn" id="importUrlBtn" type="button">Importar URL</button>
-            <button class="utility-btn" id="btnSlideshow" type="button">Apresentar</button>
-            <button class="utility-btn" id="indexSearchBtn" type="button" title="Extrai texto localmente de imagens, PDFs e TXT">Indexar busca local</button>
-            <button class="utility-btn" id="clearSearchIndexBtn" type="button" title="Remove apenas os textos extraídos deste navegador">Limpar índice local</button>
-            <button class="utility-btn" id="analyzePhotosBtn" type="button" title="Lê a data EXIF e identifica capturas de tela">Analisar fotos</button>
-            <button class="utility-btn" id="migrateCloudinaryBtn" type="button" title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada">Migrar Cloudinary → Drive</button>
-            <input id="backupInput" type="file" accept="application/json,.json" hidden />
-          </div>
-        </div>
-
-        <div class="bulk-bar" id="bulkBar" style="display:none;">
-          <span class="bulk-count" id="bulkCount">0 selecionados</span>
-          <button class="bulk-btn" id="bulkSelectAllBtn" title="Selecionar todos visiveis">Todos</button>
-          <button class="bulk-btn" id="bulkMoveBtn" title="Mover selecionados">Mover</button>
-          <button class="bulk-btn" id="bulkEditBtn" title="Editar tags, prioridade e descricao em lote">Editar</button>
-          <button class="bulk-btn" id="bulkDownloadBtn" title="Baixar selecionados">Baixar</button>
-          <button class="bulk-btn danger" id="bulkDeleteBtn" title="Excluir selecionados">Excluir</button>
-          <button class="bulk-btn" id="bulkFavBtn" title="Favoritar selecionados">Favoritar</button>
-          <button class="bulk-btn" id="bulkSelectMediaBtn" title="Selecionar fotos e videos visiveis">Mídia</button>
-          <button class="bulk-btn" id="bulkSelectMonthBtn" title="Selecionar itens deste mes">Mês</button>
-          <button class="bulk-btn cancel" id="bulkCancelBtn" title="Cancelar selecao">Cancelar</button>
-        </div>
-      </header>
-
-    <!-- DROP ZONE OVERLAY -->
-    <div class="drop-overlay" id="dropOverlay">
-      <div class="drop-message">
-        <span class="drop-icon">+</span>
-        <p>Solte os arquivos aqui</p>
-      </div>
-    </div>
-
-    <!-- CONTENT AREA -->
-    <div class="content" id="content">
-      <section class="dashboard dashboard-home" id="dashboard">
-        <header class="dashboard-hero">
-          <div class="dashboard-hero-copy">
-            <span class="eyebrow">SEU ARQUIVO PESSOAL</span>
-            <h1 id="dashGreeting">Bem-vindo de volta.</h1>
-            <p id="dashHeroText">Tudo que importa, organizado em um só lugar.</p>
-          </div>
-          <div class="dashboard-hero-actions">
-            <label class="home-primary-action" for="fileInput">Adicionar arquivos <span>+</span></label>
-            <button class="home-secondary-action" id="dashboardTimelineBtn" type="button">Ver linha do tempo</button>
+          <div class="bulk-bar" id="bulkBar" style="display: none">
+            <span class="bulk-count" id="bulkCount">0 selecionados</span>
+            <button
+              class="bulk-btn"
+              id="bulkSelectAllBtn"
+              title="Selecionar todos visiveis"
+            >
+              Todos
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkMoveBtn"
+              title="Mover selecionados"
+            >
+              Mover
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkEditBtn"
+              title="Editar tags, prioridade e descricao em lote"
+            >
+              Editar
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkDownloadBtn"
+              title="Baixar selecionados"
+            >
+              Baixar
+            </button>
+            <button
+              class="bulk-btn danger"
+              id="bulkDeleteBtn"
+              title="Excluir selecionados"
+            >
+              Excluir
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkFavBtn"
+              title="Favoritar selecionados"
+            >
+              Favoritar
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkSelectMediaBtn"
+              title="Selecionar fotos e videos visiveis"
+            >
+              Mídia
+            </button>
+            <button
+              class="bulk-btn"
+              id="bulkSelectMonthBtn"
+              title="Selecionar itens deste mes"
+            >
+              Mês
+            </button>
+            <button
+              class="bulk-btn cancel"
+              id="bulkCancelBtn"
+              title="Cancelar selecao"
+            >
+              Cancelar
+            </button>
           </div>
         </header>
 
-        <section class="dashboard-stat-grid" aria-label="Resumo da biblioteca">
-          <article class="dash-card"><span class="dash-label">Arquivos</span><strong id="dashTotal">0</strong><span class="dash-foot">na biblioteca</span></article>
-          <article class="dash-card"><span class="dash-label">Imagens</span><strong id="dashImages">0</strong><span class="dash-foot">fotos e capturas</span></article>
-          <article class="dash-card"><span class="dash-label">Videos</span><strong id="dashVideos">0</strong><span class="dash-foot">para assistir</span></article>
-          <article class="dash-card"><span class="dash-label">Documentos</span><strong id="dashDocs">0</strong><span class="dash-foot">para consultar</span></article>
-          <article class="dash-card storage-card"><span class="dash-label">Armazenamento</span><strong id="dashStorageSummary">0 B</strong><span class="dash-foot">do seu cofre</span></article>
-        </section>
-
-        <section class="dashboard-feature-grid">
-          <article class="home-panel memory-spotlight-panel">
-            <div class="home-panel-head"><span class="eyebrow">NESTE DIA</span><span class="panel-kicker">MEMÓRIAS</span></div>
-            <div id="dashMemories" class="memory-spotlight">Sem memórias nesta data</div>
-          </article>
-          <article class="home-panel highlights-panel">
-            <div class="home-panel-head"><span class="eyebrow">DESTAQUES</span><button class="text-panel-action" id="dashboardAllFilesBtn" type="button">Ver arquivos</button></div>
-            <div id="dashHighlights" class="home-highlight-list">Nenhum destaque ainda</div>
-          </article>
-        </section>
-
-        <section class="dashboard-lower-grid">
-          <article class="home-panel albums-panel">
-            <div class="home-panel-head"><span class="eyebrow">ÁLBUNS</span><span class="panel-kicker">SUGERIDOS</span></div>
-            <div id="dashAlbumSuggestions" class="home-album-grid">As sugestões aparecerão nas fotos analisadas</div>
-          </article>
-          <article class="home-panel activity-panel">
-            <div class="home-panel-head"><span class="eyebrow">ATIVIDADE RECENTE</span><span class="panel-kicker">ÚLTIMAS AÇÕES</span></div>
-            <div id="dashHistory" class="dash-history">Sem histórico</div>
-          </article>
-        </section>
-      </section>
-      <section class="files-workspace" id="filesWorkspace" hidden aria-label="Arquivos e coleções">
-        <header class="library-page-header">
-          <div>
-            <span class="eyebrow">BIBLIOTECA</span>
-            <h2 id="currentFolderTitle">Todos os arquivos</h2>
-            <p id="currentFolderMeta">Seu acervo completo.</p>
+        <!-- DROP ZONE OVERLAY -->
+        <div class="drop-overlay" id="dropOverlay">
+          <div class="drop-message">
+            <span class="drop-icon">+</span>
+            <p>Solte os arquivos aqui</p>
           </div>
-          <button class="folder-create-action" id="createSubfolderBtn" type="button" title="Criar subpasta" aria-label="Criar subpasta">
-            <span aria-hidden="true">+</span><span id="createSubfolderLabel">Nova coleção</span>
+        </div>
+
+        <!-- CONTENT AREA -->
+        <div class="content" id="content" tabindex="-1">
+          <section
+            class="mural-workspace"
+            id="muralWorkspace"
+            hidden
+            aria-label="Mural visual"
+          ></section>
+          <section class="dashboard dashboard-home" id="dashboard">
+            <header class="dashboard-hero">
+              <div class="dashboard-hero-copy">
+                <span class="eyebrow">SEU ARQUIVO PESSOAL</span>
+                <h1 id="dashGreeting">Bem-vindo de volta.</h1>
+                <p id="dashHeroText">
+                  Tudo que importa, organizado em um só lugar.
+                </p>
+              </div>
+              <div class="dashboard-hero-actions">
+                <button class="home-primary-action" type="button" data-upload>
+                  Adicionar arquivos <span data-icon="Plus"></span>
+                </button>
+                <button
+                  class="home-secondary-action"
+                  id="dashboardTimelineBtn"
+                  type="button"
+                >
+                  Ver linha do tempo
+                </button>
+              </div>
+            </header>
+
+            <section
+              class="dashboard-stat-grid"
+              aria-label="Resumo da biblioteca"
+            >
+              <article class="dash-card">
+                <span class="dash-label">Arquivos</span
+                ><strong id="dashTotal">0</strong
+                ><span class="dash-foot">na biblioteca</span>
+              </article>
+              <article class="dash-card">
+                <span class="dash-label">Imagens</span
+                ><strong id="dashImages">0</strong
+                ><span class="dash-foot">fotos e capturas</span>
+              </article>
+              <article class="dash-card">
+                <span class="dash-label">Videos</span
+                ><strong id="dashVideos">0</strong
+                ><span class="dash-foot">para assistir</span>
+              </article>
+              <article class="dash-card">
+                <span class="dash-label">Documentos</span
+                ><strong id="dashDocs">0</strong
+                ><span class="dash-foot">para consultar</span>
+              </article>
+              <article class="dash-card storage-card">
+                <span class="dash-label">Armazenamento</span
+                ><strong id="dashStorageSummary">0 B</strong
+                ><span class="dash-foot">do seu cofre</span>
+              </article>
+            </section>
+
+            <section class="dashboard-feature-grid">
+              <article class="home-panel memory-spotlight-panel">
+                <div class="home-panel-head">
+                  <span class="eyebrow">NESTE DIA</span
+                  ><span class="panel-kicker">MEMÓRIAS</span>
+                </div>
+                <div id="dashMemories" class="memory-spotlight">
+                  Sem memórias nesta data
+                </div>
+              </article>
+              <article class="home-panel highlights-panel">
+                <div class="home-panel-head">
+                  <span class="eyebrow">DESTAQUES</span
+                  ><button
+                    class="text-panel-action"
+                    id="dashboardAllFilesBtn"
+                    type="button"
+                  >
+                    Ver arquivos
+                  </button>
+                </div>
+                <div id="dashHighlights" class="home-highlight-list">
+                  Nenhum destaque ainda
+                </div>
+              </article>
+            </section>
+
+            <section class="dashboard-lower-grid">
+              <article class="home-panel albums-panel">
+                <div class="home-panel-head">
+                  <span class="eyebrow">ÁLBUNS</span
+                  ><span class="panel-kicker">SUGERIDOS</span>
+                </div>
+                <div id="dashAlbumSuggestions" class="home-album-grid">
+                  As sugestões aparecerão nas fotos analisadas
+                </div>
+              </article>
+              <article class="home-panel activity-panel">
+                <div class="home-panel-head">
+                  <span class="eyebrow">ATIVIDADE RECENTE</span
+                  ><span class="panel-kicker">ÚLTIMAS AÇÕES</span>
+                </div>
+                <div id="dashHistory" class="dash-history">Sem histórico</div>
+              </article>
+            </section>
+          </section>
+          <section
+            class="files-workspace"
+            id="filesWorkspace"
+            hidden
+            aria-label="Arquivos e pastas"
+          >
+            <header class="library-page-header">
+              <div>
+                <span class="eyebrow">BIBLIOTECA</span>
+                <h2 id="currentFolderTitle">Todos os arquivos</h2>
+                <p id="currentFolderMeta">Seu acervo completo.</p>
+              </div>
+              <button
+                class="folder-create-action"
+                id="createSubfolderBtn"
+                type="button"
+                title="Criar subpasta"
+                aria-label="Criar subpasta"
+              >
+                <span aria-hidden="true" data-icon="Plus"></span
+                ><span id="createSubfolderLabel">Nova pasta</span>
+              </button>
+            </header>
+
+            <section
+              class="folder-children-section"
+              id="folderChildrenSection"
+              hidden
+              aria-label="Subpastas"
+            >
+              <div class="folder-children-heading">
+                <span class="eyebrow">DENTRO DESTA PASTA</span>
+                <span id="folderChildrenCount">0 subpastas</span>
+              </div>
+              <div class="folder-children-grid" id="folderChildrenGrid"></div>
+            </section>
+
+            <div class="empty-state" id="emptyState">
+              <div class="empty-icon" aria-hidden="true">
+                <span data-icon="FolderOpen"></span>
+              </div>
+              <h3 class="empty-title" id="emptyTitle">Cofre vazio</h3>
+              <p class="empty-sub" id="emptySub">
+                Organize fotos, videos e documentos em pastas.
+              </p>
+              <div class="empty-actions">
+                <button
+                  class="empty-action"
+                  id="clearSearchFilters"
+                  type="button"
+                  hidden
+                >
+                  Limpar busca e filtros
+                </button>
+                <button class="empty-action primary" type="button" data-upload>
+                  Enviar arquivos
+                </button>
+                <button
+                  class="empty-action"
+                  id="emptyNewFolderBtn"
+                  type="button"
+                >
+                  Criar pasta
+                </button>
+              </div>
+            </div>
+            <div class="grid" id="fileGrid"></div>
+            <div class="load-more-wrap">
+              <button
+                class="load-more-btn"
+                id="loadMoreBtn"
+                style="display: none"
+              >
+                Carregar mais
+              </button>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- MODAL: Nova Pasta -->
+    <div class="modal-overlay" id="folderModal">
+      <div class="modal">
+        <h2 class="modal-title" id="folderModalTitle">Nova Pasta</h2>
+        <p class="folder-modal-context" id="folderModalContext"></p>
+        <label class="field-label" for="folderNameInput">Nome da pasta</label
+        ><input
+          type="text"
+          class="modal-input"
+          id="folderNameInput"
+          placeholder="Nome da pasta..."
+          maxlength="40"
+        />
+        <label
+          class="field-label folder-account-field"
+          id="folderAccountField"
+          for="folderAccountSelect"
+          >Conta do Drive
+          <select class="modal-input" id="folderAccountSelect">
+            <option value="ac1">Ac1</option>
+            <option value="ac2">Ac2</option>
+            <option value="ac3">Ac3</option>
+            <option value="ac4">Ac4</option>
+          </select>
+        </label>
+        <div
+          class="destination-preview"
+          id="folderDestination"
+          role="status"
+          aria-live="polite"
+        ></div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="cancelFolder">Cancelar</button>
+          <button class="modal-btn confirm" id="confirmFolder">Criar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: Lightbox -->
+    <div class="lightbox" id="lightbox">
+      <button
+        class="lightbox-close"
+        id="lightboxClose"
+        aria-label="Fechar visualizador"
+      >
+        <span data-icon="X"></span>
+      </button>
+      <div class="lightbox-inner" id="lightboxInner"></div>
+      <div class="lightbox-info" id="lightboxInfo"></div>
+    </div>
+
+    <!-- MODAL: Config Firebase -->
+    <div class="modal-overlay" id="configModal" style="display: none">
+      <div class="modal config-modal">
+        <div class="config-header">
+          <span class="logo-icon">V</span>
+          <div>
+            <p class="modal-kicker">Primeiro uso</p>
+            <h2 class="modal-title">Configurar seu acervo</h2>
+          </div>
+        </div>
+        <p class="config-desc">
+          Explore agora. Configure o Google Drive quando quiser enviar arquivos
+          e guardar uma cópia dos metadados fora deste navegador.
+        </p>
+        <div class="config-fields">
+          <section class="config-step local-first-intro">
+            <p class="cfg-section-label">Seu acervo, sem servidor próprio</p>
+            <p>
+              Os metadados ficam neste navegador e são sincronizados com seu
+              Google Drive quando a conta está conectada. Os arquivos continuam
+              no Drive.
+            </p>
+            <p>
+              <strong>Atenção:</strong> alterações ainda não sincronizadas podem
+              ser perdidas ao limpar os dados do site. Exporte um backup JSON
+              regularmente.
+            </p>
+            <button class="utility-btn" id="legacyImportBtn" type="button">
+              Importar biblioteca da versão anterior
+            </button>
+          </section>
+          <section class="config-step drive-config-step">
+            <p class="cfg-section-label">Google Drive · conexão opcional</p>
+            <label class="field-label" for="cfg_googleClientId"
+              >OAuth Client ID
+              <input
+                class="modal-input"
+                id="cfg_googleClientId"
+                placeholder="000000000000-xxx.apps.googleusercontent.com"
+                autocomplete="off"
+              />
+            </label>
+            <div class="config-account-link">
+              <span
+                >Emails, nomes e estado das contas ficam na Central de
+                contas.</span
+              >
+              <button
+                class="modal-btn cancel"
+                id="openAccountsFromConfig"
+                type="button"
+              >
+                Abrir Central de contas
+              </button>
+            </div>
+            <details class="legacy-cloudinary-config">
+              <summary>
+                Credenciais antigas do Cloudinary (somente migração)
+              </summary>
+              <label class="field-label" for="cfg_cloudName"
+                >Cloud Name
+                <input
+                  class="modal-input"
+                  id="cfg_cloudName"
+                  placeholder="Cloud Name"
+                  autocomplete="off"
+              /></label>
+              <label class="field-label" for="cfg_uploadPreset"
+                >Upload Preset
+                <input
+                  class="modal-input"
+                  id="cfg_uploadPreset"
+                  placeholder="Upload Preset antigo"
+                  autocomplete="off"
+              /></label>
+            </details>
+          </section>
+        </div>
+        <p class="form-error" id="configError" role="alert"></p>
+        <div class="modal-actions">
+          <button
+            class="modal-btn cancel"
+            id="skipConfig"
+            style="display: none"
+          >
+            Explorar sem conectar
+          </button>
+          <button
+            class="modal-btn cancel"
+            id="cancelConfig"
+            style="display: none"
+          >
+            Cancelar
+          </button>
+          <button class="modal-btn confirm" id="saveConfig">
+            Salvar configuração
+          </button>
+        </div>
+        <p class="config-help">
+          Drive:
+          <a
+            href="https://console.cloud.google.com/apis/credentials"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Google Cloud Console</a
+          >
+          > ative a Google Drive API > crie um Cliente OAuth para aplicativo Web
+          e cadastre a URL deste VAULT como origem JavaScript autorizada.
+        </p>
+      </div>
+    </div>
+
+    <!-- MODAL: Info do arquivo -->
+    <div class="modal-overlay" id="infoModal">
+      <div class="modal info-modal">
+        <h2 class="modal-title">Informacoes</h2>
+        <div class="info-grid" id="infoModalBody"></div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="closeInfoModal">Fechar</button>
+        </div>
+      </div>
+    </div>
+    <!-- MODAL: Descricao do arquivo -->
+    <div class="modal-overlay" id="descriptionModal">
+      <div class="modal description-modal">
+        <h2 class="modal-title">Descricao</h2>
+        <p class="move-file-label" id="descriptionFileName"></p>
+        <label class="sr-only" for="descriptionInput"
+          >Descrição do arquivo</label
+        ><textarea
+          class="modal-input description-input"
+          id="descriptionInput"
+          placeholder="Escreva uma descricao para este arquivo..."
+          maxlength="1000"
+        ></textarea>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="cancelDescription">
+            Cancelar
+          </button>
+          <button class="modal-btn confirm" id="saveDescription">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: Central de contas Google Drive -->
+    <div
+      class="modal-overlay"
+      id="accountsModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="accountsModalTitle"
+    >
+      <div class="modal accounts-modal">
+        <header class="accounts-modal-header">
+          <div>
+            <p class="modal-kicker">Google Drive</p>
+            <h2 class="modal-title" id="accountsModalTitle">
+              Central de contas
+            </h2>
+            <p class="accounts-summary" id="accountsSummary">
+              Gerencie Ac1 a Ac4 e acompanhe a sincronização.
+            </p>
+          </div>
+          <button
+            class="modal-icon-btn"
+            id="closeAccountsModal"
+            type="button"
+            aria-label="Fechar Central de contas"
+          >
+            <span data-icon="X"></span>
           </button>
         </header>
 
-        <section class="folder-children-section" id="folderChildrenSection" hidden aria-label="Subpastas">
-          <div class="folder-children-heading">
-            <span class="eyebrow">DENTRO DESTA PASTA</span>
-            <span id="folderChildrenCount">0 subpastas</span>
-          </div>
-          <div class="folder-children-grid" id="folderChildrenGrid"></div>
-        </section>
-
-        <div class="empty-state" id="emptyState">
-          <div class="empty-icon">VAULT</div>
-          <p class="empty-title" id="emptyTitle">Cofre vazio</p>
-          <p class="empty-sub" id="emptySub">Organize fotos, videos e documentos em pastas.</p>
-          <div class="empty-actions">
-            <label class="empty-action primary" for="fileInput">Enviar arquivos</label>
-            <button class="empty-action" id="emptyNewFolderBtn" type="button">Criar pasta</button>
-          </div>
-        </div>
-        <div class="grid" id="fileGrid"></div>
-        <div class="load-more-wrap">
-          <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
-        </div>
-      </section>
-    </div>
-
-    </main>
-  </div>
-
-  <!-- MODAL: Nova Pasta -->
-  <div class="modal-overlay" id="folderModal">
-    <div class="modal">
-      <h2 class="modal-title" id="folderModalTitle">Nova Pasta</h2>
-      <p class="folder-modal-context" id="folderModalContext"></p>
-      <input type="text" class="modal-input" id="folderNameInput" placeholder="Nome da pasta..." maxlength="40" />
-      <label class="field-label folder-account-field" id="folderAccountField" for="folderAccountSelect">Conta do Drive
-        <select class="modal-input" id="folderAccountSelect">
-          <option value="ac1">Ac1</option>
-          <option value="ac2">Ac2</option>
-          <option value="ac3">Ac3</option>
-          <option value="ac4">Ac4</option>
-        </select>
-      </label>
-      <div class="destination-preview" id="folderDestination" role="status" aria-live="polite"></div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="cancelFolder">Cancelar</button>
-        <button class="modal-btn confirm" id="confirmFolder">Criar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: Lightbox -->
-  <div class="lightbox" id="lightbox">
-    <button class="lightbox-close" id="lightboxClose">×</button>
-    <div class="lightbox-inner" id="lightboxInner"></div>
-    <div class="lightbox-info" id="lightboxInfo"></div>
-  </div>
-
-  <!-- MODAL: Config Firebase -->
-  <div class="modal-overlay" id="configModal" style="display:flex;">
-    <div class="modal config-modal">
-      <div class="config-header">
-        <span class="logo-icon">V</span>
-        <div>
-          <p class="modal-kicker">Primeiro uso</p>
-          <h2 class="modal-title">Conectar o VAULT</h2>
-        </div>
-      </div>
-      <p class="config-desc">Conecte os metadados no Firebase Firestore e até quatro contas Google Drive. O acesso às contas usa somente o OAuth do Google Cloud; os tokens permanecem apenas durante a sessão.</p>
-      <div class="config-fields">
-        <section class="config-step">
-          <p class="cfg-section-label">1. Firebase Firestore</p>
-          <label class="field-label" for="cfg_apiKey">apiKey <input class="modal-input" id="cfg_apiKey" placeholder="apiKey" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_authDomain">authDomain <input class="modal-input" id="cfg_authDomain" placeholder="authDomain" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_projectId">projectId <input class="modal-input" id="cfg_projectId" placeholder="projectId" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_storageBucket">storageBucket <input class="modal-input" id="cfg_storageBucket" placeholder="storageBucket" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_messagingSenderId">messagingSenderId <input class="modal-input" id="cfg_messagingSenderId" placeholder="messagingSenderId" autocomplete="off" /></label>
-          <label class="field-label" for="cfg_appId">appId <input class="modal-input" id="cfg_appId" placeholder="appId" autocomplete="off" /></label>
-        </section>
-        <section class="config-step drive-config-step">
-          <p class="cfg-section-label">2. Google Drive</p>
-          <label class="field-label" for="cfg_googleClientId">OAuth Client ID
-            <input class="modal-input" id="cfg_googleClientId" placeholder="000000000000-xxx.apps.googleusercontent.com" autocomplete="off" />
+        <div class="accounts-toolbar">
+          <label class="accounts-search">
+            <span class="sr-only">Buscar conta</span>
+            <input
+              class="modal-input"
+              id="accountsSearch"
+              type="search"
+              placeholder="Buscar por Ac, nome ou email"
+            />
           </label>
-          <div class="config-account-link">
-            <span>Emails, nomes e estado das contas ficam na Central de contas.</span>
-            <button class="modal-btn cancel" id="openAccountsFromConfig" type="button">Abrir Central de contas</button>
-          </div>
-          <details class="legacy-cloudinary-config">
-            <summary>Credenciais antigas do Cloudinary (somente migração)</summary>
-            <label class="field-label" for="cfg_cloudName">Cloud Name <input class="modal-input" id="cfg_cloudName" placeholder="Cloud Name" autocomplete="off" /></label>
-            <label class="field-label" for="cfg_uploadPreset">Upload Preset <input class="modal-input" id="cfg_uploadPreset" placeholder="Upload Preset antigo" autocomplete="off" /></label>
-          </details>
-        </section>
-      </div>
-      <p class="form-error" id="configError" role="alert"></p>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="skipConfig" style="display:none;">Explorar sem conectar</button>
-        <button class="modal-btn cancel" id="cancelConfig" style="display:none;">Cancelar</button>
-        <button class="modal-btn confirm" id="saveConfig">Salvar e Conectar</button>
-      </div>
-      <p class="config-help">
-        Firebase: <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> > Configuracoes > SDK<br/>
-        Drive: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a> > ative a Google Drive API > crie um Cliente OAuth para aplicativo Web e cadastre a URL deste VAULT como origem JavaScript autorizada.
-      </p>
-    </div>
-  </div>
-
-  <!-- MODAL: Info do arquivo -->
-  <div class="modal-overlay" id="infoModal">
-    <div class="modal info-modal">
-      <h2 class="modal-title">Informacoes</h2>
-      <div class="info-grid" id="infoModalBody"></div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="closeInfoModal">Fechar</button>
-      </div>
-    </div>
-  </div>
-  <!-- MODAL: Descricao do arquivo -->
-  <div class="modal-overlay" id="descriptionModal">
-    <div class="modal description-modal">
-      <h2 class="modal-title">Descricao</h2>
-      <p class="move-file-label" id="descriptionFileName"></p>
-      <textarea class="modal-input description-input" id="descriptionInput" placeholder="Escreva uma descricao para este arquivo..." maxlength="1000"></textarea>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="cancelDescription">Cancelar</button>
-        <button class="modal-btn confirm" id="saveDescription">Salvar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: Central de contas Google Drive -->
-  <div class="modal-overlay" id="accountsModal" role="dialog" aria-modal="true" aria-labelledby="accountsModalTitle">
-    <div class="modal accounts-modal">
-      <header class="accounts-modal-header">
-        <div>
-          <p class="modal-kicker">Google Drive</p>
-          <h2 class="modal-title" id="accountsModalTitle">Central de contas</h2>
-          <p class="accounts-summary" id="accountsSummary">Gerencie Ac1 a Ac4 sem alterar o Firebase.</p>
+          <label>
+            <span class="sr-only">Filtrar contas</span>
+            <select class="modal-input" id="accountsFilter">
+              <option value="all">Todas</option>
+              <option value="connected">Disponíveis</option>
+              <option value="attention">Precisam de atenção</option>
+              <option value="unconfigured">Não configuradas</option>
+            </select>
+          </label>
+          <button class="modal-btn cancel" id="reviewAccountsBtn" type="button">
+            Revisar contas com problema
+          </button>
         </div>
-        <button class="modal-icon-btn" id="closeAccountsModal" type="button" aria-label="Fechar Central de contas">×</button>
-      </header>
 
-      <div class="accounts-toolbar">
-        <label class="accounts-search">
-          <span class="sr-only">Buscar conta</span>
-          <input class="modal-input" id="accountsSearch" type="search" placeholder="Buscar por Ac, nome ou email" />
-        </label>
-        <label>
-          <span class="sr-only">Filtrar contas</span>
-          <select class="modal-input" id="accountsFilter">
-            <option value="all">Todas</option>
-            <option value="connected">Disponíveis</option>
-            <option value="attention">Precisam de atenção</option>
-            <option value="unconfigured">Não configuradas</option>
-          </select>
-        </label>
-        <button class="modal-btn cancel" id="reviewAccountsBtn" type="button">Revisar contas com problema</button>
-      </div>
+        <section
+          class="account-review-banner"
+          id="accountReviewBanner"
+          hidden
+          aria-live="polite"
+        >
+          <div>
+            <strong id="accountReviewTitle">Revisão de contas</strong
+            ><span id="accountReviewText"></span>
+          </div>
+          <button
+            class="modal-btn confirm"
+            id="accountReviewAction"
+            type="button"
+          >
+            Continuar
+          </button>
+          <button class="modal-btn cancel" id="accountReviewSkip" type="button">
+            Pular
+          </button>
+        </section>
 
-      <section class="account-review-banner" id="accountReviewBanner" hidden aria-live="polite">
-        <div><strong id="accountReviewTitle">Revisão de contas</strong><span id="accountReviewText"></span></div>
-        <button class="modal-btn confirm" id="accountReviewAction" type="button">Continuar</button>
-        <button class="modal-btn cancel" id="accountReviewSkip" type="button">Pular</button>
-      </section>
+        <div class="accounts-grid" id="accountsGrid"></div>
+        <p class="accounts-empty" id="accountsEmpty" hidden>
+          Nenhuma conta corresponde à busca.
+        </p>
+        <div
+          class="sr-only"
+          id="accountsLiveRegion"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
 
-      <div class="accounts-grid" id="accountsGrid"></div>
-      <p class="accounts-empty" id="accountsEmpty" hidden>Nenhuma conta corresponde à busca.</p>
-      <div class="sr-only" id="accountsLiveRegion" role="status" aria-live="polite" aria-atomic="true"></div>
-
-      <footer class="modal-actions accounts-footer">
-        <button class="modal-btn cancel" id="accountsAdvancedConfig" type="button">Configuração avançada</button>
-        <button class="modal-btn confirm" id="accountsDone" type="button">Concluir</button>
-      </footer>
-    </div>
-  </div>
-
-  <!-- MODAL: formulario reutilizavel -->
-  <div class="modal-overlay" id="formModal">
-    <div class="modal form-modal">
-      <h2 class="modal-title" id="formModalTitle">Editar</h2>
-      <div class="form-modal-body" id="formModalBody"></div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="formModalCancel" type="button">Cancelar</button>
-        <button class="modal-btn confirm" id="formModalConfirm" type="button">Salvar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: confirmacao reutilizavel -->
-  <div class="modal-overlay" id="confirmModal">
-    <div class="modal confirm-modal">
-      <h2 class="modal-title" id="confirmModalTitle">Confirmar</h2>
-      <p class="confirm-message" id="confirmModalMessage"></p>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="confirmModalCancel" type="button">Cancelar</button>
-        <button class="modal-btn confirm" id="confirmModalConfirm" type="button">Confirmar</button>
+        <footer class="modal-actions accounts-footer">
+          <button
+            class="modal-btn cancel"
+            id="accountsAdvancedConfig"
+            type="button"
+          >
+            Configuração avançada
+          </button>
+          <button class="modal-btn confirm" id="accountsDone" type="button">
+            Concluir
+          </button>
+        </footer>
       </div>
     </div>
-  </div>
 
-  <!-- MODAL: escolher capa do album -->
-  <div class="modal-overlay" id="coverModal">
-    <div class="modal cover-modal">
-      <h2 class="modal-title" id="coverModalTitle">Escolher capa</h2>
-      <p class="move-file-label" id="coverModalSub"></p>
-      <div class="cover-picker-grid" id="coverPickerGrid"></div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="clearFolderCover" type="button">Remover capa</button>
-        <button class="modal-btn cancel" id="closeCoverModal" type="button">Fechar</button>
+    <!-- MODAL: formulario reutilizavel -->
+    <div class="modal-overlay" id="formModal">
+      <div class="modal form-modal">
+        <h2 class="modal-title" id="formModalTitle">Editar</h2>
+        <div class="form-modal-body" id="formModalBody"></div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="formModalCancel" type="button">
+            Cancelar
+          </button>
+          <button class="modal-btn confirm" id="formModalConfirm" type="button">
+            Salvar
+          </button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- MODAL: opcoes da pasta -->
-  <div class="modal-overlay" id="folderActionsModal">
-    <div class="modal folder-actions-modal">
-      <h2 class="modal-title" id="folderActionsTitle">Pasta</h2>
-      <div class="folder-action-list">
-        <button class="folder-action-option" id="folderActionRename" type="button">Renomear</button>
-        <button class="folder-action-option danger" id="folderActionDelete" type="button">Excluir</button>
-      </div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="folderActionsClose" type="button">Fechar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- LEITOR DE MANGA -->
-  <div class="manga-reader" id="mangaReader">
-    <div class="manga-toolbar">
-      <div class="manga-title-wrap">
-        <span class="manga-kicker">Leitor de mangá</span>
-        <strong id="mangaTitle">Pasta</strong>
-        <span id="mangaCounter">0 / 0</span>
-      </div>
-      <div class="manga-actions">
-        <button class="manga-btn active" id="mangaModeHorizontal" type="button">Horizontal</button>
-        <button class="manga-btn" id="mangaModeVertical" type="button">Vertical</button>
-        <button class="manga-btn" id="mangaZoomOut" type="button" title="Diminuir">-</button>
-        <button class="manga-btn" id="mangaZoomIn" type="button" title="Aumentar">+</button>
-        <button class="manga-btn" id="mangaClose" type="button">Fechar</button>
+    <!-- MODAL: confirmacao reutilizavel -->
+    <div class="modal-overlay" id="confirmModal">
+      <div class="modal confirm-modal">
+        <h2 class="modal-title" id="confirmModalTitle">Confirmar</h2>
+        <p class="confirm-message" id="confirmModalMessage"></p>
+        <div class="modal-actions">
+          <button
+            class="modal-btn cancel"
+            id="confirmModalCancel"
+            type="button"
+          >
+            Cancelar
+          </button>
+          <button
+            class="modal-btn confirm"
+            id="confirmModalConfirm"
+            type="button"
+          >
+            Confirmar
+          </button>
+        </div>
       </div>
     </div>
-    <button class="manga-nav manga-prev" id="mangaPrev" type="button" aria-label="Pagina anterior">‹</button>
-    <div class="manga-stage horizontal" id="mangaStage"></div>
-    <button class="manga-nav manga-next" id="mangaNext" type="button" aria-label="Proxima pagina">›</button>
-  </div>
 
-  <!-- MODAL: Mover arquivo / lote -->
-  <div class="modal-overlay" id="moveModal">
-    <div class="modal move-modal">
-      <h2 class="modal-title">Mover Arquivo</h2>
-      <p class="move-file-label" id="moveFileName"></p>
-      <p class="sidebar-label" style="margin-bottom:10px;">ESCOLHA O DESTINO</p>
-      <div class="move-folder-list" id="moveFolderList"></div>
-      <div class="modal-actions" style="margin-top:16px;">
-        <button class="modal-btn cancel" id="closeMoveModal">Cancelar</button>
+    <!-- MODAL: escolher capa do album -->
+    <div class="modal-overlay" id="coverModal">
+      <div class="modal cover-modal">
+        <h2 class="modal-title" id="coverModalTitle">Escolher capa</h2>
+        <p class="move-file-label" id="coverModalSub"></p>
+        <div class="cover-picker-grid" id="coverPickerGrid"></div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="clearFolderCover" type="button">
+            Remover capa
+          </button>
+          <button class="modal-btn cancel" id="closeCoverModal" type="button">
+            Fechar
+          </button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- TOAST -->
-  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <div class="sr-only" id="migrationLiveRegion" role="status" aria-live="polite" aria-atomic="true"></div>
-
-  <!-- UPLOAD PROGRESS -->
-  <div class="upload-progress-panel" id="uploadPanel" style="display:none;" role="region" aria-label="Centro de atividades">
-    <div class="upload-panel-header">
-      <div><strong>Atividades</strong><span id="activitySummary">Nenhuma atividade</span></div>
-      <div class="activity-panel-actions">
-        <button id="clearActivities" type="button">Limpar concluídas</button>
-        <button id="cancelActivities" type="button">Cancelar uploads</button>
-        <button id="closePanel" type="button" aria-label="Fechar centro de atividades">×</button>
+    <!-- MODAL: opcoes da pasta -->
+    <div class="modal-overlay" id="folderActionsModal">
+      <div class="modal folder-actions-modal">
+        <h2 class="modal-title" id="folderActionsTitle">Pasta</h2>
+        <div class="folder-action-list">
+          <button
+            class="folder-action-option"
+            id="folderActionRename"
+            type="button"
+          >
+            Renomear
+          </button>
+          <button
+            class="folder-action-option danger"
+            id="folderActionDelete"
+            type="button"
+          >
+            Excluir
+          </button>
+        </div>
+        <div class="modal-actions">
+          <button
+            class="modal-btn cancel"
+            id="folderActionsClose"
+            type="button"
+          >
+            Fechar
+          </button>
+        </div>
       </div>
     </div>
-    <div id="uploadList" aria-live="polite" aria-relevant="additions text"></div>
-  </div>
 
-  <script type="module" src="app.js?v=accounts3"></script>
-</body>
+    <!-- LEITOR DE MANGA -->
+    <div class="manga-reader" id="mangaReader">
+      <div class="manga-toolbar">
+        <div class="manga-title-wrap">
+          <span class="manga-kicker">Leitor de mangá</span>
+          <strong id="mangaTitle">Pasta</strong>
+          <span id="mangaCounter">0 / 0</span>
+        </div>
+        <div class="manga-actions">
+          <button
+            class="manga-btn active"
+            id="mangaModeHorizontal"
+            type="button"
+          >
+            Horizontal
+          </button>
+          <button class="manga-btn" id="mangaModeVertical" type="button">
+            Vertical
+          </button>
+          <button
+            class="manga-btn"
+            id="mangaZoomOut"
+            type="button"
+            title="Diminuir"
+          >
+            <span data-icon="ZoomOut"></span>
+          </button>
+          <button
+            class="manga-btn"
+            id="mangaZoomIn"
+            type="button"
+            title="Aumentar"
+          >
+            <span data-icon="ZoomIn"></span>
+          </button>
+          <button class="manga-btn" id="mangaClose" type="button">
+            Fechar
+          </button>
+        </div>
+      </div>
+      <button
+        class="manga-nav manga-prev"
+        id="mangaPrev"
+        type="button"
+        aria-label="Pagina anterior"
+      >
+        <span data-icon="ChevronLeft"></span>
+      </button>
+      <div class="manga-stage horizontal" id="mangaStage"></div>
+      <button
+        class="manga-nav manga-next"
+        id="mangaNext"
+        type="button"
+        aria-label="Proxima pagina"
+      >
+        <span data-icon="ChevronRight"></span>
+      </button>
+    </div>
+
+    <!-- MODAL: Mover arquivo / lote -->
+    <div class="modal-overlay" id="moveModal">
+      <div class="modal move-modal">
+        <h2 class="modal-title">Mover Arquivo</h2>
+        <p class="move-file-label" id="moveFileName"></p>
+        <p class="sidebar-label" style="margin-bottom: 10px">
+          ESCOLHA O DESTINO
+        </p>
+        <div class="move-folder-list" id="moveFolderList"></div>
+        <div class="modal-actions" style="margin-top: 16px">
+          <button class="modal-btn cancel" id="closeMoveModal">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div
+      class="toast"
+      id="toast"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <div
+      class="sr-only"
+      id="migrationLiveRegion"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+
+    <!-- UPLOAD PROGRESS -->
+    <div
+      class="upload-progress-panel"
+      id="uploadPanel"
+      style="display: none"
+      role="region"
+      aria-label="Centro de atividades"
+    >
+      <div class="upload-panel-header">
+        <div>
+          <strong>Atividades</strong
+          ><span id="activitySummary">Nenhuma atividade</span>
+        </div>
+        <div class="activity-panel-actions">
+          <button id="clearActivities" type="button">Limpar concluídas</button>
+          <button id="cancelActivities" type="button">Cancelar uploads</button>
+          <button
+            id="closePanel"
+            type="button"
+            aria-label="Fechar centro de atividades"
+          >
+            <span data-icon="X"></span>
+          </button>
+        </div>
+      </div>
+      <div
+        id="uploadList"
+        aria-live="polite"
+        aria-relevant="additions text"
+      ></div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
 </html>

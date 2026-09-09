@@ -3,17 +3,41 @@
 // + Selecao em lote   + Subpastas   + Favoritos   + Botao config
 // ============================================================
 
-import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, deleteDoc,
-  doc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, setDoc, enableIndexedDbPersistence
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  openLocalStore,
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+  setDoc,
+  configureDriveSync,
+  syncAccount,
+  getSyncSummary,
+  allRecords,
+} from "./modules/local-store.js";
+import { icon, hydrateIcons } from "./modules/icons.js";
+import { installInterface } from "./modules/interface.js";
+import { registerPwa } from "./modules/pwa.js";
+import { createMural } from "./modules/mural.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
-import { createLocalTextSearch, extractSearchText } from "./modules/local-text-search.js";
+import {
+  createLocalTextSearch,
+  extractSearchText,
+} from "./modules/local-text-search.js";
 import { readPhotoMetadata } from "./modules/photo-metadata.js";
-import { GoogleDriveManager, isGoogleDriveRecord, drivePreviewUrl, driveViewUrl } from "./modules/google-drive.js";
+import {
+  GoogleDriveManager,
+  isGoogleDriveRecord,
+  drivePreviewUrl,
+  driveViewUrl,
+} from "./modules/google-drive.js";
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
@@ -25,19 +49,20 @@ let accountFilterValue = "all";
 let accountReviewQueue = [];
 const driveAccountRuntime = new Map();
 const ROOT_ID = "root";
-let currentSearch  = "";
-let currentSort    = "newest";
-let thumbQuality   = localStorage.getItem("vault_thumb_quality") || "medium";
-let activeAccountView = localStorage.getItem("vault_drive_account_view") || "all";
-let isCompactView  = false;
-let isSelectMode   = false;
-let selectedIds    = new Set();
+let currentSearch = "";
+let currentSort = "newest";
+let thumbQuality = localStorage.getItem("vault_thumb_quality") || "medium";
+let activeAccountView =
+  localStorage.getItem("vault_drive_account_view") || "all";
+let isCompactView = false;
+let isSelectMode = false;
+let selectedIds = new Set();
 let advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
 let slideshowTimer = null;
-let folders        = [];
-let files          = [];
-let unsubFiles     = null;
-let unsubFolders   = null;
+let folders = [];
+let files = [];
+let unsubFiles = null;
+let unsubFolders = null;
 let folderById = new Map();
 let folderChildrenByParent = new Map();
 let fileById = new Map();
@@ -67,9 +92,10 @@ const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
 const photoMetadataCache = new WeakMap();
-const PHOTO_EXTENSION_PATTERN = /\.(?:arw|avif|bmp|cr2|cr3|dng|gif|heic|heif|iiq|jpe?g|jfif|jp2|jxl|nef|orf|pef|png|psd|qoi|raf|raw|rw2|svg|tga|tif?f|webp)$/i;
+const PHOTO_EXTENSION_PATTERN =
+  /\.(?:arw|avif|bmp|cr2|cr3|dng|gif|heic|heif|iiq|jpe?g|jfif|jp2|jxl|nef|orf|pef|png|psd|qoi|raf|raw|rw2|svg|tga|tif?f|webp)$/i;
 
-let cloudName    = "";
+let cloudName = "";
 let uploadPreset = "";
 let googleClientId = "";
 let driveManager = null;
@@ -80,8 +106,8 @@ const driveThumbnailRequests = new Map();
 const driveObjectUrls = new Map();
 
 // Move modal state
-let fileToMove    = null;
-let bulkMoveMode  = false;
+let fileToMove = null;
+let bulkMoveMode = false;
 let fileToDescribe = null;
 let folderToCover = null;
 let folderForActions = null;
@@ -90,6 +116,7 @@ let activeUploads = new Map();
 let lightboxFiles = [];
 let lightboxIndex = -1;
 let lightboxZoom = 1;
+let lightboxGeneration = 0;
 let mangaState = {
   pages: [],
   index: 0,
@@ -100,38 +127,38 @@ let visibleLimit = 60;
 const PAGE_SIZE = 60;
 
 // ??? DOM refs ?????????????????????????????????????????????
-const $ = id => document.getElementById(id);
-const folderList      = $("folderList");
-const fileGrid        = $("fileGrid");
-const emptyState      = $("emptyState");
-const emptyTitle      = $("emptyTitle");
-const emptySub        = $("emptySub");
-const breadcrumb      = $("breadcrumb");
-const storageBar      = $("storageBar");
-const storageText     = $("storageText");
-const fileInput       = $("fileInput");
-const dropOverlay     = $("dropOverlay");
-const lightbox        = $("lightbox");
-const lightboxInner   = $("lightboxInner");
-const lightboxInfo    = $("lightboxInfo");
-const folderModal     = $("folderModal");
+const $ = (id) => document.getElementById(id);
+const folderList = $("folderList");
+const fileGrid = $("fileGrid");
+const emptyState = $("emptyState");
+const emptyTitle = $("emptyTitle");
+const emptySub = $("emptySub");
+const breadcrumb = $("breadcrumb");
+const storageBar = $("storageBar");
+const storageText = $("storageText");
+const fileInput = $("fileInput");
+const dropOverlay = $("dropOverlay");
+const lightbox = $("lightbox");
+const lightboxInner = $("lightboxInner");
+const lightboxInfo = $("lightboxInfo");
+const folderModal = $("folderModal");
 const folderNameInput = $("folderNameInput");
 const folderAccountField = $("folderAccountField");
 const folderAccountSelect = $("folderAccountSelect");
-const configModal     = $("configModal");
-const uploadPanel     = $("uploadPanel");
-const uploadList      = $("uploadList");
-const moveModal       = $("moveModal");
-const moveFileName    = $("moveFileName");
-const moveFolderList  = $("moveFolderList");
-const sidebar         = $("sidebar");
-const mainEl          = $("main");
-const toast           = $("toast");
-const bulkBar         = $("bulkBar");
-const bulkCount       = $("bulkCount");
-const searchInput     = $("searchInput");
-const sortSelect      = $("sortSelect");
-const qualitySelect   = $("qualitySelect");
+const configModal = $("configModal");
+const uploadPanel = $("uploadPanel");
+const uploadList = $("uploadList");
+const moveModal = $("moveModal");
+const moveFileName = $("moveFileName");
+const moveFolderList = $("moveFolderList");
+const sidebar = $("sidebar");
+const mainEl = $("main");
+const toast = $("toast");
+const bulkBar = $("bulkBar");
+const bulkCount = $("bulkCount");
+const searchInput = $("searchInput");
+const sortSelect = $("sortSelect");
+const qualitySelect = $("qualitySelect");
 const accountViewSelect = $("accountViewSelect");
 const accountConnectBtn = $("accountConnectBtn");
 const activityCenterBtn = $("activityCenterBtn");
@@ -150,8 +177,8 @@ const accountReviewText = $("accountReviewText");
 const accountReviewAction = $("accountReviewAction");
 const accountReviewSkip = $("accountReviewSkip");
 const migrationLiveRegion = $("migrationLiveRegion");
-const dashboard       = $("dashboard");
-const filesWorkspace  = $("filesWorkspace");
+const dashboard = $("dashboard");
+const filesWorkspace = $("filesWorkspace");
 const folderChildrenSection = $("folderChildrenSection");
 const folderChildrenGrid = $("folderChildrenGrid");
 const folderChildrenCount = $("folderChildrenCount");
@@ -166,7 +193,7 @@ const navHome = $("navHome");
 const navFiles = $("navFiles");
 const themeToggle = $("themeToggle");
 const themeToggleText = $("themeToggleText");
-const loadMoreBtn     = $("loadMoreBtn");
+const loadMoreBtn = $("loadMoreBtn");
 const advFolderSelect = $("advFolderSelect");
 const advPrioritySelect = $("advPrioritySelect");
 const advDateFrom = $("advDateFrom");
@@ -222,7 +249,9 @@ const THEME_KEY = "vault_theme";
 function preferredTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved === "light" || saved === "dark") return saved;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 function applyTheme(theme, options = {}) {
@@ -231,11 +260,22 @@ function applyTheme(theme, options = {}) {
   document.body.dataset.theme = nextTheme;
   document.documentElement.style.colorScheme = nextTheme;
   if (options.persist !== false) localStorage.setItem(THEME_KEY, nextTheme);
-  themeToggle?.setAttribute("aria-label", isDark ? "Ativar modo claro" : "Ativar modo escuro");
-  themeToggle?.setAttribute("title", isDark ? "Ativar modo claro" : "Ativar modo escuro");
+  themeToggle?.setAttribute(
+    "aria-label",
+    isDark ? "Ativar modo claro" : "Ativar modo escuro",
+  );
+  themeToggle?.setAttribute(
+    "title",
+    isDark ? "Ativar modo claro" : "Ativar modo escuro",
+  );
   themeToggle?.setAttribute("aria-pressed", isDark ? "true" : "false");
-  if (themeToggleText) themeToggleText.textContent = isDark ? "Ativar modo claro" : "Ativar modo escuro";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isDark ? "#151b18" : "#f3f0e8");
+  if (themeToggleText)
+    themeToggleText.textContent = isDark
+      ? "Ativar modo claro"
+      : "Ativar modo escuro";
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", isDark ? "#151b18" : "#f3f0e8");
 }
 
 themeToggle?.addEventListener("click", () => {
@@ -252,15 +292,18 @@ function loadConfig() {
       localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     }
     return cfg;
+  } catch {
+    return null;
   }
-  catch { return null; }
 }
 function saveConfig(cfg) {
   const sanitized = { ...cfg };
   delete sanitized.ownerEmail;
   localStorage.setItem(CFG_KEY, JSON.stringify(sanitized));
 }
-function clearConfig()   { localStorage.removeItem(CFG_KEY); }
+function clearConfig() {
+  localStorage.removeItem(CFG_KEY);
+}
 
 // ??? Bootstrap ????????????????????????????????????????????
 const savedCfg = loadConfig();
@@ -270,37 +313,35 @@ queueMicrotask(async () => {
   } catch (e) {
     console.warn("Indice local indisponivel", e);
   }
-  if (savedCfg) { prefillConfig(savedCfg); initApp(savedCfg); }
-  else openConfigModal(false); // nao pode cancelar na primeira vez
+  prefillConfig(savedCfg || {});
+  await initApp(savedCfg || {});
+  if (!savedCfg) openConfigModal(false);
   qualitySelect.value = thumbQuality;
-  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView) ? activeAccountView : "all";
+  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView)
+    ? activeAccountView
+    : "all";
   activeAccountView = accountViewSelect.value;
   renderAccountControls();
   renderHistory();
   updateConnectionStatus();
   registerPwa();
 });
-document.addEventListener("click", e => {
+document.addEventListener("click", (e) => {
   if (!e.target.closest(".file-actions")) closeActionMenus();
 });
 
 function prefillConfig(cfg) {
-  $("cfg_apiKey").value            = cfg.apiKey            || "";
-  $("cfg_authDomain").value        = cfg.authDomain        || "";
-  $("cfg_projectId").value         = cfg.projectId         || "";
-  $("cfg_storageBucket").value     = cfg.storageBucket     || "";
-  $("cfg_messagingSenderId").value = cfg.messagingSenderId || "";
-  $("cfg_appId").value             = cfg.appId             || "";
-  $("cfg_cloudName").value         = cfg.cloudName         || "";
-  $("cfg_uploadPreset").value      = cfg.uploadPreset      || "";
-  $("cfg_googleClientId").value    = cfg.googleClientId    || "";
+  $("cfg_cloudName").value = cfg.cloudName || "";
+  $("cfg_uploadPreset").value = cfg.uploadPreset || "";
+  $("cfg_googleClientId").value = cfg.googleClientId || "";
   renderDriveAccountSlots();
 }
 
 function normalizeDriveAccounts(accounts = []) {
   return Array.from({ length: 4 }, (_, index) => {
     const slot = `ac${index + 1}`;
-    const account = accounts.find(item => item?.slot === slot) || accounts[index] || {};
+    const account =
+      accounts.find((item) => item?.slot === slot) || accounts[index] || {};
     return {
       slot,
       email: account.email || "",
@@ -314,23 +355,20 @@ function normalizeDriveAccounts(accounts = []) {
 }
 
 function configFromForm() {
-  const previousAccounts = normalizeDriveAccounts(currentConfig?.driveAccounts || savedCfg?.driveAccounts || []);
+  const previousAccounts = normalizeDriveAccounts(
+    currentConfig?.driveAccounts || savedCfg?.driveAccounts || [],
+  );
   return {
-    apiKey:            $("cfg_apiKey").value.trim(),
-    authDomain:        $("cfg_authDomain").value.trim(),
-    projectId:         $("cfg_projectId").value.trim(),
-    storageBucket:     $("cfg_storageBucket").value.trim(),
-    messagingSenderId: $("cfg_messagingSenderId").value.trim(),
-    appId:             $("cfg_appId").value.trim(),
-    googleClientId:    $("cfg_googleClientId").value.trim(),
+    googleClientId: $("cfg_googleClientId").value.trim(),
     driveAccounts: previousAccounts,
-    cloudName:         $("cfg_cloudName").value.trim(),
-    uploadPreset:      $("cfg_uploadPreset").value.trim(),
+    cloudName: $("cfg_cloudName").value.trim(),
+    uploadPreset: $("cfg_uploadPreset").value.trim(),
   };
 }
 
 function openConfigModal(canCancel = true) {
   configModal.style.display = "flex";
+  configModal.querySelector(".modal").scrollTop = 0;
   $("cancelConfig").style.display = canCancel ? "inline-flex" : "none";
   $("skipConfig").style.display = canCancel ? "none" : "inline-flex";
   showConfigError("");
@@ -338,10 +376,15 @@ function openConfigModal(canCancel = true) {
 
 // Botao de configuracao na sidebar
 $("openConfigBtn").onclick = () => openConfigModal(true);
-$("cancelConfig").onclick  = () => { configModal.style.display = "none"; };
+$("cancelConfig").onclick = () => {
+  configModal.style.display = "none";
+};
 $("skipConfig").onclick = () => {
   configModal.style.display = "none";
-  showToast("Modo exploracao: conecte as credenciais para salvar arquivos");
+  saveConfig(currentConfig || {});
+  showToast(
+    "Biblioteca local pronta. Conecte o Drive para enviar arquivos e proteger os metadados.",
+  );
 };
 
 function showConfigError(message) {
@@ -354,28 +397,12 @@ function updateConnectionStatus() {
   if (!connectionStatus) return;
   const online = navigator.onLine;
   connectionStatus.dataset.state = online ? "online" : "offline";
-  const connected = driveManager?.getAccounts().filter(account => account.connected).length || 0;
-  connectionStatus.textContent = online ? `Online · ${connected}/4 Drive` : "Sem conexao";
-}
-
-function registerPwa() {
-  if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", async () => {
-    try {
-      const registration = await navigator.serviceWorker.register(new URL("./sw.js", import.meta.url));
-      registration.addEventListener("updatefound", () => {
-        const worker = registration.installing;
-        if (!worker) return;
-        worker.addEventListener("statechange", () => {
-          if (worker.state === "installed" && navigator.serviceWorker.controller) {
-            showToast("Uma atualizacao sera usada na proxima abertura");
-          }
-        });
-      });
-    } catch (e) {
-      console.warn("PWA nao pode ser registrado", e);
-    }
-  }, { once: true });
+  const connected =
+    driveManager?.getAccounts().filter((account) => account.connected).length ||
+    0;
+  connectionStatus.textContent = online
+    ? `Online · ${connected}/4 Drive`
+    : "Sem conexao";
 }
 
 window.addEventListener("online", updateConnectionStatus);
@@ -387,7 +414,7 @@ let formDialogFields = [];
 let confirmDialogResolve = null;
 
 function openFieldsDialog({ title, fields, confirmText = "Salvar" }) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     formDialogResolve = resolve;
     formDialogFields = fields;
     formModalTitle.textContent = title;
@@ -412,10 +439,13 @@ function renderDialogField(field) {
   }
 
   if (field.type === "select") {
-    const options = (field.options || []).map(option => {
-      const selected = String(option.value) === String(field.value ?? "") ? " selected" : "";
-      return `<option value="${esc(option.value)}"${selected}>${esc(option.label)}</option>`;
-    }).join("");
+    const options = (field.options || [])
+      .map((option) => {
+        const selected =
+          String(option.value) === String(field.value ?? "") ? " selected" : "";
+        return `<option value="${esc(option.value)}"${selected}>${esc(option.label)}</option>`;
+      })
+      .join("");
     return `<label class="field-label dialog-field">${label}<select class="modal-input" data-field="${esc(field.name)}"${required}>${options}</select></label>`;
   }
 
@@ -438,9 +468,12 @@ function closeFieldsDialog(value) {
 
 function collectDialogValues() {
   const values = {};
-  formDialogFields.forEach(field => {
-    const input = formModalBody.querySelector(`[data-field="${CSS.escape(field.name)}"]`);
-    values[field.name] = field.type === "checkbox" ? !!input?.checked : input?.value ?? "";
+  formDialogFields.forEach((field) => {
+    const input = formModalBody.querySelector(
+      `[data-field="${CSS.escape(field.name)}"]`,
+    );
+    values[field.name] =
+      field.type === "checkbox" ? !!input?.checked : (input?.value ?? "");
   });
   return values;
 }
@@ -449,28 +482,35 @@ function openTextDialog(options) {
   return openFieldsDialog({
     title: options.title,
     confirmText: options.confirmText || "Salvar",
-    fields: [{
-      name: "value",
-      label: options.label || options.title,
-      value: options.value || "",
-      placeholder: options.placeholder || "",
-      type: options.multiline ? "textarea" : "text",
-      maxlength: options.maxlength,
-      rows: options.rows,
-      required: options.required,
-    }],
-  }).then(result => result ? result.value : null);
+    fields: [
+      {
+        name: "value",
+        label: options.label || options.title,
+        value: options.value || "",
+        placeholder: options.placeholder || "",
+        type: options.multiline ? "textarea" : "text",
+        maxlength: options.maxlength,
+        rows: options.rows,
+        required: options.required,
+      },
+    ],
+  }).then((result) => (result ? result.value : null));
 }
 
-function openConfirmDialog({ title = "Confirmar", message, confirmText = "Confirmar", danger = false }) {
-  return new Promise(resolve => {
+function openConfirmDialog({
+  title = "Confirmar",
+  message,
+  confirmText = "Confirmar",
+  danger = false,
+}) {
+  return new Promise((resolve) => {
     confirmDialogResolve = resolve;
     confirmModalTitle.textContent = title;
     confirmModalMessage.textContent = message || "";
     confirmModalConfirm.textContent = confirmText;
     confirmModalConfirm.classList.toggle("danger", danger);
     confirmModal.classList.add("active");
-    setTimeout(() => confirmModalConfirm.focus(), 0);
+    setTimeout(() => confirmModalCancel.focus(), 0);
   });
 }
 
@@ -483,41 +523,39 @@ function closeConfirmDialog(value) {
 }
 
 formModalCancel.onclick = () => closeFieldsDialog(null);
-formModalConfirm.onclick = () => closeFieldsDialog(collectDialogValues());
-formModal.onclick = e => { if (e.target === formModal) closeFieldsDialog(null); };
-formModal.addEventListener("keydown", e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") closeFieldsDialog(collectDialogValues());
+function submitFieldsDialog() {
+  const fields = [...formModalBody.querySelectorAll("input, select, textarea")];
+  if (fields.some((field) => !field.reportValidity())) return;
+  closeFieldsDialog(collectDialogValues());
+}
+formModalConfirm.onclick = submitFieldsDialog;
+formModal.onclick = (e) => {
+  if (e.target === formModal) closeFieldsDialog(null);
+};
+formModal.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") submitFieldsDialog();
   if (e.key === "Escape") closeFieldsDialog(null);
 });
 confirmModalCancel.onclick = () => closeConfirmDialog(false);
 confirmModalConfirm.onclick = () => closeConfirmDialog(true);
-confirmModal.onclick = e => { if (e.target === confirmModal) closeConfirmDialog(false); };
-confirmModal.addEventListener("keydown", e => {
+confirmModal.onclick = (e) => {
+  if (e.target === confirmModal) closeConfirmDialog(false);
+};
+confirmModal.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeConfirmDialog(false);
-  if (e.key === "Enter") closeConfirmDialog(true);
+  // Native buttons handle Enter; Cancel must never confirm a destructive action.
 });
 
 async function initApp(cfg) {
   try {
-    // Se ja existe app "vault", destroi e recria (troca de conta)
-    const existing = getApps().find(a => a.name === "vault");
-    if (existing) await deleteApp(existing);
-
-    const firebaseApp = initializeApp({
-      apiKey: cfg.apiKey, authDomain: cfg.authDomain,
-      projectId: cfg.projectId, storageBucket: cfg.storageBucket,
-      messagingSenderId: cfg.messagingSenderId, appId: cfg.appId,
-    }, "vault");
-
-    db           = getFirestore(firebaseApp);
-    enableIndexedDbPersistence(db).catch(error => {
-      // O cache pode estar ocupado por outra aba ou bloqueado pelo navegador.
-      console.warn("Cache offline do Firestore indisponivel", error.code || error);
-    });
-    cloudName    = cfg.cloudName;
+    db = await openLocalStore();
+    cloudName = cfg.cloudName;
     uploadPreset = cfg.uploadPreset;
     googleClientId = cfg.googleClientId || "";
-    currentConfig = { ...cfg, driveAccounts: normalizeDriveAccounts(cfg.driveAccounts) };
+    currentConfig = {
+      ...cfg,
+      driveAccounts: normalizeDriveAccounts(cfg.driveAccounts),
+    };
     if (!driveManager) {
       driveManager = new GoogleDriveManager({
         clientId: googleClientId,
@@ -526,12 +564,16 @@ async function initApp(cfg) {
         onSessionInvalid: handleDriveSessionInvalid,
       });
     } else {
-      driveManager.configure({ clientId: googleClientId, accounts: currentConfig.driveAccounts });
+      driveManager.configure({
+        clientId: googleClientId,
+        accounts: currentConfig.driveAccounts,
+      });
     }
 
     configModal.style.display = "none";
     showConfigError("");
-    showToast("Conectado com sucesso", "success");
+    configureDriveSync(driveManager);
+    refreshSyncStatus();
 
     // Reset state
     navState.folderId = ROOT_ID;
@@ -558,22 +600,30 @@ async function initApp(cfg) {
 
 $("saveConfig").onclick = async () => {
   const cfg = configFromForm();
-  if (!cfg.apiKey || !cfg.projectId || !cfg.googleClientId) {
-    showConfigError("Preencha apiKey, projectId e o OAuth Client ID do Google para conectar.");
+  if (
+    cfg.googleClientId &&
+    !cfg.googleClientId.endsWith(".apps.googleusercontent.com")
+  ) {
+    showConfigError(
+      "Informe um OAuth Client ID válido do tipo aplicativo Web.",
+    );
     showToast("Preencha os campos obrigatorios", "error");
     return;
   }
   showConfigError("");
   saveConfig(cfg);
   const connected = await initApp(cfg);
-  if (connected) {
+  if (connected && cfg.googleClientId) {
     openAccountsModal(accountConnectBtn);
     showToast("Configuracao salva. Agora revise Ac1 a Ac4.", "success");
   }
 };
 
 async function persistDriveAccounts(accounts) {
-  currentConfig = { ...(currentConfig || configFromForm()), driveAccounts: normalizeDriveAccounts(accounts) };
+  currentConfig = {
+    ...(currentConfig || configFromForm()),
+    driveAccounts: normalizeDriveAccounts(accounts),
+  };
   saveConfig(currentConfig);
   renderAccountControls();
   renderDriveAccountSlots();
@@ -583,15 +633,26 @@ async function persistDriveAccounts(accounts) {
 }
 
 function accountLabel(slot, includeEmail = true) {
-  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot?.slice(-1) || 1) - 1];
+  const account =
+    driveManager?.getAccount(slot) ||
+    normalizeDriveAccounts(currentConfig?.driveAccounts)[
+      Number(slot?.slice(-1) || 1) - 1
+    ];
   const tag = slotTag(slot);
-  const identity = account?.friendlyName || (includeEmail ? account?.email : "");
+  const identity =
+    account?.friendlyName || (includeEmail ? account?.email : "");
   return identity ? `${tag} · ${identity}` : tag;
 }
 
 function accountFullLabel(slot) {
-  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot?.slice(-1) || 1) - 1];
-  const parts = [slotTag(slot), account?.friendlyName, account?.email].filter(Boolean);
+  const account =
+    driveManager?.getAccount(slot) ||
+    normalizeDriveAccounts(currentConfig?.driveAccounts)[
+      Number(slot?.slice(-1) || 1) - 1
+    ];
+  const parts = [slotTag(slot), account?.friendlyName, account?.email].filter(
+    Boolean,
+  );
   return [...new Set(parts)].join(" · ");
 }
 
@@ -602,16 +663,30 @@ function slotTag(slot) {
 
 function renderAccountControls() {
   if (!accountViewSelect) return;
-  const accounts = driveManager?.getAccounts() || normalizeDriveAccounts(currentConfig?.driveAccounts);
+  const accounts =
+    driveManager?.getAccounts() ||
+    normalizeDriveAccounts(currentConfig?.driveAccounts);
   accountViewSelect.innerHTML = [
     '<option value="all">Todas as contas</option>',
-    ...accounts.map(account => `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : ""}</option>`),
+    ...accounts.map(
+      (account) =>
+        `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : ""}</option>`,
+    ),
   ].join("");
-  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView) ? activeAccountView : "all";
-  accountConnectBtn.textContent = activeAccountView === "all"
-    ? "Central de contas"
-    : (driveManager?.isConnected(activeAccountView) ? `${slotTag(activeAccountView)} disponível` : `Revisar ${slotTag(activeAccountView)}`);
-  accountConnectBtn.classList.toggle("is-connected", activeAccountView !== "all" && !!driveManager?.isConnected(activeAccountView));
+  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView)
+    ? activeAccountView
+    : "all";
+  accountConnectBtn.textContent =
+    activeAccountView === "all"
+      ? "Central de contas"
+      : driveManager?.isConnected(activeAccountView)
+        ? `${slotTag(activeAccountView)} disponível`
+        : `Revisar ${slotTag(activeAccountView)}`;
+  accountConnectBtn.classList.toggle(
+    "is-connected",
+    activeAccountView !== "all" &&
+      !!driveManager?.isConnected(activeAccountView),
+  );
 }
 
 function renderDriveAccountSlots() {
@@ -619,7 +694,8 @@ function renderDriveAccountSlots() {
 }
 
 function accountRuntime(slot) {
-  if (!driveAccountRuntime.has(slot)) driveAccountRuntime.set(slot, { state: "", message: "", busy: false });
+  if (!driveAccountRuntime.has(slot))
+    driveAccountRuntime.set(slot, { state: "", message: "", busy: false });
   return driveAccountRuntime.get(slot);
 }
 
@@ -634,15 +710,55 @@ function handleDriveSessionInvalid(slot) {
 }
 
 function accountState(slot) {
-  const account = driveManager?.getAccount(slot) || normalizeDriveAccounts(currentConfig?.driveAccounts)[Number(slot.slice(-1)) - 1];
+  const account =
+    driveManager?.getAccount(slot) ||
+    normalizeDriveAccounts(currentConfig?.driveAccounts)[
+      Number(slot.slice(-1)) - 1
+    ];
   const runtime = accountRuntime(slot);
-  if (!currentConfig?.googleClientId) return { key: "not_configured", label: "Configuração pendente", message: "Salve o OAuth Client ID na configuração avançada." };
-  if (runtime.busy) return { key: "connecting", label: `Conectando ${slotTag(slot)}`, message: runtime.message || "Conclua a seleção na janela do Google." };
-  if (runtime.state === "wrong_account") return { key: "wrong_account", label: "Conta diferente", message: runtime.message };
-  if (runtime.state === "attention") return { key: "attention", label: "Precisa reconectar", message: runtime.message };
-  if (driveManager?.isConnected(slot)) return { key: "connected", label: "Disponível nesta sessão", message: runtime.message || "Arquivos e pastas desta conta estão disponíveis." };
-  if (account?.email) return { key: "attention", label: "Reconectar", message: `Reconecte ${account.email} para continuar usando os arquivos desta conta.` };
-  return { key: "unconfigured", label: "Não configurada", message: "Adicione um email ou conecte uma Conta Google para usar este espaço." };
+  if (!currentConfig?.googleClientId)
+    return {
+      key: "not_configured",
+      label: "Configuração pendente",
+      message: "Salve o OAuth Client ID na configuração avançada.",
+    };
+  if (runtime.busy)
+    return {
+      key: "connecting",
+      label: `Conectando ${slotTag(slot)}`,
+      message: runtime.message || "Conclua a seleção na janela do Google.",
+    };
+  if (runtime.state === "wrong_account")
+    return {
+      key: "wrong_account",
+      label: "Conta diferente",
+      message: runtime.message,
+    };
+  if (runtime.state === "attention")
+    return {
+      key: "attention",
+      label: "Precisa reconectar",
+      message: runtime.message,
+    };
+  if (driveManager?.isConnected(slot))
+    return {
+      key: "connected",
+      label: "Disponível nesta sessão",
+      message:
+        runtime.message || "Arquivos e pastas desta conta estão disponíveis.",
+    };
+  if (account?.email)
+    return {
+      key: "attention",
+      label: "Reconectar",
+      message: `Reconecte ${account.email} para continuar usando os arquivos desta conta.`,
+    };
+  return {
+    key: "unconfigured",
+    label: "Não configurada",
+    message:
+      "Adicione um email ou conecte uma Conta Google para usar este espaço.",
+  };
 }
 
 function formatRelativeDate(value) {
@@ -658,12 +774,20 @@ function formatRelativeDate(value) {
 
 function quotaSummary(quota) {
   if (!quota?.limit) return { text: "Não informado pelo Google", pct: 0 };
-  return { text: `${fmtSize(quota.usage || 0)} de ${fmtSize(quota.limit)}`, pct: Math.min(100, ((quota.usage || 0) / quota.limit) * 100) };
+  return {
+    text: `${fmtSize(quota.usage || 0)} de ${fmtSize(quota.limit)}`,
+    pct: Math.min(100, ((quota.usage || 0) / quota.limit) * 100),
+  };
 }
 
 function accountFileStats(slot) {
-  const records = files.filter(file => !file.deletedAt && recordAccountSlot(file) === slot);
-  return { count: records.length, missing: records.filter(file => file.missing).length };
+  const records = files.filter(
+    (file) => !file.deletedAt && recordAccountSlot(file) === slot,
+  );
+  return {
+    count: records.length,
+    missing: records.filter((file) => file.missing).length,
+  };
 }
 
 function announceAccount(message) {
@@ -672,28 +796,49 @@ function announceAccount(message) {
 
 function renderAccountCenter() {
   if (!accountsGrid) return;
-  const accounts = driveManager?.getAccounts() || normalizeDriveAccounts(currentConfig?.driveAccounts || savedCfg?.driveAccounts);
+  const accounts =
+    driveManager?.getAccounts() ||
+    normalizeDriveAccounts(
+      currentConfig?.driveAccounts || savedCfg?.driveAccounts,
+    );
   const queryText = normalizeSearchText(accountSearchValue);
-  const visibleAccounts = accounts.filter(account => {
+  const visibleAccounts = accounts.filter((account) => {
     const state = accountState(account.slot);
-    const haystack = normalizeSearchText(`${account.slot} ${account.friendlyName || ""} ${account.email || ""}`);
+    const haystack = normalizeSearchText(
+      `${account.slot} ${account.friendlyName || ""} ${account.email || ""}`,
+    );
     const matchesSearch = !queryText || haystack.includes(queryText);
-    const matchesFilter = accountFilterValue === "all"
-      || (accountFilterValue === "connected" && state.key === "connected")
-      || (accountFilterValue === "attention" && ["attention", "wrong_account", "not_configured"].includes(state.key))
-      || (accountFilterValue === "unconfigured" && ["unconfigured", "not_configured"].includes(state.key));
+    const matchesFilter =
+      accountFilterValue === "all" ||
+      (accountFilterValue === "connected" && state.key === "connected") ||
+      (accountFilterValue === "attention" &&
+        ["attention", "wrong_account", "not_configured"].includes(state.key)) ||
+      (accountFilterValue === "unconfigured" &&
+        ["unconfigured", "not_configured"].includes(state.key));
     return matchesSearch && matchesFilter;
   });
-  const connectedCount = accounts.filter(account => driveManager?.isConnected(account.slot)).length;
-  const attentionCount = accounts.filter(account => ["attention", "wrong_account", "not_configured"].includes(accountState(account.slot).key)).length;
+  const connectedCount = accounts.filter((account) =>
+    driveManager?.isConnected(account.slot),
+  ).length;
+  const attentionCount = accounts.filter((account) =>
+    ["attention", "wrong_account", "not_configured"].includes(
+      accountState(account.slot).key,
+    ),
+  ).length;
   accountsSummary.textContent = `${connectedCount} de 4 disponíveis nesta sessão${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
-  accountsGrid.innerHTML = visibleAccounts.map(account => {
-    const state = accountState(account.slot);
-    const stats = accountFileStats(account.slot);
-    const quota = quotaSummary(account.quota);
-    const canOpen = state.key === "connected";
-    const primaryLabel = state.key === "connected" ? "Atualizar" : account.email ? "Reconectar" : "Conectar";
-    return `<article class="drive-account-card" data-slot="${account.slot}" data-state="${state.key}" data-busy="${accountRuntime(account.slot).busy}" aria-busy="${accountRuntime(account.slot).busy}">
+  accountsGrid.innerHTML = visibleAccounts
+    .map((account) => {
+      const state = accountState(account.slot);
+      const stats = accountFileStats(account.slot);
+      const quota = quotaSummary(account.quota);
+      const canOpen = state.key === "connected";
+      const primaryLabel =
+        state.key === "connected"
+          ? "Atualizar"
+          : account.email
+            ? "Reconectar"
+            : "Conectar";
+      return `<article class="drive-account-card" data-slot="${account.slot}" data-state="${state.key}" data-busy="${accountRuntime(account.slot).busy}" aria-busy="${accountRuntime(account.slot).busy}">
       <div class="account-card-heading">
         <span class="account-badge">${slotTag(account.slot)}</span>
         <div class="account-card-identity"><strong>${esc(account.friendlyName || account.email || "Conta sem nome")}</strong><span>${esc(account.email || "Nenhum email definido")}</span><span class="account-state">${esc(state.label)}</span></div>
@@ -715,14 +860,15 @@ function renderAccountCenter() {
         <button class="account-check-action" type="button" ${canOpen ? "" : "disabled"}>Verificar</button>
       </div>
     </article>`;
-  }).join("");
+    })
+    .join("");
   accountsEmpty.hidden = visibleAccounts.length > 0;
   bindAccountCardActions();
   updateConnectionStatus();
 }
 
 function bindAccountCardActions() {
-  accountsGrid?.querySelectorAll(".drive-account-card").forEach(card => {
+  accountsGrid?.querySelectorAll(".drive-account-card").forEach((card) => {
     const slot = card.dataset.slot;
     const account = driveManager?.getAccount(slot);
     const nameInput = card.querySelector(".account-friendly-name");
@@ -732,7 +878,10 @@ function bindAccountCardActions() {
       const previousEmail = account.email || "";
       account.friendlyName = nameInput.value.trim();
       account.email = emailInput.value.trim();
-      if (previousEmail.toLowerCase() !== account.email.toLowerCase() && driveManager.isConnected(slot)) {
+      if (
+        previousEmail.toLowerCase() !== account.email.toLowerCase() &&
+        driveManager.isConnected(slot)
+      ) {
         driveManager.disconnect(slot);
         const runtime = accountRuntime(slot);
         runtime.state = "attention";
@@ -744,20 +893,33 @@ function bindAccountCardActions() {
     };
     nameInput.addEventListener("change", saveIdentity);
     emailInput.addEventListener("change", saveIdentity);
-    card.querySelector(".account-primary-action").onclick = event => {
-      if (accountState(slot).key === "connected") refreshDriveAccountHealth(slot, { verifyRecords: false, trigger: event.currentTarget });
+    card.querySelector(".account-primary-action").onclick = (event) => {
+      if (accountState(slot).key === "connected")
+        refreshDriveAccountHealth(slot, {
+          verifyRecords: false,
+          trigger: event.currentTarget,
+        });
       else connectDriveSlot(slot, event.currentTarget);
     };
-    card.querySelector(".account-view-action").onclick = () => viewOnlyAccount(slot);
-    card.querySelector(".account-open-drive").onclick = event => openDriveRoot(slot, event.currentTarget);
-    card.querySelector(".account-check-action").onclick = event => refreshDriveAccountHealth(slot, { verifyRecords: true, trigger: event.currentTarget });
+    card.querySelector(".account-view-action").onclick = () =>
+      viewOnlyAccount(slot);
+    card.querySelector(".account-open-drive").onclick = (event) =>
+      openDriveRoot(slot, event.currentTarget);
+    card.querySelector(".account-check-action").onclick = (event) =>
+      refreshDriveAccountHealth(slot, {
+        verifyRecords: true,
+        trigger: event.currentTarget,
+      });
   });
 }
 
 function openAccountsModal(returnFocus = document.activeElement) {
   if (!currentConfig) {
     openConfigModal(true);
-    showToast("Salve a configuração do Firebase e o OAuth Client ID primeiro", "error");
+    showToast(
+      "Salve a configuração do Firebase e o OAuth Client ID primeiro",
+      "error",
+    );
     return;
   }
   accountModalReturnFocus = returnFocus;
@@ -770,29 +932,52 @@ function closeAccountsModal() {
   accountsModal?.classList.remove("active");
   accountReviewQueue = [];
   accountReviewBanner.hidden = true;
-  const returnTargetIsVisible = accountModalReturnFocus?.isConnected
-    && accountModalReturnFocus.getClientRects().length > 0
-    && getComputedStyle(accountModalReturnFocus).visibility !== "hidden";
-  (returnTargetIsVisible ? accountModalReturnFocus : $("sidebarOpenBtn"))?.focus?.();
+  const returnTargetIsVisible =
+    accountModalReturnFocus?.isConnected &&
+    accountModalReturnFocus.getClientRects().length > 0 &&
+    getComputedStyle(accountModalReturnFocus).visibility !== "hidden";
+  (returnTargetIsVisible
+    ? accountModalReturnFocus
+    : $("sidebarOpenBtn")
+  )?.focus?.();
   accountModalReturnFocus = null;
 }
 
-function friendlyDriveError(error, slot = "", email = "", action = "usar o Drive") {
+function friendlyDriveError(
+  error,
+  slot = "",
+  email = "",
+  action = "usar o Drive",
+) {
   const raw = String(error?.message || error || "");
   const code = String(error?.code || "");
   const tag = slot ? slotTag(slot) : "a conta";
-  const wrongAccount = raw.match(/A conta escolhida foi ([^,]+), mas (AC[1-4]) esta configurada como (.+)$/i);
-  if (wrongAccount) return `Você escolheu ${wrongAccount[1]}, mas ${slotTag(wrongAccount[2].toLowerCase())} está configurada para ${wrongAccount[3]}. Escolha a conta correta ou altere o email de ${slotTag(wrongAccount[2].toLowerCase())}.`;
-  if (/popup|janela|blocked|failed_to_open/i.test(`${code} ${raw}`)) return "Não foi possível abrir o Google. Permita pop-ups para este site e tente novamente.";
-  if (/invalid_grant|401|invalid.?token|token.*expir/i.test(`${code} ${raw}`)) return `O Google encerrou o acesso de ${tag}. Reconecte ${email || "a conta configurada"} para continuar usando os arquivos dessa conta.`;
-  if (/network|rede|fetch|offline/i.test(`${code} ${raw}`)) return `Não foi possível ${action} porque a internet ou o Google está indisponível. Verifique a conexão e tente novamente.`;
-  if (/cancel|closed/i.test(`${code} ${raw}`)) return "A conexão foi cancelada. Quando estiver pronto, tente novamente e conclua a seleção no Google.";
+  const wrongAccount = raw.match(
+    /A conta escolhida foi ([^,]+), mas (AC[1-4]) esta configurada como (.+)$/i,
+  );
+  if (wrongAccount)
+    return `Você escolheu ${wrongAccount[1]}, mas ${slotTag(wrongAccount[2].toLowerCase())} está configurada para ${wrongAccount[3]}. Escolha a conta correta ou altere o email de ${slotTag(wrongAccount[2].toLowerCase())}.`;
+  if (/popup|janela|blocked|failed_to_open/i.test(`${code} ${raw}`))
+    return "Não foi possível abrir o Google. Permita pop-ups para este site e tente novamente.";
+  if (/invalid_grant|401|invalid.?token|token.*expir/i.test(`${code} ${raw}`))
+    return `O Google encerrou o acesso de ${tag}. Reconecte ${email || "a conta configurada"} para continuar usando os arquivos dessa conta.`;
+  if (/network|rede|fetch|offline/i.test(`${code} ${raw}`))
+    return `Não foi possível ${action} porque a internet ou o Google está indisponível. Verifique a conexão e tente novamente.`;
+  if (/cancel|closed/i.test(`${code} ${raw}`))
+    return "A conexão foi cancelada. Quando estiver pronto, tente novamente e conclua a seleção no Google.";
   return raw || `Não foi possível ${action}. Tente novamente.`;
 }
 
 async function connectDriveSlot(slot, trigger = document.activeElement) {
-  if (!driveManager || googleClientId !== $("cfg_googleClientId").value.trim()) {
-    showToast("Salve a configuração e o OAuth Client ID antes de conectar as contas.", "error");
+  if (
+    !driveManager ||
+    !googleClientId ||
+    googleClientId !== $("cfg_googleClientId").value.trim()
+  ) {
+    showToast(
+      "Salve a configuração e o OAuth Client ID antes de conectar as contas.",
+      "error",
+    );
     openConfigModal(true);
     return false;
   }
@@ -812,15 +997,30 @@ async function connectDriveSlot(slot, trigger = document.activeElement) {
     runtime.message = `${slotTag(slot)} está disponível nesta sessão.`;
     await persistDriveAccounts(driveManager.getAccounts());
     await refreshDriveAccountHealth(slot, { silent: true });
-    showToast(`${slotTag(slot)} conectada: ${connectedAccount.email}`, "success");
-    announceAccount(`${slotTag(slot)} conectada como ${connectedAccount.email}.`);
+    await syncAccount(slot).catch((error) => showToast(error.message, "error"));
+    showToast(
+      `${slotTag(slot)} conectada: ${connectedAccount.email}`,
+      "success",
+    );
+    announceAccount(
+      `${slotTag(slot)} conectada como ${connectedAccount.email}.`,
+    );
     updateDashboard();
     renderGrid();
     advanceAccountReview(slot, true);
     return true;
   } catch (error) {
-    const message = friendlyDriveError(error, slot, expectedEmail, "conectar esta conta");
-    runtime.state = /configurada como|escolheu/i.test(String(error?.message || "")) ? "wrong_account" : "attention";
+    const message = friendlyDriveError(
+      error,
+      slot,
+      expectedEmail,
+      "conectar esta conta",
+    );
+    runtime.state = /configurada como|escolheu/i.test(
+      String(error?.message || ""),
+    )
+      ? "wrong_account"
+      : "attention";
     runtime.message = message;
     showToast(message, "error");
     announceAccount(message);
@@ -830,8 +1030,13 @@ async function connectDriveSlot(slot, trigger = document.activeElement) {
     runtime.busy = false;
     renderAccountCenter();
     const originalTrigger = accountConnectReturnFocus;
-    const replacementTrigger = accountsGrid?.querySelector(`[data-slot="${slot}"] .account-primary-action`);
-    (document.contains(originalTrigger) ? originalTrigger : replacementTrigger)?.focus?.();
+    const replacementTrigger = accountsGrid?.querySelector(
+      `[data-slot="${slot}"] .account-primary-action`,
+    );
+    (document.contains(originalTrigger)
+      ? originalTrigger
+      : replacementTrigger
+    )?.focus?.();
     accountConnectReturnFocus = null;
   }
 }
@@ -852,7 +1057,10 @@ function viewOnlyAccount(slot) {
   closeAccountsModal();
 }
 
-async function refreshDriveAccountHealth(slot, { silent = false, verifyRecords = false, trigger = null } = {}) {
+async function refreshDriveAccountHealth(
+  slot,
+  { silent = false, verifyRecords = false, trigger = null } = {},
+) {
   const account = driveManager?.getAccount(slot);
   if (!driveManager?.isConnected(slot)) {
     const message = `${slotTag(slot)} não está disponível. Reconecte ${account?.email || "a conta"} e tente novamente.`;
@@ -873,12 +1081,18 @@ async function refreshDriveAccountHealth(slot, { silent = false, verifyRecords =
   } catch (error) {
     if (driveManager.isConnected(slot)) {
       runtime.state = "connected";
-      runtime.message = "Conta disponível; o Google não liberou os dados de armazenamento nesta verificação.";
+      runtime.message =
+        "Conta disponível; o Google não liberou os dados de armazenamento nesta verificação.";
       if (!silent) showToast(runtime.message);
       return true;
     }
     runtime.state = "attention";
-    runtime.message = friendlyDriveError(error, slot, account?.email, "atualizar esta conta");
+    runtime.message = friendlyDriveError(
+      error,
+      slot,
+      account?.email,
+      "atualizar esta conta",
+    );
     if (!silent) showToast(runtime.message, "error");
     return false;
   } finally {
@@ -892,7 +1106,8 @@ async function openDriveRoot(slot, trigger) {
   const account = driveManager?.getAccount(slot);
   let popup = null;
   try {
-    if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slotTag(slot)} antes de abrir a pasta VAULT.`);
+    if (!driveManager?.isConnected(slot))
+      throw new Error(`Conecte ${slotTag(slot)} antes de abrir a pasta VAULT.`);
     popup = window.open("about:blank", "_blank");
     if (!popup) throw new Error("popup_failed_to_open");
     const url = await driveManager.getRootFolderUrl(slot);
@@ -900,14 +1115,19 @@ async function openDriveRoot(slot, trigger) {
     refreshDriveAccountHealth(slot, { silent: true });
   } catch (error) {
     popup?.close?.();
-    showToast(friendlyDriveError(error, slot, account?.email, "abrir a pasta VAULT"), "error");
+    showToast(
+      friendlyDriveError(error, slot, account?.email, "abrir a pasta VAULT"),
+      "error",
+    );
   } finally {
     trigger?.focus?.();
   }
 }
 
 function problemAccountSlots() {
-  return ["ac1", "ac2", "ac3", "ac4"].filter(slot => accountState(slot).key !== "connected");
+  return ["ac1", "ac2", "ac3", "ac4"].filter(
+    (slot) => accountState(slot).key !== "connected",
+  );
 }
 
 function startAccountReview() {
@@ -959,7 +1179,7 @@ accountsFilter?.addEventListener("change", () => {
   renderAccountCenter();
 });
 $("reviewAccountsBtn")?.addEventListener("click", startAccountReview);
-accountReviewAction?.addEventListener("click", event => {
+accountReviewAction?.addEventListener("click", (event) => {
   const slot = accountReviewQueue[0];
   if (!slot) return;
   connectDriveSlot(slot, event.currentTarget);
@@ -968,20 +1188,20 @@ accountReviewSkip?.addEventListener("click", () => {
   accountReviewQueue.shift();
   renderAccountReviewStep();
 });
-accountsModal?.addEventListener("click", event => {
+accountsModal?.addEventListener("click", (event) => {
   if (event.target === accountsModal) closeAccountsModal();
 });
-accountsModal?.addEventListener("keydown", event => {
+accountsModal?.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAccountsModal();
 });
 
-// ??? Firestore listeners ??????????????????????????????????
+// ??? índice local listeners ??????????????????????????????????
 function listenFolders() {
   if (unsubFolders) unsubFolders();
   unsubFolders = onSnapshot(
     query(collection(db, "vault_folders"), orderBy("createdAt", "asc")),
-    snap => {
-      folders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    (snap) => {
+      folders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       rebuildFolderIndexes();
       ensureCurrentFolderExists();
       renderBreadcrumb();
@@ -990,11 +1210,13 @@ function listenFolders() {
       renderGrid();
       renderAccountCenter();
     },
-    err => {
+    (err) => {
       openConfigModal(true);
-      showConfigError("Nao foi possivel ler as pastas. Confira as credenciais e regras do Firestore.");
+      showConfigError(
+        "Nao foi possivel ler as pastas. Confira as credenciais e regras do índice local.",
+      );
       showToast("Erro ao carregar pastas: " + err.message, "error");
-    }
+    },
   );
 }
 
@@ -1002,58 +1224,64 @@ function listenFiles() {
   if (unsubFiles) unsubFiles();
   unsubFiles = onSnapshot(
     query(collection(db, "vault_files"), orderBy("createdAt", "desc")),
-    snap => {
-      files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    (snap) => {
+      files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       rebuildFileIndexes();
       updateStorageUI();
       scheduleDashboardUpdate();
       renderGrid();
       renderAccountCenter();
     },
-    err => {
+    (err) => {
       openConfigModal(true);
-      showConfigError("Nao foi possivel ler os arquivos. Confira as credenciais e regras do Firestore.");
+      showConfigError(
+        "Nao foi possivel ler os arquivos. Confira as credenciais e regras do índice local.",
+      );
       showToast("Erro ao carregar arquivos: " + err.message, "error");
-    }
+    },
   );
 }
-
 
 // ??? Sidebar folder list ??????????????????????????????????
 function normalizeFolderId(folderId) {
   return folderId || ROOT_ID;
 }
 
-function toFirestoreFolderId(folderId) {
+function toLocalFolderId(folderId) {
   return normalizeFolderId(folderId) === ROOT_ID ? null : folderId;
 }
 
 function rebuildFolderIndexes() {
-  folderById = new Map(folders.map(folder => [folder.id, folder]));
+  folderById = new Map(folders.map((folder) => [folder.id, folder]));
   folderChildrenByParent = new Map();
-  folders.forEach(folder => {
+  folders.forEach((folder) => {
     const parentId = normalizeFolderId(folder.parentId);
     const children = folderChildrenByParent.get(parentId) || [];
     children.push(folder);
     folderChildrenByParent.set(parentId, children);
   });
-  folderChildrenByParent.forEach(children => {
-    children.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+  folderChildrenByParent.forEach((children) => {
+    children.sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "pt-BR"),
+    );
   });
   rebuildDescendantFolderCounts();
   rebuildDescendantFileCounts();
 }
 
 function rebuildFileIndexes() {
-  fileById = new Map(files.map(file => [file.id, file]));
+  fileById = new Map(files.map((file) => [file.id, file]));
   activeFileCountByFolder = new Map();
   duplicateFileIds = new Set();
   const duplicateGroups = new Map();
 
-  files.forEach(file => {
+  files.forEach((file) => {
     if (!isActiveFile(file) || !matchesAccountView(file)) return;
     const folderId = normalizeFolderId(file.folderId);
-    activeFileCountByFolder.set(folderId, (activeFileCountByFolder.get(folderId) || 0) + 1);
+    activeFileCountByFolder.set(
+      folderId,
+      (activeFileCountByFolder.get(folderId) || 0) + 1,
+    );
     const duplicateKey = file.contentHash
       ? `hash:${file.contentHash}`
       : `meta:${(file.name || "").toLowerCase()}|${file.size || 0}|${file.fileType || ""}`;
@@ -1062,8 +1290,8 @@ function rebuildFileIndexes() {
     duplicateGroups.set(duplicateKey, group);
   });
 
-  duplicateGroups.forEach(group => {
-    if (group.length > 1) group.forEach(id => duplicateFileIds.add(id));
+  duplicateGroups.forEach((group) => {
+    if (group.length > 1) group.forEach((id) => duplicateFileIds.add(id));
   });
   rebuildDescendantFileCounts();
 }
@@ -1071,35 +1299,37 @@ function rebuildFileIndexes() {
 function rebuildDescendantFileCounts() {
   descendantFileCountByFolder = new Map();
   const visit = (folderId, lineage = new Set()) => {
-    if (descendantFileCountByFolder.has(folderId)) return descendantFileCountByFolder.get(folderId);
+    if (descendantFileCountByFolder.has(folderId))
+      return descendantFileCountByFolder.get(folderId);
     if (lineage.has(folderId)) return 0;
     const nextLineage = new Set(lineage);
     nextLineage.add(folderId);
     let total = activeFileCountByFolder.get(folderId) || 0;
-    (folderChildrenByParent.get(folderId) || []).forEach(child => {
+    (folderChildrenByParent.get(folderId) || []).forEach((child) => {
       total += visit(child.id, nextLineage);
     });
     descendantFileCountByFolder.set(folderId, total);
     return total;
   };
-  folders.forEach(folder => visit(folder.id));
+  folders.forEach((folder) => visit(folder.id));
 }
 
 function rebuildDescendantFolderCounts() {
   descendantFolderCountByFolder = new Map();
   const visit = (folderId, lineage = new Set()) => {
-    if (descendantFolderCountByFolder.has(folderId)) return descendantFolderCountByFolder.get(folderId);
+    if (descendantFolderCountByFolder.has(folderId))
+      return descendantFolderCountByFolder.get(folderId);
     if (lineage.has(folderId)) return 0;
     const nextLineage = new Set(lineage);
     nextLineage.add(folderId);
     let total = 0;
-    (folderChildrenByParent.get(folderId) || []).forEach(child => {
+    (folderChildrenByParent.get(folderId) || []).forEach((child) => {
       total += 1 + visit(child.id, nextLineage);
     });
     descendantFolderCountByFolder.set(folderId, total);
     return total;
   };
-  folders.forEach(folder => visit(folder.id));
+  folders.forEach((folder) => visit(folder.id));
 }
 
 function getFolder(folderId) {
@@ -1107,24 +1337,35 @@ function getFolder(folderId) {
 }
 
 function ensureCurrentFolderExists() {
-  if (navState.folderId !== ROOT_ID && (!getFolder(navState.folderId) || !matchesAccountView(getFolder(navState.folderId)))) {
+  if (
+    navState.folderId !== ROOT_ID &&
+    (!getFolder(navState.folderId) ||
+      !matchesAccountView(getFolder(navState.folderId)))
+  ) {
     navState.folderId = ROOT_ID;
   }
 }
 
 function getFolderChildren(parentId = ROOT_ID) {
-  return (folderChildrenByParent.get(normalizeFolderId(parentId)) || []).filter(matchesAccountView);
+  return (folderChildrenByParent.get(normalizeFolderId(parentId)) || []).filter(
+    matchesAccountView,
+  );
 }
 
 function recordAccountSlot(record) {
   const explicit = String(record?.accountSlot || "").toLowerCase();
   if (/^ac[1-4]$/.test(explicit)) return explicit;
-  const parentSlot = record?.folderId ? String(getFolder(record.folderId)?.accountSlot || "").toLowerCase() : "";
+  const parentSlot = record?.folderId
+    ? String(getFolder(record.folderId)?.accountSlot || "").toLowerCase()
+    : "";
   return /^ac[1-4]$/.test(parentSlot) ? parentSlot : "legacy";
 }
 
 function matchesAccountView(record) {
-  return activeAccountView === "all" || recordAccountSlot(record) === activeAccountView;
+  return (
+    activeAccountView === "all" ||
+    recordAccountSlot(record) === activeAccountView
+  );
 }
 
 function accountBadge(record) {
@@ -1158,21 +1399,28 @@ function expandFolderPath(folderId = navState.folderId, options = {}) {
   const { includeCurrent = true } = options;
   const path = getFolderPath(folderId);
   const segments = includeCurrent ? path : path.slice(0, -1);
-  segments.forEach(seg => navState.expandedFolders.add(seg.id));
+  segments.forEach((seg) => navState.expandedFolders.add(seg.id));
 }
 
 function toggleFolderExpanded(folderId) {
-  if (navState.expandedFolders.has(folderId)) navState.expandedFolders.delete(folderId);
+  if (navState.expandedFolders.has(folderId))
+    navState.expandedFolders.delete(folderId);
   else navState.expandedFolders.add(folderId);
   renderFolderList();
 }
 
 function renderFolderList() {
-  while (folderList.children.length > 1) folderList.removeChild(folderList.lastChild);
+  while (folderList.children.length > 1)
+    folderList.removeChild(folderList.lastChild);
 
   expandFolderPath(navState.folderId, { includeCurrent: false });
-  getFolderChildren(ROOT_ID).forEach(folder => renderFolderTreeNode(folder, 0));
-  folderList.firstElementChild.classList.toggle("active", navState.folderId === ROOT_ID);
+  getFolderChildren(ROOT_ID).forEach((folder) =>
+    renderFolderTreeNode(folder, 0),
+  );
+  folderList.firstElementChild.classList.toggle(
+    "active",
+    navState.folderId === ROOT_ID,
+  );
   renderFolderBreadcrumb();
 }
 
@@ -1181,24 +1429,32 @@ function renderFolderTreeNode(folder, depth) {
   const hasChildren = children.length > 0;
   const isExpanded = navState.expandedFolders.has(folder.id);
   const li = document.createElement("li");
-  li.className = "folder-item tree-folder-item" + (navState.folderId === folder.id ? " active" : "");
+  li.className =
+    "folder-item tree-folder-item" +
+    (navState.folderId === folder.id ? " active" : "");
   li.style.setProperty("--folder-depth", depth);
   li.innerHTML = `
-    <button class="folder-expander ${hasChildren ? "" : "empty"}" title="${hasChildren ? "Expandir/Recolher" : ""}">
-      ${hasChildren ? (isExpanded ? "-" : "+") : ""}
+    <button class="folder-expander ${hasChildren ? "" : "empty"}" aria-expanded="${isExpanded}" title="${hasChildren ? "Expandir/Recolher" : ""}">
+      ${hasChildren ? icon(isExpanded ? "ChevronDown" : "ChevronRight") : ""}
     </button>
-    <span class="folder-icon">${hasChildren ? "#" : "."}</span>
+    <span class="folder-icon">${icon("Folder")}</span>
     <span class="account-badge folder-account-badge">${accountBadge(folder)}</span>
-    <span class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
+    <button type="button" class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</button>
     <button class="folder-rename" title="Renomear pasta">Renomear</button>
-    <button class="folder-delete" title="Excluir pasta">×</button>`;
+    <button class="folder-delete" title="Excluir pasta">${icon("X")}</button>`;
 
-  li.querySelector(".folder-expander").onclick = e => {
+  li.querySelector(".folder-expander").onclick = (e) => {
     e.stopPropagation();
     if (hasChildren) toggleFolderExpanded(folder.id);
   };
-  li.querySelector(".folder-rename").onclick = e => { e.stopPropagation(); renameFolder(folder); };
-  li.querySelector(".folder-delete").onclick = e => { e.stopPropagation(); deleteFolder(folder.id, folder.name); };
+  li.querySelector(".folder-rename").onclick = (e) => {
+    e.stopPropagation();
+    renameFolder(folder);
+  };
+  li.querySelector(".folder-delete").onclick = (e) => {
+    e.stopPropagation();
+    deleteFolder(folder.id, folder.name);
+  };
   li.onclick = () => {
     if (navState.folderId === folder.id) return;
     dispatchNavigation("open", { folderId: folder.id });
@@ -1207,7 +1463,7 @@ function renderFolderTreeNode(folder, depth) {
   folderList.appendChild(li);
 
   if (hasChildren && isExpanded) {
-    children.forEach(child => renderFolderTreeNode(child, depth + 1));
+    children.forEach((child) => renderFolderTreeNode(child, depth + 1));
   }
 }
 
@@ -1215,25 +1471,39 @@ function renderFolderTreeNode(folder, depth) {
 function populateFolderFilter() {
   if (!advFolderSelect) return;
   const current = advFolderSelect.value;
-  const opts = ['<option value="">Todas as pastas</option>', '<option value="root">Raiz</option>'];
-  folders.filter(matchesAccountView).forEach(folder => {
-    opts.push(`<option value="${folder.id}">${esc(getFolderPathLabel(folder.id) || folder.name)}</option>`);
+  const opts = [
+    '<option value="">Todas as pastas</option>',
+    '<option value="root">Raiz</option>',
+  ];
+  folders.filter(matchesAccountView).forEach((folder) => {
+    opts.push(
+      `<option value="${folder.id}">${esc(getFolderPathLabel(folder.id) || folder.name)}</option>`,
+    );
   });
   advFolderSelect.innerHTML = opts.join("");
-  advFolderSelect.value = [...advFolderSelect.options].some(o => o.value === current) ? current : "";
+  advFolderSelect.value = [...advFolderSelect.options].some(
+    (o) => o.value === current,
+  )
+    ? current
+    : "";
 }
 function renderFolderBreadcrumb() {
   const bc = $("folderBreadcrumb");
   if (!bc) return;
   const path = syncLegacyFolderPath();
-  if (path.length === 0) { bc.innerHTML = ""; return; }
-  bc.innerHTML = path.map((seg, i) => {
-    const isLast = i === path.length - 1;
-    return isLast
-      ? `<span class="fbc-seg active">${esc(seg.name)}</span>`
-      : `<span class="fbc-seg" data-idx="${i}">${esc(seg.name)}</span><span class="fbc-sep">></span>`;
-  }).join("");
-  bc.querySelectorAll(".fbc-seg[data-idx]").forEach(el => {
+  if (path.length === 0) {
+    bc.innerHTML = "";
+    return;
+  }
+  bc.innerHTML = path
+    .map((seg, i) => {
+      const isLast = i === path.length - 1;
+      return isLast
+        ? `<span class="fbc-seg active">${esc(seg.name)}</span>`
+        : `<button type="button" class="fbc-seg" data-idx="${i}">${esc(seg.name)}</button><span class="fbc-sep">></span>`;
+    })
+    .join("");
+  bc.querySelectorAll(".fbc-seg[data-idx]").forEach((el) => {
     el.onclick = () => {
       const idx = parseInt(el.dataset.idx);
       const seg = path[idx];
@@ -1264,13 +1534,30 @@ function syncSectionUI() {
   const isHome = navState.section === "home";
   document.body.dataset.section = navState.section;
   dashboard.hidden = !isHome;
-  filesWorkspace.hidden = isHome;
+  filesWorkspace.hidden = isHome || navState.section === "mural";
+  $("muralWorkspace").hidden = navState.section !== "mural";
+  $("navMural").classList.toggle("active", navState.section === "mural");
+  $("navMural").setAttribute(
+    "aria-current",
+    navState.section === "mural" ? "page" : "false",
+  );
   dashboard.setAttribute("aria-hidden", isHome ? "false" : "true");
-  filesWorkspace.setAttribute("aria-hidden", isHome ? "true" : "false");
+  filesWorkspace.setAttribute(
+    "aria-hidden",
+    filesWorkspace.hidden ? "true" : "false",
+  );
   navHome?.classList.toggle("active", isHome);
-  navFiles?.classList.toggle("active", !isHome);
+  navFiles?.classList.toggle("active", navState.section === "files");
+  $("navPhotos")?.classList.toggle("active", navState.section === "photos");
+  $("navPhotos")?.setAttribute(
+    "aria-current",
+    navState.section === "photos" ? "page" : "false",
+  );
   navHome?.setAttribute("aria-current", isHome ? "page" : "false");
-  navFiles?.setAttribute("aria-current", isHome ? "false" : "page");
+  navFiles?.setAttribute(
+    "aria-current",
+    navState.section === "files" ? "page" : "false",
+  );
 }
 
 function openHomeSection() {
@@ -1349,6 +1636,10 @@ function navigateFolder(folderId) {
 }
 
 function renderBreadcrumb() {
+  if (navState.section === "mural") {
+    breadcrumb.textContent = "Mural";
+    return;
+  }
   if (navState.section === "home") {
     breadcrumb.innerHTML = `<span>Início</span>`;
     return;
@@ -1358,17 +1649,17 @@ function renderBreadcrumb() {
     breadcrumb.innerHTML = `<span>Todos os Arquivos</span>`;
     return;
   }
-  let html = `<span class="bc-link" data-folder="root">Todos os Arquivos</span>`;
+  let html = `<button type="button" class="bc-link" data-folder="root">Todos os Arquivos</button>`;
   path.forEach((seg, i) => {
     html += `<span class="bc-sep"> > </span>`;
     if (i < path.length - 1) {
-      html += `<span class="bc-link" data-folder="${seg.id}" data-idx="${i}">${esc(seg.name)}</span>`;
+      html += `<button type="button" class="bc-link" data-folder="${seg.id}" data-idx="${i}">${esc(seg.name)}</button>`;
     } else {
       html += `<span>${esc(seg.name)}</span>`;
     }
   });
   breadcrumb.innerHTML = html;
-  breadcrumb.querySelectorAll(".bc-link").forEach(el => {
+  breadcrumb.querySelectorAll(".bc-link").forEach((el) => {
     el.onclick = () => {
       if (el.dataset.folder === "root") {
         dispatchNavigation("root");
@@ -1388,13 +1679,47 @@ const CONTENT_STRATEGIES = {
   video: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
   document: () => sortFiles(applyFilter(getFilesForCurrentFolder())),
   duplicates: () => sortFiles(applyFilter(getDuplicateFiles())),
-  screenshots: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && file.isScreenshot))),
-  trash: () => sortFiles(applyFilter(files.filter(file => file.deletedAt))),
+  screenshots: () =>
+    sortFiles(
+      applyFilter(
+        files.filter((file) => isActiveFile(file) && file.isScreenshot),
+      ),
+    ),
+  trash: () => sortFiles(applyFilter(files.filter((file) => file.deletedAt))),
   recent: () => sortFiles(applyFilter(files.filter(isActiveFile))).slice(0, 30),
-  untagged: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && normalizeTags(file.tags).length === 0))),
-  largeVideos: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && file.fileType === "video" && (file.size || 0) > 100 * 1024 * 1024))),
-  important: () => sortFiles(applyFilter(files.filter(file => isActiveFile(file) && (file.priority === "important" || file.priority === "critical")))),
-  favorites: () => sortFiles(applyFilter(files.filter(file => file.favorite && isActiveFile(file)))),
+  untagged: () =>
+    sortFiles(
+      applyFilter(
+        files.filter(
+          (file) => isActiveFile(file) && normalizeTags(file.tags).length === 0,
+        ),
+      ),
+    ),
+  largeVideos: () =>
+    sortFiles(
+      applyFilter(
+        files.filter(
+          (file) =>
+            isActiveFile(file) &&
+            file.fileType === "video" &&
+            (file.size || 0) > 100 * 1024 * 1024,
+        ),
+      ),
+    ),
+  important: () =>
+    sortFiles(
+      applyFilter(
+        files.filter(
+          (file) =>
+            isActiveFile(file) &&
+            (file.priority === "important" || file.priority === "critical"),
+        ),
+      ),
+    ),
+  favorites: () =>
+    sortFiles(
+      applyFilter(files.filter((file) => file.favorite && isActiveFile(file))),
+    ),
 };
 
 const VIEW_RENDERERS = {
@@ -1408,29 +1733,56 @@ const VIEW_RENDERERS = {
 function updateLibraryWorkspaceHeader() {
   const isRoot = navState.folderId === ROOT_ID;
   const folder = isRoot ? null : getFolder(navState.folderId);
-  const directFiles = activeFileCountByFolder.get(navState.folderId) || 0;
+  const directFiles = getContentFiles().length;
   const directFolders = getFolderChildren(navState.folderId).length;
-  if (currentFolderTitle) currentFolderTitle.textContent = isRoot ? "Todos os arquivos" : (folder?.name || "Pasta");
+  const scopeTitle = {
+    favorites: "Favoritos",
+    recent: "Recentes",
+    trash: "Lixeira",
+    duplicates: "Duplicados",
+    important: "Importantes",
+    screenshots: "Capturas",
+    image: "Imagens",
+    video: "Vídeos",
+    document: "Documentos",
+    untagged: "Sem tags",
+    largeVideos: "Vídeos grandes",
+    media: "Fotos e vídeos",
+  }[navState.contentScope];
+  if (currentFolderTitle)
+    currentFolderTitle.textContent = currentSearch
+      ? "Busca por “" + currentSearch + "”"
+      : scopeTitle || (isRoot ? "Todos os arquivos" : folder?.name || "Pasta");
   if (currentFolderMeta) {
     const fileText = `${directFiles} arquivo${directFiles === 1 ? "" : "s"}`;
     const folderText = `${directFolders} subpasta${directFolders === 1 ? "" : "s"}`;
-    currentFolderMeta.textContent = isRoot ? `${fileText} no seu acervo.` : `${fileText} · ${folderText} nesta pasta.`;
+    currentFolderMeta.textContent = isRoot
+      ? `${fileText} · ${activeAccountView === "all" ? "Todas as contas" : accountLabel(activeAccountView, false)}`
+      : `${fileText} · ${folderText} nesta pasta.`;
   }
-  if (createSubfolderLabel) createSubfolderLabel.textContent = isRoot ? "Nova coleção" : "Nova subpasta";
-  createSubfolderBtn?.setAttribute("aria-label", isRoot ? "Criar nova coleção" : "Criar subpasta nesta pasta");
-  createSubfolderBtn?.setAttribute("title", isRoot ? "Criar nova coleção" : "Criar subpasta");
+  if (createSubfolderLabel)
+    createSubfolderLabel.textContent = isRoot ? "Nova pasta" : "Nova subpasta";
+  createSubfolderBtn?.setAttribute(
+    "aria-label",
+    isRoot ? "Criar nova pasta" : "Criar subpasta nesta pasta",
+  );
+  createSubfolderBtn?.setAttribute(
+    "title",
+    isRoot ? "Criar nova pasta" : "Criar subpasta",
+  );
 }
 
 function shouldShowFolderChildren() {
-  return navState.section === "files"
-    && navState.folderId !== ROOT_ID
-    && navState.viewMode !== "folders"
-    && navState.contentScope === "all"
-    && !currentSearch
-    && !advancedFilters.folderId
-    && !advancedFilters.priority
-    && !advancedFilters.dateFrom
-    && !advancedFilters.dateTo;
+  return (
+    navState.section === "files" &&
+    navState.viewMode !== "folders" &&
+    navState.contentScope === "all" &&
+    !currentSearch &&
+    !advancedFilters.folderId &&
+    !advancedFilters.priority &&
+    !advancedFilters.dateFrom &&
+    !advancedFilters.dateTo
+  );
 }
 
 function renderFolderChildrenSection() {
@@ -1444,16 +1796,19 @@ function renderFolderChildrenSection() {
   folderChildrenSection.hidden = children.length === 0;
   folderChildrenCount.textContent = `${children.length} subpasta${children.length === 1 ? "" : "s"}`;
   const fragment = document.createDocumentFragment();
-  children.forEach(folder => fragment.appendChild(makeFolderCard(folder, countFilesInFolder(folder.id))));
+  children.forEach((folder) =>
+    fragment.appendChild(makeFolderCard(folder, countFilesInFolder(folder.id))),
+  );
   folderChildrenGrid.replaceChildren(fragment);
   return children.length;
 }
 
 function renderGrid() {
   renderDashboardVisibility();
-  if (navState.section === "home") {
+  if (navState.section === "home" || navState.section === "mural") {
     if (fileGrid.childElementCount) fileGrid.replaceChildren();
-    if (folderChildrenGrid?.childElementCount) folderChildrenGrid.replaceChildren();
+    if (folderChildrenGrid?.childElementCount)
+      folderChildrenGrid.replaceChildren();
     if (folderChildrenSection) folderChildrenSection.hidden = true;
     emptyState.style.display = "none";
     loadMoreBtn.style.display = "none";
@@ -1470,23 +1825,28 @@ function renderGrid() {
   let itemCount = 0;
   let elements = [];
   if (navState.viewMode === "folders") {
-    const folderItems = getFolderChildren(navState.folderId).filter(folder => matchesSearch(folder.name));
+    const folderItems = getFolderChildren(navState.folderId).filter((folder) =>
+      matchesSearch(folder.name),
+    );
     itemCount = folderItems.length;
     lightboxFiles = [];
-    elements = folderItems.slice(0, visibleLimit).map(folder => makeFolderCard(folder, countFilesInFolder(folder.id)));
+    elements = folderItems
+      .slice(0, visibleLimit)
+      .map((folder) => makeFolderCard(folder, countFilesInFolder(folder.id)));
   } else {
     const contentFiles = getContentFiles();
     lightboxFiles = contentFiles;
     itemCount = contentFiles.length;
     const visibleFiles = contentFiles.slice(0, visibleLimit);
-    elements = navState.viewMode === "timeline"
-      ? renderTimelineViewItems(visibleFiles)
-      : visibleFiles.map(makeFileCard);
+    elements =
+      navState.viewMode === "timeline"
+        ? renderTimelineViewItems(visibleFiles)
+        : visibleFiles.map(makeFileCard);
   }
 
   updateEmptyState(itemCount + visibleSubfolders);
   const fragment = document.createDocumentFragment();
-  elements.forEach(element => fragment.appendChild(element));
+  elements.forEach((element) => fragment.appendChild(element));
   fileGrid.appendChild(fragment);
   hydrateDriveThumbnails(fileGrid);
   loadMoreBtn.style.display = itemCount > visibleLimit ? "inline-flex" : "none";
@@ -1508,7 +1868,9 @@ function getGridClassName() {
     navState.viewMode === "timeline" ? "timeline-view" : "",
     isCompactView ? "compact-view" : "",
     isSelectMode ? "select-mode" : "",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function renderFileItems() {
@@ -1525,18 +1887,21 @@ function renderTimelineViewItems(list = getContentFiles()) {
 
 function renderFolderItems() {
   return getFolderChildren(navState.folderId)
-    .filter(folder => matchesSearch(folder.name))
-    .map(folder => makeFolderCard(folder, countFilesInFolder(folder.id)));
+    .filter((folder) => matchesSearch(folder.name))
+    .map((folder) => makeFolderCard(folder, countFilesInFolder(folder.id)));
 }
 
 function getContentFiles() {
-  const strategy = CONTENT_STRATEGIES[navState.contentScope] || CONTENT_STRATEGIES.all;
+  const strategy =
+    CONTENT_STRATEGIES[navState.contentScope] || CONTENT_STRATEGIES.all;
   return strategy();
 }
 
 function getFilesForCurrentFolder() {
   if (navState.folderId === ROOT_ID) return files.filter(isActiveFile);
-  return files.filter(file => file.folderId === navState.folderId && isActiveFile(file));
+  return files.filter(
+    (file) => file.folderId === navState.folderId && isActiveFile(file),
+  );
 }
 
 function isActiveFile(file) {
@@ -1546,30 +1911,73 @@ function isActiveFile(file) {
 function updateEmptyState(itemCount) {
   emptyState.style.display = itemCount === 0 ? "flex" : "none";
   const modeMessages = {
-    folders: ["Sem pastas aqui", "Crie uma pasta ou volte para Todos os Arquivos."],
-    timeline: ["Linha do tempo vazia", "Arquivos com data aparecem organizados aqui."],
+    folders: [
+      "Sem pastas aqui",
+      "Crie uma pasta ou volte para Todos os Arquivos.",
+    ],
+    timeline: [
+      "Linha do tempo vazia",
+      "Arquivos com data aparecem organizados aqui.",
+    ],
   };
   const scopeMessages = {
     trash: ["Lixeira vazia", "Itens enviados para a lixeira aparecem aqui."],
-    favorites: ["Sem favoritos", "Marque arquivos importantes com estrela para encontra-los rapido."],
-    duplicates: ["Sem duplicados", "Arquivos iguais pelo hash ou pelo mesmo nome e tamanho aparecem aqui."],
+    favorites: [
+      "Sem favoritos",
+      "Marque arquivos importantes com estrela para encontra-los rapido.",
+    ],
+    duplicates: [
+      "Sem duplicados",
+      "Arquivos iguais pelo hash ou pelo mesmo nome e tamanho aparecem aqui.",
+    ],
     recent: ["Nada recente", "Seus envios mais recentes vao aparecer aqui."],
-    untagged: ["Tudo etiquetado", "Arquivos sem tags aparecem aqui para facilitar organizacao."],
-    largeVideos: ["Sem videos grandes", "Videos acima de 100 MB aparecem aqui."],
-    important: ["Nada importante", "Use prioridade importante ou critica para destacar arquivos."],
+    untagged: [
+      "Tudo etiquetado",
+      "Arquivos sem tags aparecem aqui para facilitar organizacao.",
+    ],
+    largeVideos: [
+      "Sem videos grandes",
+      "Videos acima de 100 MB aparecem aqui.",
+    ],
+    important: [
+      "Nada importante",
+      "Use prioridade importante ou critica para destacar arquivos.",
+    ],
   };
-  const [title, sub] = modeMessages[navState.viewMode] || scopeMessages[navState.contentScope] || ["Cofre vazio", "Organize fotos, videos e documentos em pastas."];
-  emptyTitle.textContent = title;
-  emptySub.textContent = sub;
+  const [title, sub] = modeMessages[navState.viewMode] ||
+    scopeMessages[navState.contentScope] || [
+      "Cofre vazio",
+      "Organize fotos, videos e documentos em pastas.",
+    ];
+  const filtered =
+    !!currentSearch ||
+    Object.values(advancedFilters).some(Boolean) ||
+    activeAccountView !== "all";
+  emptyTitle.textContent = filtered ? "Nenhum resultado encontrado" : title;
+  emptySub.textContent = filtered
+    ? "Tente outro termo, altere a conta ou limpe os filtros."
+    : sub;
+  $("clearSearchFilters").hidden = !filtered;
+  emptyState
+    .querySelectorAll("[data-upload], #emptyNewFolderBtn")
+    .forEach(
+      (el) => (el.hidden = filtered || navState.contentScope === "trash"),
+    );
 }
 
 function updateContextualActions() {
+  const filterCount = Object.values(advancedFilters).filter(Boolean).length;
+  $("filterPanelToggle").textContent = filterCount
+    ? `Filtros (${filterCount})`
+    : "Filtros";
   if (trashActions) trashActions.hidden = navState.contentScope !== "trash";
+  $("viewManga").hidden =
+    navState.folderId === ROOT_ID || !getMangaPages(navState.folderId).length;
 }
 
 function renderTimelineItems(list, items) {
   let lastKey = "";
-  list.forEach(file => {
+  list.forEach((file) => {
     const key = monthKey(file);
     if (key !== lastKey) {
       const header = document.createElement("div");
@@ -1607,17 +2015,28 @@ function countFilesInFolder(folderId) {
 
 function applyFilter(list) {
   let result = list.filter(matchesAccountView);
-  if (navState.viewMode === "gallery" || navState.contentScope === "media") result = result.filter(f => f.fileType === "image" || f.fileType === "video");
+  if (navState.viewMode === "gallery" || navState.contentScope === "media")
+    result = result.filter(
+      (f) => f.fileType === "image" || f.fileType === "video",
+    );
   if (["image", "video", "document"].includes(navState.contentScope)) {
-    result = result.filter(f => f.fileType === navState.contentScope);
+    result = result.filter((f) => f.fileType === navState.contentScope);
   }
   result = result.filter(matchesAdvancedFilters);
   return result.filter(fileMatchesSearch);
 }
 
 function matchesAdvancedFilters(file) {
-  if (advancedFilters.folderId && (file.folderId || "root") !== advancedFilters.folderId) return false;
-  if (advancedFilters.priority && (file.priority || "normal") !== advancedFilters.priority) return false;
+  if (
+    advancedFilters.folderId &&
+    (file.folderId || "root") !== advancedFilters.folderId
+  )
+    return false;
+  if (
+    advancedFilters.priority &&
+    (file.priority || "normal") !== advancedFilters.priority
+  )
+    return false;
   const d = fileDate(file);
   if (advancedFilters.dateFrom) {
     const from = new Date(advancedFilters.dateFrom + "T00:00:00");
@@ -1631,7 +2050,7 @@ function matchesAdvancedFilters(file) {
 }
 
 function getDuplicateFiles() {
-  return files.filter(file => duplicateFileIds.has(file.id));
+  return files.filter((file) => duplicateFileIds.has(file.id));
 }
 
 function isDuplicateFile(file) {
@@ -1640,10 +2059,13 @@ function isDuplicateFile(file) {
 
 function sortFiles(list) {
   return [...list].sort((a, b) => {
-    if (currentSort === "oldest") return dateValue(a.createdAt) - dateValue(b.createdAt);
-    if (currentSort === "name") return (a.name || "").localeCompare(b.name || "", "pt-BR");
+    if (currentSort === "oldest")
+      return dateValue(a.createdAt) - dateValue(b.createdAt);
+    if (currentSort === "name")
+      return (a.name || "").localeCompare(b.name || "", "pt-BR");
     if (currentSort === "size") return (b.size || 0) - (a.size || 0);
-    if (currentSort === "type") return (a.fileType || "").localeCompare(b.fileType || "");
+    if (currentSort === "type")
+      return (a.fileType || "").localeCompare(b.fileType || "");
     return dateValue(b.createdAt) - dateValue(a.createdAt);
   });
 }
@@ -1659,7 +2081,9 @@ function fileMatchesSearch(file) {
   if (!currentSearch) return true;
   const tags = normalizeTags(file.tags).join(" ");
   const indexedText = localTextSearch.get(file.id)?.text || "";
-  return matchesSearch(`${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)} ${indexedText}`);
+  return matchesSearch(
+    `${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)} ${indexedText}`,
+  );
 }
 
 function matchesSearch(text) {
@@ -1677,45 +2101,73 @@ function normalizeSearchText(text) {
 function supportsLocalIndex(file) {
   const name = file.name || "";
   const mime = file.mimeType || file.type || "";
-  return file.fileType === "image"
-    || mime === "text/plain"
-    || /\.(pdf|txt)$/i.test(name)
-    || mime === "application/pdf";
+  return (
+    file.fileType === "image" ||
+    mime === "text/plain" ||
+    /\.(pdf|txt)$/i.test(name) ||
+    mime === "application/pdf"
+  );
 }
 
 function indexSourceKey(file) {
-  return file.contentHash || `${file.driveFileId || file.url || ""}|${file.size || 0}|${file.name || ""}`;
+  return (
+    file.contentHash ||
+    `${file.driveFileId || file.url || ""}|${file.size || 0}|${file.name || ""}`
+  );
 }
 
 function albumForPhoto(capturedAt, isScreenshot) {
   if (!capturedAt) return { key: "", label: "" };
   const date = new Date(`${capturedAt}T12:00:00`);
   if (Number.isNaN(date.getTime())) return { key: "", label: "" };
-  const month = date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const month = date.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
   const prefix = isScreenshot ? "Capturas de tela" : "Fotos";
-  return { key: `${isScreenshot ? "screens" : "photos"}-${capturedAt.slice(0, 7)}`, label: `${prefix} de ${month}` };
+  return {
+    key: `${isScreenshot ? "screens" : "photos"}-${capturedAt.slice(0, 7)}`,
+    label: `${prefix} de ${month}`,
+  };
 }
 
 function isPhotoFile(file) {
-  return (file.type || "").startsWith("image/") || PHOTO_EXTENSION_PATTERN.test(file.name || "");
+  return (
+    (file.type || "").startsWith("image/") ||
+    PHOTO_EXTENSION_PATTERN.test(file.name || "")
+  );
 }
 
 async function getPhotoInsights(file, options = {}) {
-  if (!isPhotoFile(file)) return { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+  if (!isPhotoFile(file))
+    return {
+      capturedAt: "",
+      dateSource: "",
+      isScreenshot: false,
+      albumKey: "",
+      albumLabel: "",
+    };
   if (photoMetadataCache.has(file)) return photoMetadataCache.get(file);
   const metadata = await readPhotoMetadata(file, options);
   const album = albumForPhoto(metadata.capturedAt, metadata.isScreenshot);
-  const insights = { ...metadata, albumKey: album.key, albumLabel: album.label };
+  const insights = {
+    ...metadata,
+    albumKey: album.key,
+    albumLabel: album.label,
+  };
   photoMetadataCache.set(file, insights);
   return insights;
 }
 
 function photoMetadataUpdate(file, insights) {
   const tags = normalizeTags(file.tags);
-  if (insights.isScreenshot && !tags.includes("captura-de-tela")) tags.push("captura-de-tela");
+  if (insights.isScreenshot && !tags.includes("captura-de-tela"))
+    tags.push("captura-de-tela");
   return {
     eventDate: file.eventDate || insights.capturedAt || "",
-    photoDateSource: file.eventDate ? (file.photoDateSource || "manual") : insights.dateSource || "",
+    photoDateSource: file.eventDate
+      ? file.photoDateSource || "manual"
+      : insights.dateSource || "",
     isScreenshot: !!insights.isScreenshot,
     suggestedAlbumKey: insights.albumKey || "",
     suggestedAlbumLabel: insights.albumLabel || "",
@@ -1725,9 +2177,20 @@ function photoMetadataUpdate(file, insights) {
 }
 
 async function analyzeExistingPhotos() {
-  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
-  const pending = files.filter(file => isActiveFile(file) && file.fileType === "image" && file.photoMetadataStatus !== "processed");
-  if (!pending.length) { showToast("Todas as imagens atuais ja foram analisadas"); return; }
+  if (!db) {
+    showToast("Configure as credenciais primeiro", "error");
+    return;
+  }
+  const pending = files.filter(
+    (file) =>
+      isActiveFile(file) &&
+      file.fileType === "image" &&
+      file.photoMetadataStatus !== "processed",
+  );
+  if (!pending.length) {
+    showToast("Todas as imagens atuais ja foram analisadas");
+    return;
+  }
   const confirmed = await openConfirmDialog({
     title: "Analisar fotos",
     message: `Ler data EXIF e identificar capturas de tela em ${pending.length} imagem(ns)? A leitura ocorre neste navegador.`,
@@ -1744,9 +2207,16 @@ async function analyzeExistingPhotos() {
       button.textContent = `Analisando ${index + 1}/${pending.length}`;
       try {
         const blob = await fetchStoredBlob(file);
-        const source = new File([blob], file.name || "foto", { type: file.mimeType || blob.type || "image/jpeg" });
-        const insights = await getPhotoInsights(source, { allowFileDateFallback: false });
-        await updateDoc(doc(db, "vault_files", file.id), photoMetadataUpdate(file, insights));
+        const source = new File([blob], file.name || "foto", {
+          type: file.mimeType || blob.type || "image/jpeg",
+        });
+        const insights = await getPhotoInsights(source, {
+          allowFileDateFallback: false,
+        });
+        await updateDoc(
+          doc(db, "vault_files", file.id),
+          photoMetadataUpdate(file, insights),
+        );
         processed += 1;
       } catch (error) {
         console.warn("Nao foi possivel analisar a foto", file.name, error);
@@ -1758,13 +2228,20 @@ async function analyzeExistingPhotos() {
     button.textContent = "Analisar fotos";
   }
   addHistory(`Fotos analisadas: ${processed}`);
-  showToast(failed ? `${processed} foto(s) analisada(s), ${failed} com erro` : `${processed} foto(s) analisada(s)`, failed ? "error" : "success");
+  showToast(
+    failed
+      ? `${processed} foto(s) analisada(s), ${failed} com erro`
+      : `${processed} foto(s) analisada(s)`,
+    failed ? "error" : "success",
+  );
 }
 
 async function resolveIndexSource(file, sourceFile = null) {
   if (sourceFile) return sourceFile;
   const blob = await fetchStoredBlob(file);
-  return new File([blob], file.name || "arquivo", { type: file.mimeType || blob.type });
+  return new File([blob], file.name || "arquivo", {
+    type: file.mimeType || blob.type,
+  });
 }
 
 async function indexFileLocally(file, sourceFile = null, onProgress = null) {
@@ -1788,11 +2265,11 @@ async function indexFileLocally(file, sourceFile = null, onProgress = null) {
 function scheduleLocalIndex(file, sourceFile = null) {
   searchIndexQueue = searchIndexQueue
     .then(() => indexFileLocally(file, sourceFile))
-    .then(result => {
+    .then((result) => {
       if (result.status === "indexed") renderGrid();
       return result;
     })
-    .catch(error => {
+    .catch((error) => {
       console.warn("Nao foi possivel indexar arquivo", error);
       return { status: "failed", error };
     });
@@ -1800,10 +2277,18 @@ function scheduleLocalIndex(file, sourceFile = null) {
 }
 
 async function indexSearchLibrary() {
-  const candidates = files.filter(file => isActiveFile(file) && supportsLocalIndex(file));
-  const pending = candidates.filter(file => localTextSearch.get(file.id)?.sourceKey !== indexSourceKey(file));
+  const candidates = files.filter(
+    (file) => isActiveFile(file) && supportsLocalIndex(file),
+  );
+  const pending = candidates.filter(
+    (file) => localTextSearch.get(file.id)?.sourceKey !== indexSourceKey(file),
+  );
   if (!pending.length) {
-    showToast(candidates.length ? "Todos os arquivos compativeis ja foram indexados" : "Nenhum arquivo compativel para indexar");
+    showToast(
+      candidates.length
+        ? "Todos os arquivos compativeis ja foram indexados"
+        : "Nenhum arquivo compativel para indexar",
+    );
     return;
   }
   const confirmed = await openConfirmDialog({
@@ -1835,12 +2320,20 @@ async function indexSearchLibrary() {
     button.textContent = "Indexar busca local";
   }
   renderGrid();
-  showToast(failed ? `${indexed} indexado(s), ${failed} com erro` : `${indexed} arquivo(s) indexado(s)`, failed ? "error" : "success");
+  showToast(
+    failed
+      ? `${indexed} indexado(s), ${failed} com erro`
+      : `${indexed} arquivo(s) indexado(s)`,
+    failed ? "error" : "success",
+  );
 }
 
 async function clearLocalSearchIndex() {
   const count = localTextSearch.count();
-  if (!count) { showToast("O indice local ja esta vazio"); return; }
+  if (!count) {
+    showToast("O indice local ja esta vazio");
+    return;
+  }
   const confirmed = await openConfirmDialog({
     title: "Limpar indice local",
     message: `Remover o texto extraido de ${count} arquivo(s) somente deste navegador? Os arquivos originais nao serao afetados.`,
@@ -1856,12 +2349,22 @@ async function clearLocalSearchIndex() {
 // ??? File Card ????????????????????????????????????????????
 function makeFileCard(file) {
   const card = document.createElement("div");
-  const typeLabel = { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
+  const typeLabel =
+    { image: "IMG", video: "VID", document: "DOC" }[file.fileType] || "FILE";
   const mediaLayout = getMediaLayout(file);
   const isMedia = file.fileType === "image" || file.fileType === "video";
   const description = String(file.description || "").trim();
   const hasMediaDescription = isMedia;
-  card.className = "file-card" + (file.favorite ? " is-favorite" : "") + (file.priority === "important" || file.priority === "critical" ? " is-priority" : "") + (isDuplicateFile(file) ? " is-duplicate" : "") + (selectedIds.has(file.id) ? " selected" : "") + (isMedia ? ` media-${mediaLayout.orientation}` : "") + (hasMediaDescription ? " has-media-description" : "");
+  card.className =
+    "file-card" +
+    (file.favorite ? " is-favorite" : "") +
+    (file.priority === "important" || file.priority === "critical"
+      ? " is-priority"
+      : "") +
+    (isDuplicateFile(file) ? " is-duplicate" : "") +
+    (selectedIds.has(file.id) ? " selected" : "") +
+    (isMedia ? ` media-${mediaLayout.orientation}` : "") +
+    (hasMediaDescription ? " has-media-description" : "");
   if (hasMediaDescription && mediaLayout.orientation === "vertical") {
     card.style.setProperty("--card-width", "min(100%, 390px)");
   } else if (mediaLayout.cardWidth) {
@@ -1873,12 +2376,12 @@ function makeFileCard(file) {
     const thumb = mediaThumbUrl(file, 520, 360);
     thumbHtml = thumb
       ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />`
-      : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">IMG</span>`;
+      : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">${icon("Image")}</span>`;
   } else if (file.fileType === "video") {
     const poster = mediaThumbUrl(file, 520, 360);
-    thumbHtml = `${poster ? `<img src="${poster}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">VID</span>`}
+    thumbHtml = `${poster ? `<img src="${poster}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />` : `<span class="thumb-icon drive-thumb-placeholder" data-drive-thumb-id="${esc(file.id)}">${icon("Film")}</span>`}
       <div class="play-overlay">
-        <div class="play-indicator">▶</div>
+        <div class="play-indicator">${icon("Play")}</div>
       </div>`;
   } else {
     thumbHtml = `<span class="thumb-icon">${docIcon(file.name)}</span>`;
@@ -1888,51 +2391,59 @@ function makeFileCard(file) {
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
   const tags = normalizeTags(file.tags);
   const isTrash = navState.contentScope === "trash" || file.deletedAt;
-  const priorityLabel = { important: "Importante", critical: "Muito importante" }[file.priority] || "";
+  const priorityLabel =
+    { important: "Importante", critical: "Muito importante" }[file.priority] ||
+    "";
   const folderLabel = getFolderPathLabel(file.folderId);
   const automaticLabels = [
     file.isScreenshot ? "Captura de tela" : "",
     file.suggestedAlbumLabel || "",
   ].filter(Boolean);
-  const canUseAsCover = !!file.folderId && (file.fileType === "image" || file.fileType === "video");
+  const canUseAsCover =
+    !!file.folderId && (file.fileType === "image" || file.fileType === "video");
   const canReadAsManga = file.fileType === "image";
   const canCopyAcrossAccounts = isGoogleDriveRecord(file);
   const mediaDescriptionText = description || "Adicionar descricao...";
   const mediaDescriptionClass = description ? "" : " is-empty";
-  const mediaDescriptionTop = hasMediaDescription ? `<p class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
-  const mediaDescriptionSide = hasMediaDescription ? `<p class="media-description media-description-side${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</p>` : "";
+  const mediaDescriptionTop = hasMediaDescription
+    ? `<button type="button" class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</button>`
+    : "";
+  const mediaDescriptionSide = hasMediaDescription
+    ? `<button type="button" class="media-description media-description-side${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</button>`
+    : "";
   const thumbBlock = `
     <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
       <span class="account-badge file-account-badge">${accountBadge(file)}</span>
-      <button class="${favClass}" title="${favTitle}">★</button>
-      <div class="select-checkbox"><span class="chk">${selectedIds.has(file.id) ? "✓" : ""}</span></div>
+      <button class="${favClass}" title="${favTitle}" aria-label="${favTitle}" aria-pressed="${!!file.favorite}">${icon("Star")}</button>
+      <button type="button" class="select-checkbox" aria-label="Selecionar ${esc(file.name)}" aria-pressed="${selectedIds.has(file.id)}"><span class="chk">${icon(selectedIds.has(file.id) ? "Check" : "Square")}</span></button>
     </div>`;
 
   card.innerHTML = `
     ${isMedia ? `<div class="file-media-frame">${mediaDescriptionTop}${thumbBlock}${mediaDescriptionSide}</div>` : thumbBlock}
     <div class="file-info">
       <div class="file-meta">
-        <span class="file-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        <button type="button" class="file-name" title="${esc(file.name)}">${esc(file.name)}</button>
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
         ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
         ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
-        ${automaticLabels.map(label => `<span class="auto-badge">${esc(label)}</span>`).join("")}
+        ${automaticLabels.map((label) => `<span class="auto-badge">${esc(label)}</span>`).join("")}
         ${!isMedia && description ? `<p class="file-description">${esc(description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
-        ${tags.length ? `<div class="tag-row">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${tags.length ? `<div class="tag-row">${tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
       </div>
       <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
       <div class="file-actions">
-        ${isTrash
-          ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
-             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">...</button>
+        ${
+          isTrash
+            ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
+             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
              <div class="file-action-menu" role="menu">
                <button class="file-menu-item permanent-delete" type="button" role="menuitem">Excluir definitivo</button>
              </div>`
-          : `<button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
-             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">...</button>
+            : `<button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
+             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
              <div class="file-action-menu" role="menu">
                <button class="file-menu-item description-btn" type="button" role="menuitem">Descricao</button>
                <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
@@ -1943,13 +2454,14 @@ function makeFileCard(file) {
                ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
                ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
                <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
-             </div>`}
+             </div>`
+        }
       </div>
     </div>`;
 
   const actionMenuBtn = card.querySelector(".action-menu-btn");
   const actionMenu = card.querySelector(".file-action-menu");
-  actionMenuBtn?.addEventListener("click", e => {
+  actionMenuBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     const shouldOpen = !actionMenu?.classList.contains("active");
     closeActionMenus();
@@ -1959,10 +2471,10 @@ function makeFileCard(file) {
       actionMenuBtn.setAttribute("aria-expanded", "true");
     }
   });
-  actionMenu?.addEventListener("click", e => e.stopPropagation());
+  actionMenu?.addEventListener("click", (e) => e.stopPropagation());
 
   const bindAction = (selector, handler) => {
-    card.querySelector(selector)?.addEventListener("click", e => {
+    card.querySelector(selector)?.addEventListener("click", (e) => {
       e.stopPropagation();
       closeActionMenus();
       handler();
@@ -1980,8 +2492,8 @@ function makeFileCard(file) {
   bindAction(".manga-btn-card", () => openMangaReader(file));
   bindAction(".restore-btn", () => restoreFile(file));
   bindAction(".permanent-delete", () => permanentlyDeleteFile(file));
-  card.querySelectorAll(".media-description").forEach(el => {
-    el.addEventListener("click", e => {
+  card.querySelectorAll(".media-description").forEach((el) => {
+    el.addEventListener("click", (e) => {
       e.stopPropagation();
       closeActionMenus();
       openDescriptionModal(file);
@@ -1989,24 +2501,27 @@ function makeFileCard(file) {
   });
 
   // Favorito
-  card.querySelector(".fav-btn").onclick = e => {
+  card.querySelector(".fav-btn").onclick = (e) => {
     e.stopPropagation();
     toggleFavorite(file);
   };
 
   // Checkbox de selecao
-  card.querySelector(".select-checkbox").onclick = e => {
+  card.querySelector(".select-checkbox").onclick = (e) => {
     e.stopPropagation();
     toggleSelect(file.id);
   };
 
   card.onclick = () => {
-    if (isSelectMode) { toggleSelect(file.id); return; }
+    if (isSelectMode) {
+      toggleSelect(file.id);
+      return;
+    }
     if (file.deletedAt) return;
     openLightbox(file);
   };
   card.draggable = !isTrash;
-  card.addEventListener("dragstart", e => {
+  card.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/plain", file.id);
     e.dataTransfer.effectAllowed = "move";
   });
@@ -2014,22 +2529,35 @@ function makeFileCard(file) {
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
   if (file.missing) markFileUnavailable(card, file);
   if (mediaEl) {
-    mediaEl.addEventListener("error", () => markFileUnavailable(card), { once: true });
+    mediaEl.addEventListener("error", () => markFileUnavailable(card), {
+      once: true,
+    });
   }
   if (mediaEl && !mediaLayout.ratio) {
-    mediaEl.addEventListener("load", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
-    mediaEl.addEventListener("loadedmetadata", () => applyLoadedMediaRatio(card, mediaEl), { once: true });
-    if (mediaEl.complete || mediaEl.readyState >= 1) applyLoadedMediaRatio(card, mediaEl);
+    mediaEl.addEventListener(
+      "load",
+      () => applyLoadedMediaRatio(card, mediaEl),
+      { once: true },
+    );
+    mediaEl.addEventListener(
+      "loadedmetadata",
+      () => applyLoadedMediaRatio(card, mediaEl),
+      { once: true },
+    );
+    if (mediaEl.complete || mediaEl.readyState >= 1)
+      applyLoadedMediaRatio(card, mediaEl);
   }
   return card;
 }
 
 function closeActionMenus() {
-  document.querySelectorAll(".file-action-menu.active").forEach(menu => {
+  document.querySelectorAll(".file-action-menu.active").forEach((menu) => {
     menu.classList.remove("active");
     const card = menu.closest(".file-card");
     card?.classList.remove("menu-open");
-    card?.querySelector(".action-menu-btn")?.setAttribute("aria-expanded", "false");
+    card
+      ?.querySelector(".action-menu-btn")
+      ?.setAttribute("aria-expanded", "false");
   });
 }
 
@@ -2037,13 +2565,16 @@ function markFileUnavailable(card, file = null) {
   const thumb = card.querySelector(".file-thumb");
   if (!thumb) return;
   card.classList.add("file-unavailable");
-  thumb.querySelectorAll("img, video").forEach(el => el.remove());
-  thumb.insertAdjacentHTML("afterbegin", `
+  thumb.querySelectorAll("img, video").forEach((el) => el.remove());
+  thumb.insertAdjacentHTML(
+    "afterbegin",
+    `
     <div class="missing-media">
       <span class="missing-media-title">Conflito de armazenamento</span>
       <span class="missing-media-sub">${file?.conflictReason === "trashed_in_drive" ? "O arquivo está na lixeira do Google Drive" : file?.conflictReason === "removed_from_drive" ? "O arquivo foi removido diretamente do Google Drive" : "Não foi encontrado no armazenamento"}</span>
     </div>
-  `);
+  `,
+  );
 }
 
 function getMediaLayout(file) {
@@ -2067,9 +2598,14 @@ function applyLoadedMediaRatio(card, mediaEl) {
   const h = mediaEl.naturalHeight || mediaEl.videoHeight;
   if (!w || !h) return;
   const layout = mediaLayoutFromSize(w, h);
-  card.querySelector(".file-thumb")?.style.setProperty("--media-ratio", layout.ratio);
+  card
+    .querySelector(".file-thumb")
+    ?.style.setProperty("--media-ratio", layout.ratio);
   setMediaOrientationClass(card, layout.orientation);
-  if (card.classList.contains("has-media-description") && layout.orientation === "vertical") {
+  if (
+    card.classList.contains("has-media-description") &&
+    layout.orientation === "vertical"
+  ) {
     card.style.setProperty("--card-width", "min(100%, 390px)");
   } else if (layout.cardWidth) {
     card.style.setProperty("--card-width", layout.cardWidth);
@@ -2080,15 +2616,20 @@ function applyLoadedMediaRatio(card, mediaEl) {
 
 function setMediaOrientationClass(card, orientation) {
   card.classList.remove("media-horizontal", "media-vertical");
-  card.classList.add(orientation === "vertical" ? "media-vertical" : "media-horizontal");
+  card.classList.add(
+    orientation === "vertical" ? "media-vertical" : "media-horizontal",
+  );
 }
 
 function cloudThumb(publicId, resourceType, w, h, coverTime = null) {
   if (!publicId || !cloudName) return "";
   const type = resourceType === "video" ? "video" : "image";
-  const fmt  = resourceType === "video" ? "f_jpg" : "f_auto";
+  const fmt = resourceType === "video" ? "f_jpg" : "f_auto";
   const dims = qualityDims(w, h);
-  const cover = resourceType === "video" && Number.isFinite(Number(coverTime)) ? `so_${Math.max(0, Math.round(Number(coverTime)))},` : "";
+  const cover =
+    resourceType === "video" && Number.isFinite(Number(coverTime))
+      ? `so_${Math.max(0, Math.round(Number(coverTime)))},`
+      : "";
   return `https://res.cloudinary.com/${cloudName}/${type}/upload/${cover}c_fit,w_${dims.w},h_${dims.h},q_auto,${fmt}/${publicId}`;
 }
 
@@ -2100,26 +2641,38 @@ function cloudPreview(publicId, resourceType, w = 1920, h = 1440) {
 
 function mediaThumbUrl(file, w = 520, h = 360) {
   if (!file) return "";
-  if (isGoogleDriveRecord(file)) return driveThumbnailCache.get(file.id) || file.driveThumbnailLink || "";
-  if (file.fileType === "image") return cloudThumb(file.cloudPublicId, "image", w, h) || file.url || "";
-  if (file.fileType === "video") return cloudThumb(file.cloudPublicId, "video", w, h, file.coverTime) || "";
+  if (isGoogleDriveRecord(file))
+    return driveThumbnailCache.get(file.id) || file.driveThumbnailLink || "";
+  if (file.fileType === "image")
+    return cloudThumb(file.cloudPublicId, "image", w, h) || file.url || "";
+  if (file.fileType === "video")
+    return cloudThumb(file.cloudPublicId, "video", w, h, file.coverTime) || "";
   return "";
 }
 
 async function loadDriveThumbnail(file, force = false) {
-  if (!isGoogleDriveRecord(file) || !driveManager?.isConnected(recordAccountSlot(file))) return "";
-  if (!force && driveThumbnailCache.has(file.id)) return driveThumbnailCache.get(file.id);
-  if (!force && driveThumbnailRequests.has(file.id)) return driveThumbnailRequests.get(file.id);
-  const request = driveManager.getMetadata(recordAccountSlot(file), file.driveFileId)
-    .then(metadata => {
+  if (
+    !isGoogleDriveRecord(file) ||
+    !driveManager?.isConnected(recordAccountSlot(file))
+  )
+    return "";
+  if (!force && driveThumbnailCache.has(file.id))
+    return driveThumbnailCache.get(file.id);
+  if (!force && driveThumbnailRequests.has(file.id))
+    return driveThumbnailRequests.get(file.id);
+  const request = driveManager
+    .getMetadata(recordAccountSlot(file), file.driveFileId)
+    .then((metadata) => {
       const thumbnail = metadata.thumbnailLink || "";
       if (thumbnail) driveThumbnailCache.set(file.id, thumbnail);
       file.driveThumbnailLink = thumbnail;
-      file.driveWebViewLink = metadata.webViewLink || file.driveWebViewLink || "";
-      file.driveWebContentLink = metadata.webContentLink || file.driveWebContentLink || "";
+      file.driveWebViewLink =
+        metadata.webViewLink || file.driveWebViewLink || "";
+      file.driveWebContentLink =
+        metadata.webContentLink || file.driveWebContentLink || "";
       return thumbnail;
     })
-    .catch(error => {
+    .catch((error) => {
       console.warn(`Miniatura indisponivel para ${file.name}`, error);
       return "";
     })
@@ -2130,44 +2683,58 @@ async function loadDriveThumbnail(file, force = false) {
 
 function hydrateDriveThumbnails(root = document) {
   const ids = new Set();
-  root.querySelectorAll?.("[data-drive-file-id], [data-drive-thumb-id]").forEach(element => {
-    const id = element.dataset.driveFileId || element.dataset.driveThumbId;
-    if (id) ids.add(id);
-  });
-  ids.forEach(async id => {
+  root
+    .querySelectorAll?.("[data-drive-file-id], [data-drive-thumb-id]")
+    .forEach((element) => {
+      const id = element.dataset.driveFileId || element.dataset.driveThumbId;
+      if (id) ids.add(id);
+    });
+  ids.forEach(async (id) => {
     const file = fileById.get(id);
     if (!file) return;
     const thumbnail = await loadDriveThumbnail(file);
     if (!thumbnail) return;
-    root.querySelectorAll?.(`[data-drive-file-id="${CSS.escape(id)}"]`).forEach(image => {
-      if (image.src !== thumbnail) image.src = thumbnail;
-    });
-    root.querySelectorAll?.(`[data-drive-thumb-id="${CSS.escape(id)}"]`).forEach(placeholder => {
-      const image = document.createElement("img");
-      image.src = thumbnail;
-      image.alt = file.name || "Arquivo";
-      image.loading = "lazy";
-      image.dataset.driveFileId = id;
-      placeholder.replaceWith(image);
-    });
+    root
+      .querySelectorAll?.(`[data-drive-file-id="${CSS.escape(id)}"]`)
+      .forEach((image) => {
+        if (image.src !== thumbnail) image.src = thumbnail;
+      });
+    root
+      .querySelectorAll?.(`[data-drive-thumb-id="${CSS.escape(id)}"]`)
+      .forEach((placeholder) => {
+        const image = document.createElement("img");
+        image.src = thumbnail;
+        image.alt = file.name || "Arquivo";
+        image.loading = "lazy";
+        image.dataset.driveFileId = id;
+        placeholder.replaceWith(image);
+      });
   });
 }
 
-document.addEventListener("error", event => {
-  const image = event.target;
-  const id = image?.dataset?.driveFileId;
-  if (!id || image.dataset.driveRefreshAttempted) return;
-  image.dataset.driveRefreshAttempted = "true";
-  const file = fileById.get(id);
-  if (!file) return;
-  loadDriveThumbnail(file, true).then(thumbnail => { if (thumbnail) image.src = thumbnail; });
-}, true);
+document.addEventListener(
+  "error",
+  (event) => {
+    const image = event.target;
+    const id = image?.dataset?.driveFileId;
+    if (!id || image.dataset.driveRefreshAttempted) return;
+    image.dataset.driveRefreshAttempted = "true";
+    const file = fileById.get(id);
+    if (!file) return;
+    loadDriveThumbnail(file, true).then((thumbnail) => {
+      if (thumbnail) image.src = thumbnail;
+    });
+  },
+  true,
+);
 
 async function fetchStoredBlob(file) {
-  if (isGoogleDriveRecord(file)) return driveManager.getBlob(recordAccountSlot(file), file.driveFileId);
+  if (isGoogleDriveRecord(file))
+    return driveManager.getBlob(recordAccountSlot(file), file.driveFileId);
   if (!file.url) throw new Error("Arquivo sem endereco de origem");
   const response = await fetch(file.url);
-  if (!response.ok) throw new Error(`Nao foi possivel carregar o arquivo (${response.status})`);
+  if (!response.ok)
+    throw new Error(`Nao foi possivel carregar o arquivo (${response.status})`);
   return response.blob();
 }
 
@@ -2206,7 +2773,18 @@ function qualityDims(w, h) {
 
 function docIcon(name) {
   const ext = (name || "").split(".").pop().toLowerCase();
-  return { pdf:"PDF", doc:"DOC", docx:"DOC", txt:"TXT", zip:"ZIP", rar:"RAR", xls:"XLS", xlsx:"XLS" }[ext] || "FILE";
+  return (
+    {
+      pdf: "PDF",
+      doc: "DOC",
+      docx: "DOC",
+      txt: "TXT",
+      zip: "ZIP",
+      rar: "RAR",
+      xls: "XLS",
+      xlsx: "XLS",
+    }[ext] || "FILE"
+  );
 }
 
 // ??? Folder Card ??????????????????????????????????????????
@@ -2214,27 +2792,36 @@ function makeFolderCard(folder, count) {
   const card = document.createElement("div");
   card.className = "folder-card";
   const hasChildren = getFolderChildren(folder.id).length > 0;
-  const coverCandidate = folder.coverFileId ? fileById.get(folder.coverFileId) : null;
-  const coverFile = coverCandidate && !coverCandidate.deletedAt ? coverCandidate : null;
+  const coverCandidate = folder.coverFileId
+    ? fileById.get(folder.coverFileId)
+    : null;
+  const coverFile =
+    coverCandidate && !coverCandidate.deletedAt ? coverCandidate : null;
   const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
-  const coverRatio = coverFile?.width && coverFile?.height ? `${coverFile.width} / ${coverFile.height}` : "16 / 9";
+  const coverRatio =
+    coverFile?.width && coverFile?.height
+      ? `${coverFile.width} / ${coverFile.height}`
+      : "16 / 9";
   const subCount = descendantFolderCountByFolder.get(folder.id) || 0;
   card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
-      ${coverUrl ? `<img src="${coverUrl}" data-drive-file-id="${isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${hasChildren ? "+" : "#"}</span>`}
+      ${coverUrl ? `<img src="${coverUrl}" data-drive-file-id="${isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${icon("Folder")}</span>`}
       <span class="account-badge folder-card-account">${accountBadge(folder)}</span>
-      <button class="folder-card-cover-btn" type="button" title="Escolher capa do album">Capa</button>
+      <button class="folder-card-cover-btn" type="button" title="Escolher capa da pasta">Capa</button>
     </div>
     <div class="folder-card-inner">
       <div class="folder-card-main">
-        <span class="folder-card-name" title="${esc(folder.name)}">${esc(folder.name)}</span>
+        <button type="button" class="folder-card-name" title="${esc(folder.name)}">${esc(folder.name)}</button>
         <span class="folder-card-count">${count} arquivo${count === 1 ? "" : "s"}${subCount ? ` · ${subCount} subpasta${subCount === 1 ? "" : "s"}` : ""}</span>
       </div>
-      <button class="folder-card-menu-btn" type="button" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false">...</button>
+      <button class="folder-card-menu-btn" type="button" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false">${icon("MoreHorizontal")}</button>
     </div>`;
-  card.querySelector(".folder-card-cover-btn").onclick = e => { e.stopPropagation(); openFolderCoverPicker(folder); };
-  card.querySelector(".folder-card-menu-btn").onclick = e => {
+  card.querySelector(".folder-card-cover-btn").onclick = (e) => {
+    e.stopPropagation();
+    openFolderCoverPicker(folder);
+  };
+  card.querySelector(".folder-card-menu-btn").onclick = (e) => {
     e.stopPropagation();
     openFolderActionsModal(folder);
   };
@@ -2255,7 +2842,9 @@ function closeFolderActionsModal() {
 }
 
 function getFolderPathLabel(folderId) {
-  return getFolderPath(folderId).map(seg => seg.name).join(" / ");
+  return getFolderPath(folderId)
+    .map((seg) => seg.name)
+    .join(" / ");
 }
 
 function folderCoverUrl(file) {
@@ -2263,9 +2852,14 @@ function folderCoverUrl(file) {
 }
 
 async function setFolderCover(file) {
-  if (!file.folderId) { showToast("Mova o arquivo para uma pasta primeiro", "error"); return; }
+  if (!file.folderId) {
+    showToast("Mova o arquivo para uma pasta primeiro", "error");
+    return;
+  }
   try {
-    await updateDoc(doc(db, "vault_folders", file.folderId), { coverFileId: file.id });
+    await updateDoc(doc(db, "vault_folders", file.folderId), {
+      coverFileId: file.id,
+    });
     addHistory(`Capa da pasta: ${file.name}`);
     showToast("Capa da pasta atualizada", "success");
   } catch (e) {
@@ -2282,19 +2876,21 @@ function openFolderCoverPicker(folder) {
     : "Nenhuma imagem encontrada nesta pasta ou nas subpastas.";
   clearFolderCoverBtn.hidden = !folder.coverFileId;
   coverPickerGrid.innerHTML = imageFiles.length
-    ? imageFiles.map(file => {
-      const thumb = folderCoverUrl(file) || file.url || "";
-      const active = folder.coverFileId === file.id ? " active" : "";
-      const path = getFolderPathLabel(file.folderId) || "Raiz";
-      return `
+    ? imageFiles
+        .map((file) => {
+          const thumb = folderCoverUrl(file) || file.url || "";
+          const active = folder.coverFileId === file.id ? " active" : "";
+          const path = getFolderPathLabel(file.folderId) || "Raiz";
+          return `
         <button class="cover-option${active}" type="button" data-file-id="${esc(file.id)}">
           <span class="cover-option-thumb">${thumb ? `<img src="${thumb}" alt="${esc(file.name)}" loading="lazy" />` : "IMG"}</span>
           <span class="cover-option-name">${esc(file.name)}</span>
           <span class="cover-option-path">${esc(path)}</span>
         </button>`;
-    }).join("")
+        })
+        .join("")
     : `<div class="cover-empty">Envie imagens para esta pasta ou subpasta para usar como capa.</div>`;
-  coverPickerGrid.querySelectorAll(".cover-option").forEach(button => {
+  coverPickerGrid.querySelectorAll(".cover-option").forEach((button) => {
     button.onclick = () => applyFolderCover(button.dataset.fileId);
   });
   coverModal.classList.add("active");
@@ -2303,17 +2899,27 @@ function openFolderCoverPicker(folder) {
 function getImagesForFolderTree(folderId) {
   const folderIds = new Set([folderId, ...getDescendantFolderIds(folderId)]);
   return files
-    .filter(file => !file.deletedAt && file.fileType === "image" && folderIds.has(file.folderId))
+    .filter(
+      (file) =>
+        !file.deletedAt &&
+        file.fileType === "image" &&
+        folderIds.has(file.folderId),
+    )
     .sort(comparePageFiles);
 }
 
 async function applyFolderCover(fileId) {
   if (!folderToCover || !fileId) return;
-  const file = files.find(item => item.id === fileId);
+  const file = files.find((item) => item.id === fileId);
   try {
-    await updateDoc(doc(db, "vault_folders", folderToCover.id), { coverFileId: fileId });
+    await updateDoc(doc(db, "vault_folders", folderToCover.id), {
+      coverFileId: fileId,
+    });
     addHistory(`Capa do album: ${folderToCover.name}`);
-    showToast(file ? `Capa definida: ${file.name}` : "Capa definida", "success");
+    showToast(
+      file ? `Capa definida: ${file.name}` : "Capa definida",
+      "success",
+    );
     closeFolderCoverPicker();
   } catch (e) {
     showToast("Erro: " + e.message, "error");
@@ -2323,7 +2929,9 @@ async function applyFolderCover(fileId) {
 async function clearFolderCover() {
   if (!folderToCover) return;
   try {
-    await updateDoc(doc(db, "vault_folders", folderToCover.id), { coverFileId: null });
+    await updateDoc(doc(db, "vault_folders", folderToCover.id), {
+      coverFileId: null,
+    });
     addHistory(`Capa removida: ${folderToCover.name}`);
     showToast("Capa removida", "success");
     closeFolderCoverPicker();
@@ -2340,7 +2948,9 @@ function closeFolderCoverPicker() {
 
 closeCoverModal.onclick = closeFolderCoverPicker;
 clearFolderCoverBtn.onclick = clearFolderCover;
-coverModal.onclick = e => { if (e.target === coverModal) closeFolderCoverPicker(); };
+coverModal.onclick = (e) => {
+  if (e.target === coverModal) closeFolderCoverPicker();
+};
 folderActionsClose.onclick = closeFolderActionsModal;
 folderActionRename.onclick = async () => {
   const folder = folderForActions;
@@ -2352,14 +2962,16 @@ folderActionDelete.onclick = async () => {
   closeFolderActionsModal();
   if (folder) await deleteFolder(folder.id, folder.name);
 };
-folderActionsModal.onclick = e => { if (e.target === folderActionsModal) closeFolderActionsModal(); };
+folderActionsModal.onclick = (e) => {
+  if (e.target === folderActionsModal) closeFolderActionsModal();
+};
 function attachFolderDrop(el, folderId) {
-  el.addEventListener("dragover", e => {
+  el.addEventListener("dragover", (e) => {
     e.preventDefault();
     el.classList.add("drop-target");
   });
   el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
-  el.addEventListener("drop", async e => {
+  el.addEventListener("drop", async (e) => {
     e.preventDefault();
     el.classList.remove("drop-target");
     const fileId = e.dataTransfer.getData("text/plain");
@@ -2387,11 +2999,17 @@ async function renameFolder(folder) {
   });
   if (name === null) return;
   const clean = name.trim();
-  if (!clean) { showToast("Nome vazio", "error"); return; }
+  if (!clean) {
+    showToast("Nome vazio", "error");
+    return;
+  }
   try {
     const slot = recordAccountSlot(folder);
     if (folder.driveFolderId && slot !== "legacy") {
-      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para renomear a pasta no Drive`);
+      if (!driveManager?.isConnected(slot))
+        throw new Error(
+          `Conecte ${slot.toUpperCase()} para renomear a pasta no Drive`,
+        );
       await driveManager.updateName(slot, folder.driveFolderId, clean);
     }
     await updateDoc(doc(db, "vault_folders", folder.id), { name: clean });
@@ -2408,8 +3026,13 @@ async function renameFolder(folder) {
 // ??? Favorites ????????????????????????????????????????????
 async function toggleFavorite(file) {
   try {
-    await updateDoc(doc(db, "vault_files", file.id), { favorite: !file.favorite });
-    showToast(file.favorite ? "Removido dos favoritos" : "Adicionado aos favoritos", "success");
+    await updateDoc(doc(db, "vault_files", file.id), {
+      favorite: !file.favorite,
+    });
+    showToast(
+      file.favorite ? "Removido dos favoritos" : "Adicionado aos favoritos",
+      "success",
+    );
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -2450,7 +3073,7 @@ function updateBulkBar() {
 }
 
 function getVisibleSelectableFiles() {
-  return lightboxFiles.slice(0, visibleLimit).filter(f => !f.deletedAt);
+  return lightboxFiles.slice(0, visibleLimit).filter((f) => !f.deletedAt);
 }
 
 $("viewSelect").onclick = () => {
@@ -2459,27 +3082,38 @@ $("viewSelect").onclick = () => {
 };
 $("bulkCancelBtn").onclick = exitSelectMode;
 $("bulkSelectAllBtn").onclick = () => {
-  getVisibleSelectableFiles().forEach(f => selectedIds.add(f.id));
+  getVisibleSelectableFiles().forEach((f) => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
 };
 
 $("bulkSelectMediaBtn").onclick = () => {
-  getVisibleSelectableFiles().filter(f => f.fileType === "image" || f.fileType === "video").forEach(f => selectedIds.add(f.id));
+  getVisibleSelectableFiles()
+    .filter((f) => f.fileType === "image" || f.fileType === "video")
+    .forEach((f) => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
 };
 $("bulkSelectMonthBtn").onclick = () => {
   const now = new Date();
-  getVisibleSelectableFiles().filter(f => {
-    const d = fileDate(f);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }).forEach(f => selectedIds.add(f.id));
+  getVisibleSelectableFiles()
+    .filter((f) => {
+      const d = fileDate(f);
+      return (
+        d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+      );
+    })
+    .forEach((f) => selectedIds.add(f.id));
   updateBulkBar();
   renderGrid();
 };
 $("bulkDownloadBtn").onclick = async () => {
-  const selected = files.filter(f => selectedIds.has(f.id) && !f.deletedAt && (f.url || isGoogleDriveRecord(f)));
+  const selected = files.filter(
+    (f) =>
+      selectedIds.has(f.id) &&
+      !f.deletedAt &&
+      (f.url || isGoogleDriveRecord(f)),
+  );
   for (const file of selected) await downloadStoredFile(file);
   showToast(`${selected.length} download(s) preparado(s)`, "success");
 };
@@ -2495,7 +3129,11 @@ $("bulkDeleteBtn").onclick = async () => {
   });
   if (!confirmed) return;
   for (const id of ids) {
-    try { await updateDoc(doc(db, "vault_files", id), { deletedAt: serverTimestamp() }); } catch {}
+    try {
+      await updateDoc(doc(db, "vault_files", id), {
+        deletedAt: serverTimestamp(),
+      });
+    } catch {}
   }
   selectedIds.clear();
   exitSelectMode();
@@ -2503,8 +3141,13 @@ $("bulkDeleteBtn").onclick = async () => {
 };
 
 $("bulkMoveBtn").onclick = () => {
-  const accountSlots = new Set(files.filter(file => selectedIds.has(file.id)).map(recordAccountSlot));
-  if (accountSlots.size > 1) { showToast("Mova em lote apenas arquivos da mesma conta", "error"); return; }
+  const accountSlots = new Set(
+    files.filter((file) => selectedIds.has(file.id)).map(recordAccountSlot),
+  );
+  if (accountSlots.size > 1) {
+    showToast("Mova em lote apenas arquivos da mesma conta", "error");
+    return;
+  }
   bulkMoveMode = true;
   fileToMove = null;
   moveFileName.textContent = `${selectedIds.size} arquivo(s) selecionado(s)`;
@@ -2515,7 +3158,9 @@ $("bulkMoveBtn").onclick = () => {
 $("bulkFavBtn").onclick = async () => {
   const ids = [...selectedIds];
   for (const id of ids) {
-    try { await updateDoc(doc(db, "vault_files", id), { favorite: true }); } catch {}
+    try {
+      await updateDoc(doc(db, "vault_files", id), { favorite: true });
+    } catch {}
   }
   selectedIds.clear();
   exitSelectMode();
@@ -2524,7 +3169,10 @@ $("bulkFavBtn").onclick = async () => {
 
 async function bulkEditSelected() {
   const ids = [...selectedIds];
-  if (!ids.length) { showToast("Selecione arquivos primeiro", "error"); return; }
+  if (!ids.length) {
+    showToast("Selecione arquivos primeiro", "error");
+    return;
+  }
   const values = await openFieldsDialog({
     title: "Editar selecionados",
     confirmText: "Aplicar",
@@ -2542,22 +3190,35 @@ async function bulkEditSelected() {
           { value: "critical", label: "Critica" },
         ],
       },
-      { name: "description", label: "Descricao", type: "textarea", rows: 3, placeholder: "Vazio nao altera" },
+      {
+        name: "description",
+        label: "Descricao",
+        type: "textarea",
+        rows: 3,
+        placeholder: "Vazio nao altera",
+      },
     ],
   });
   if (!values) return;
   const { tagsText, priority, description } = values;
   const tagsToAdd = normalizeTags(tagsText);
-  const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "";
+  const cleanPriority = ["normal", "important", "critical"].includes(
+    priority.trim(),
+  )
+    ? priority.trim()
+    : "";
   for (const id of ids) {
-    const file = files.find(f => f.id === id);
+    const file = files.find((f) => f.id === id);
     if (!file) continue;
     const patch = {};
-    if (tagsToAdd.length) patch.tags = normalizeTags([...normalizeTags(file.tags), ...tagsToAdd]);
+    if (tagsToAdd.length)
+      patch.tags = normalizeTags([...normalizeTags(file.tags), ...tagsToAdd]);
     if (cleanPriority) patch.priority = cleanPriority;
     if (description.trim()) patch.description = description.trim();
     if (Object.keys(patch).length) {
-      try { await updateDoc(doc(db, "vault_files", id), patch); } catch {}
+      try {
+        await updateDoc(doc(db, "vault_files", id), patch);
+      } catch {}
     }
   }
   addHistory(`Edicao em lote: ${ids.length} item(s)`);
@@ -2571,21 +3232,57 @@ function showFileInfo(file) {
     ["Tamanho", fmtSize(file.size)],
     ["Pasta", getFolderPathLabel(file.folderId) || "Raiz"],
     ["Conta", accountBadge(file)],
-    ["Provedor", isGoogleDriveRecord(file) ? "Google Drive" : (file.provider || "Legado")],
+    [
+      "Provedor",
+      isGoogleDriveRecord(file) ? "Google Drive" : file.provider || "Legado",
+    ],
     ["Prioridade", file.priority || "normal"],
     ["Favorito", file.favorite ? "Sim" : "Nao"],
-    ["Resolucao", file.width && file.height ? `${file.width} x ${file.height}` : "-"],
+    [
+      "Resolucao",
+      file.width && file.height ? `${file.width} x ${file.height}` : "-",
+    ],
     ["Data", file.eventDate || formatDateValue(file.createdAt)],
     ["Tags", normalizeTags(file.tags).join(", ") || "-"],
     ["Descricao", file.description || "-"],
-    ["Link", isGoogleDriveRecord(file) ? driveViewUrl(file) : (file.url || "-")],
+    ["Link", isGoogleDriveRecord(file) ? driveViewUrl(file) : file.url || "-"],
   ];
-  infoModalBody.innerHTML = rows.map(([k, v]) => `<div class="info-key">${esc(k)}</div><div class="info-value">${esc(v)}</div>`).join("");
+  infoModalBody.innerHTML = rows
+    .map(
+      ([k, v]) =>
+        `<div class="info-key">${esc(k)}</div><div class="info-value">${esc(v)}</div>`,
+    )
+    .join("");
   infoModal.classList.add("active");
 }
 
-function exportData(format) {
-  const activeFolders = folders.map(f => ({
+async function exportData(format) {
+  if (format === "json") {
+    const records = (await allRecords(db)).filter(
+      (r) => r.collection !== "vault_sync",
+    );
+    const payload = {
+      version: 3,
+      exportedAt: new Date().toISOString(),
+      records,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download =
+      "vault-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(
+      "Backup de metadados e murais exportado. Os arquivos originais continuam no Drive.",
+      "success",
+    );
+    return;
+  }
+  const activeFolders = folders.map((f) => ({
     id: f.id,
     name: f.name,
     parentId: f.parentId || null,
@@ -2594,7 +3291,7 @@ function exportData(format) {
     driveFolderId: f.driveFolderId || "",
     createdAt: f.createdAt || null,
   }));
-  const activeFiles = files.map(f => ({
+  const activeFiles = files.map((f) => ({
     id: f.id,
     name: f.name,
     fileType: f.fileType,
@@ -2633,10 +3330,53 @@ function exportData(format) {
     createdAt: f.createdAt || null,
   }));
   if (format === "csv") {
-    const rows = [["id","name","type","size","folder","favorite","priority","tags","description","url","deleted"], ...activeFiles.map(f => [f.id,f.name,f.fileType,f.size,f.folder,f.favorite,f.priority,f.tags,f.description,f.url,f.deleted])];
-    downloadText("vault-export.csv", rows.map(row => row.map(csvCell).join(",")).join("\n"), "text/csv");
+    const rows = [
+      [
+        "id",
+        "name",
+        "type",
+        "size",
+        "folder",
+        "favorite",
+        "priority",
+        "tags",
+        "description",
+        "url",
+        "deleted",
+      ],
+      ...activeFiles.map((f) => [
+        f.id,
+        f.name,
+        f.fileType,
+        f.size,
+        f.folder,
+        f.favorite,
+        f.priority,
+        f.tags,
+        f.description,
+        f.url,
+        f.deleted,
+      ]),
+    ];
+    downloadText(
+      "vault-export.csv",
+      rows.map((row) => row.map(csvCell).join(",")).join("\n"),
+      "text/csv",
+    );
   } else {
-    downloadText("vault-export.json", JSON.stringify({ exportedAt: new Date().toISOString(), folders: activeFolders, files: activeFiles }, null, 2), "application/json");
+    downloadText(
+      "vault-export.json",
+      JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          folders: activeFolders,
+          files: activeFiles,
+        },
+        null,
+        2,
+      ),
+      "application/json",
+    );
   }
   showToast("Exportacao gerada", "success");
 }
@@ -2658,14 +3398,23 @@ function downloadText(filename, text, type) {
 }
 
 function startSlideshow() {
-  const media = lightboxFiles.filter(f => !f.deletedAt && (f.fileType === "image" || f.fileType === "video"));
-  if (!media.length) { showToast("Nenhuma foto ou video visivel", "error"); return; }
+  const media = lightboxFiles.filter(
+    (f) => !f.deletedAt && (f.fileType === "image" || f.fileType === "video"),
+  );
+  if (!media.length) {
+    showToast("Nenhuma foto ou video visivel", "error");
+    return;
+  }
   stopSlideshow(false);
   lightboxFiles = media;
   openLightbox(media[0]);
   slideshowTimer = setInterval(() => {
-    if (!lightbox.classList.contains("active")) { stopSlideshow(false); return; }
-    const next = lightboxIndex + 1 >= lightboxFiles.length ? 0 : lightboxIndex + 1;
+    if (!lightbox.classList.contains("active")) {
+      stopSlideshow(false);
+      return;
+    }
+    const next =
+      lightboxIndex + 1 >= lightboxFiles.length ? 0 : lightboxIndex + 1;
     openLightbox(lightboxFiles[next]);
   }, 5000);
   showToast("Apresentacao iniciada", "success");
@@ -2678,13 +3427,19 @@ function stopSlideshow(notify = true) {
 }
 
 function formatDateValue(value) {
-  const d = value?.toDate ? value.toDate() : value?.seconds ? new Date(value.seconds * 1000) : value ? new Date(value) : null;
+  const d = value?.toDate
+    ? value.toDate()
+    : value?.seconds
+      ? new Date(value.seconds * 1000)
+      : value
+        ? new Date(value)
+        : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : "-";
 }
 // ??? Move Modal ???????????????????????????????????????????
 function openMoveModal(file) {
   bulkMoveMode = false;
-  fileToMove   = file;
+  fileToMove = file;
   moveFileName.textContent = file.name;
   renderMoveFolderList();
   moveModal.classList.add("active");
@@ -2692,19 +3447,22 @@ function openMoveModal(file) {
 
 function renderMoveFolderList() {
   moveFolderList.innerHTML = "";
-  const currentFolderId = bulkMoveMode ? null : (fileToMove?.folderId || null);
+  const currentFolderId = bulkMoveMode ? null : fileToMove?.folderId || null;
 
   // Opcao: Raiz
   const rootItem = document.createElement("div");
-  rootItem.className = "move-folder-item" + (!currentFolderId && !bulkMoveMode ? " current" : "");
+  rootItem.className =
+    "move-folder-item" + (!currentFolderId && !bulkMoveMode ? " current" : "");
   rootItem.innerHTML = `
-    <span class="move-folder-icon">#</span>
+    <span class="move-folder-icon">${icon("Folder")}</span>
     <span class="move-folder-name">Raiz - Todos os Arquivos</span>
-    ${(!currentFolderId && !bulkMoveMode) ? '<span class="move-current-badge">atual</span>' : ''}`;
+    ${!currentFolderId && !bulkMoveMode ? '<span class="move-current-badge">atual</span>' : ""}`;
   if (!currentFolderId && !bulkMoveMode) {
-    rootItem.style.opacity = "0.4"; rootItem.style.cursor = "default";
+    rootItem.style.opacity = "0.4";
+    rootItem.style.cursor = "default";
   } else {
-    rootItem.onclick = () => bulkMoveMode ? bulkMoveTo(null) : moveFileTo(null);
+    rootItem.onclick = () =>
+      bulkMoveMode ? bulkMoveTo(null) : moveFileTo(null);
   }
   moveFolderList.appendChild(rootItem);
 
@@ -2717,22 +3475,30 @@ function renderMoveFolderList() {
 }
 
 function renderMoveTree(parentId, depth, currentFolderId) {
-  const sourceFiles = bulkMoveMode ? files.filter(file => selectedIds.has(file.id)) : [fileToMove].filter(Boolean);
-  const sourceSlot = sourceFiles.length ? recordAccountSlot(sourceFiles[0]) : "legacy";
-  const children = folders.filter(f => (f.parentId || null) === parentId && recordAccountSlot(f) === sourceSlot);
-  children.forEach(f => {
+  const sourceFiles = bulkMoveMode
+    ? files.filter((file) => selectedIds.has(file.id))
+    : [fileToMove].filter(Boolean);
+  const sourceSlot = sourceFiles.length
+    ? recordAccountSlot(sourceFiles[0])
+    : "legacy";
+  const children = folders.filter(
+    (f) =>
+      (f.parentId || null) === parentId && recordAccountSlot(f) === sourceSlot,
+  );
+  children.forEach((f) => {
     const isCurrent = f.id === currentFolderId;
     const item = document.createElement("div");
     item.className = "move-folder-item" + (isCurrent ? " current" : "");
-    item.style.paddingLeft = (14 + depth * 20) + "px";
+    item.style.paddingLeft = 14 + depth * 20 + "px";
     item.innerHTML = `
-      <span class="move-folder-icon">#</span>
+      <span class="move-folder-icon">${icon("Folder")}</span>
       <span class="move-folder-name">${esc(f.name)}</span>
-      ${isCurrent ? '<span class="move-current-badge">atual</span>' : ''}`;
+      ${isCurrent ? '<span class="move-current-badge">atual</span>' : ""}`;
     if (isCurrent) {
-      item.style.opacity = "0.4"; item.style.cursor = "default";
+      item.style.opacity = "0.4";
+      item.style.cursor = "default";
     } else {
-      item.onclick = () => bulkMoveMode ? bulkMoveTo(f.id) : moveFileTo(f.id);
+      item.onclick = () => (bulkMoveMode ? bulkMoveTo(f.id) : moveFileTo(f.id));
     }
     moveFolderList.appendChild(item);
     renderMoveTree(f.id, depth + 1, currentFolderId);
@@ -2743,8 +3509,12 @@ async function moveFileTo(targetFolderId) {
   if (!fileToMove) return;
   try {
     await moveStoredFileTo(fileToMove, targetFolderId);
-    await updateDoc(doc(db, "vault_files", fileToMove.id), { folderId: targetFolderId });
-    const destName = targetFolderId ? (folders.find(f => f.id === targetFolderId)?.name || "pasta") : "Raiz";
+    await updateDoc(doc(db, "vault_files", fileToMove.id), {
+      folderId: targetFolderId,
+    });
+    const destName = targetFolderId
+      ? folders.find((f) => f.id === targetFolderId)?.name || "pasta"
+      : "Raiz";
     showToast(`Movido para "${destName}"`, "success");
     moveModal.classList.remove("active");
     fileToMove = null;
@@ -2761,9 +3531,13 @@ async function bulkMoveTo(targetFolderId) {
       if (!file) continue;
       await moveStoredFileTo(file, targetFolderId);
       await updateDoc(doc(db, "vault_files", id), { folderId: targetFolderId });
-    } catch (error) { console.warn(`Falha ao mover ${id}`, error); }
+    } catch (error) {
+      console.warn(`Falha ao mover ${id}`, error);
+    }
   }
-  const destName = targetFolderId ? (folders.find(f => f.id === targetFolderId)?.name || "pasta") : "Raiz";
+  const destName = targetFolderId
+    ? folders.find((f) => f.id === targetFolderId)?.name || "pasta"
+    : "Raiz";
   showToast(`${ids.length} arquivo(s) movido(s) para "${destName}"`, "success");
   moveModal.classList.remove("active");
   bulkMoveMode = false;
@@ -2773,23 +3547,35 @@ async function bulkMoveTo(targetFolderId) {
 
 $("closeMoveModal").onclick = () => {
   moveModal.classList.remove("active");
-  fileToMove = null; bulkMoveMode = false;
+  fileToMove = null;
+  bulkMoveMode = false;
 };
 
 // ??? New folder ???????????????????????????????????????????
 function openFolderCreateDialog(parentId = navState.folderId) {
   pendingFolderParentId = normalizeFolderId(parentId);
-  const parent = pendingFolderParentId === ROOT_ID ? null : getFolder(pendingFolderParentId);
-  if (folderModalTitle) folderModalTitle.textContent = parent ? "Nova subpasta" : "Nova coleção";
-  if (folderModalContext) folderModalContext.textContent = parent ? `Ela será criada dentro de “${parent.name || "Pasta"}”.` : "Crie uma coleção principal para o seu acervo.";
+  const parent =
+    pendingFolderParentId === ROOT_ID ? null : getFolder(pendingFolderParentId);
+  if (folderModalTitle)
+    folderModalTitle.textContent = parent ? "Nova subpasta" : "Nova pasta";
+  if (folderModalContext)
+    folderModalContext.textContent = parent
+      ? `Ela será criada dentro de “${parent.name || "Pasta"}”.`
+      : "Crie uma pasta principal para o seu acervo.";
   const inheritedSlot = parent ? recordAccountSlot(parent) : "";
   folderAccountField.hidden = !!parent;
-  folderAccountSelect.innerHTML = ["ac1", "ac2", "ac3", "ac4"].map(slot =>
-    `<option value="${slot}">${esc(accountLabel(slot))}${driveManager?.isConnected(slot) ? " ✓" : ""}</option>`
-  ).join("");
-  folderAccountSelect.value = inheritedSlot !== "legacy" && inheritedSlot
-    ? inheritedSlot
-    : (activeAccountView !== "all" ? activeAccountView : "ac1");
+  folderAccountSelect.innerHTML = ["ac1", "ac2", "ac3", "ac4"]
+    .map(
+      (slot) =>
+        `<option value="${slot}">${esc(accountLabel(slot))}${driveManager?.isConnected(slot) ? " ✓" : ""}</option>`,
+    )
+    .join("");
+  folderAccountSelect.value =
+    inheritedSlot !== "legacy" && inheritedSlot
+      ? inheritedSlot
+      : activeAccountView !== "all"
+        ? activeAccountView
+        : "ac1";
   folderNameInput.value = "";
   updateFolderDestinationPreview();
   folderModal.classList.add("active");
@@ -2799,10 +3585,16 @@ function openFolderCreateDialog(parentId = navState.folderId) {
 async function moveStoredFileTo(file, targetFolderId) {
   const sourceSlot = recordAccountSlot(file);
   const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
-  const targetSlot = targetFolder ? recordAccountSlot(targetFolder) : sourceSlot;
-  if (targetSlot !== sourceSlot) throw new Error(`Nao e possivel mover diretamente de ${accountBadge(file)} para ${accountBadge(targetFolder)}`);
+  const targetSlot = targetFolder
+    ? recordAccountSlot(targetFolder)
+    : sourceSlot;
+  if (targetSlot !== sourceSlot)
+    throw new Error(
+      `Nao e possivel mover diretamente de ${accountBadge(file)} para ${accountBadge(targetFolder)}`,
+    );
   if (!isGoogleDriveRecord(file)) return;
-  if (!driveManager?.isConnected(sourceSlot)) throw new Error(`Conecte ${sourceSlot.toUpperCase()} para mover o arquivo`);
+  if (!driveManager?.isConnected(sourceSlot))
+    throw new Error(`Conecte ${sourceSlot.toUpperCase()} para mover o arquivo`);
   const targetDriveParent = targetFolder
     ? await ensureFolderOnDrive(targetFolder, sourceSlot)
     : await driveManager.ensureRootFolder(sourceSlot);
@@ -2812,53 +3604,99 @@ async function moveStoredFileTo(file, targetFolderId) {
 async function copyFileToAnotherAccount(file) {
   const sourceSlot = recordAccountSlot(file);
   if (!driveManager?.isConnected(sourceSlot)) {
-    showToast(`${slotTag(sourceSlot)} não está disponível. Reconecte a conta de origem antes de copiar.`, "error");
+    showToast(
+      `${slotTag(sourceSlot)} não está disponível. Reconecte a conta de origem antes de copiar.`,
+      "error",
+    );
     openAccountsModal();
     return;
   }
   const targetOptions = ["ac1", "ac2", "ac3", "ac4"]
-    .filter(slot => slot !== sourceSlot)
-    .map(slot => ({ value: slot, label: `${accountFullLabel(slot)} · ${driveManager.isConnected(slot) ? "disponível" : "reconectar"}` }));
+    .filter((slot) => slot !== sourceSlot)
+    .map((slot) => ({
+      value: slot,
+      label: `${accountFullLabel(slot)} · ${driveManager.isConnected(slot) ? "disponível" : "reconectar"}`,
+    }));
   const values = await openFieldsDialog({
     title: `Copiar “${file.name}”`,
     confirmText: "Escolher pasta",
     fields: [
-      { name: "targetSlot", label: "Conta de destino", type: "select", value: targetOptions[0]?.value || "", options: targetOptions },
-      { name: "deleteOriginal", label: "Excluir o original somente depois que a cópia for concluída", type: "checkbox", value: false },
+      {
+        name: "targetSlot",
+        label: "Conta de destino",
+        type: "select",
+        value: targetOptions[0]?.value || "",
+        options: targetOptions,
+      },
+      {
+        name: "deleteOriginal",
+        label: "Excluir o original somente depois que a cópia for concluída",
+        type: "checkbox",
+        value: false,
+      },
     ],
   });
   if (!values?.targetSlot) return;
   const targetSlot = values.targetSlot;
   if (!driveManager.isConnected(targetSlot)) {
-    showToast(`${slotTag(targetSlot)} não está disponível. Reconecte ${driveManager.getAccount(targetSlot)?.email || "a conta de destino"} e tente novamente.`, "error");
+    showToast(
+      `${slotTag(targetSlot)} não está disponível. Reconecte ${driveManager.getAccount(targetSlot)?.email || "a conta de destino"} e tente novamente.`,
+      "error",
+    );
     openAccountsModal();
     return;
   }
   const folderOptions = [
     { value: "", label: "VAULT / Raiz" },
-    ...folders.filter(folder => recordAccountSlot(folder) === targetSlot).map(folder => ({ value: folder.id, label: `VAULT / ${getFolderPathLabel(folder.id)}` })),
+    ...folders
+      .filter((folder) => recordAccountSlot(folder) === targetSlot)
+      .map((folder) => ({
+        value: folder.id,
+        label: `VAULT / ${getFolderPathLabel(folder.id)}`,
+      })),
   ];
   const folderChoice = await openFieldsDialog({
     title: "Escolher pasta de destino",
     confirmText: "Revisar cópia",
-    fields: [{ name: "targetFolderId", label: accountFullLabel(targetSlot), type: "select", value: "", options: folderOptions }],
+    fields: [
+      {
+        name: "targetFolderId",
+        label: accountFullLabel(targetSlot),
+        type: "select",
+        value: "",
+        options: folderOptions,
+      },
+    ],
   });
   if (!folderChoice) return;
   const targetFolderId = folderChoice.targetFolderId || null;
-  const duplicate = files.find(existing => !existing.deletedAt
-    && existing.id !== file.id
-    && recordAccountSlot(existing) === targetSlot
-    && (existing.folderId || null) === targetFolderId
-    && ((file.contentHash && existing.contentHash === file.contentHash) || ((existing.name || "").toLowerCase() === (file.name || "").toLowerCase() && Number(existing.size || 0) === Number(file.size || 0))));
+  const duplicate = files.find(
+    (existing) =>
+      !existing.deletedAt &&
+      existing.id !== file.id &&
+      recordAccountSlot(existing) === targetSlot &&
+      (existing.folderId || null) === targetFolderId &&
+      ((file.contentHash && existing.contentHash === file.contentHash) ||
+        ((existing.name || "").toLowerCase() ===
+          (file.name || "").toLowerCase() &&
+          Number(existing.size || 0) === Number(file.size || 0))),
+  );
   const destination = formatDriveDestination(targetSlot, targetFolderId);
   const confirmed = await openConfirmDialog({
-    title: duplicate ? "Possível duplicado no destino" : "Confirmar cópia entre contas",
+    title: duplicate
+      ? "Possível duplicado no destino"
+      : "Confirmar cópia entre contas",
     message: `${duplicate ? `Já existe “${duplicate.name}” no destino. ` : ""}Origem: ${formatDriveDestination(sourceSlot, file.folderId || null)}. Destino: ${destination}.${values.deleteOriginal ? " O original será excluído somente após a cópia ser confirmada pelo Drive." : " O original será preservado."}`,
     confirmText: duplicate ? "Copiar mesmo assim" : "Copiar arquivo",
     danger: !!values.deleteOriginal,
   });
   if (!confirmed) return;
-  await executeCopyFileAcrossAccounts(file, { sourceSlot, targetSlot, targetFolderId, deleteOriginal: !!values.deleteOriginal });
+  await executeCopyFileAcrossAccounts(file, {
+    sourceSlot,
+    targetSlot,
+    targetFolderId,
+    deleteOriginal: !!values.deleteOriginal,
+  });
 }
 
 async function executeCopyFileAcrossAccounts(file, options) {
@@ -2874,19 +3712,32 @@ async function executeCopyFileAcrossAccounts(file, options) {
   const status = itemEl.querySelector(".upload-item-status");
   let copySaved = false;
   try {
-    if (!driveManager.isConnected(sourceSlot) || !driveManager.isConnected(targetSlot)) throw new Error("Uma das contas perdeu a conexão durante a cópia.");
+    if (
+      !driveManager.isConnected(sourceSlot) ||
+      !driveManager.isConnected(targetSlot)
+    )
+      throw new Error("Uma das contas perdeu a conexão durante a cópia.");
     const blob = await driveManager.getBlob(sourceSlot, file.driveFileId);
-    const source = new File([blob], file.name || "arquivo", { type: file.mimeType || blob.type || "application/octet-stream" });
-    const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
-    const driveParentId = targetFolder ? await ensureFolderOnDrive(targetFolder, targetSlot) : await driveManager.ensureRootFolder(targetSlot);
-    status.textContent = "Enviando para a conta de destino...";
-    const metadata = await driveManager.uploadFile(targetSlot, source, driveParentId, {
-      onProgress: (loaded, total) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 0;
-        bar.style.width = `${pct}%`;
-        status.textContent = `Copiando · ${pct}%`;
-      },
+    const source = new File([blob], file.name || "arquivo", {
+      type: file.mimeType || blob.type || "application/octet-stream",
     });
+    const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
+    const driveParentId = targetFolder
+      ? await ensureFolderOnDrive(targetFolder, targetSlot)
+      : await driveManager.ensureRootFolder(targetSlot);
+    status.textContent = "Enviando para a conta de destino...";
+    const metadata = await driveManager.uploadFile(
+      targetSlot,
+      source,
+      driveParentId,
+      {
+        onProgress: (loaded, total) => {
+          const pct = total ? Math.round((loaded / total) * 100) : 0;
+          bar.style.width = `${pct}%`;
+          status.textContent = `Copiando · ${pct}%`;
+        },
+      },
+    );
     const copiedRecord = {
       name: file.name,
       provider: "google-drive",
@@ -2926,8 +3777,12 @@ async function executeCopyFileAcrossAccounts(file, options) {
     itemEl.dataset.status = "complete";
     itemEl.classList.add("upload-complete");
     bar.style.width = "100%";
-    status.textContent = deleteOriginal ? "Movido com segurança para a nova conta" : "Cópia concluída; original preservado";
-    addHistory(`${deleteOriginal ? "Movido" : "Copiado"} ${slotTag(sourceSlot)} → ${slotTag(targetSlot)}: ${file.name}`);
+    status.textContent = deleteOriginal
+      ? "Movido com segurança para a nova conta"
+      : "Cópia concluída; original preservado";
+    addHistory(
+      `${deleteOriginal ? "Movido" : "Copiado"} ${slotTag(sourceSlot)} → ${slotTag(targetSlot)}: ${file.name}`,
+    );
     showToast(`${file.name} copiado para ${slotTag(targetSlot)}`, "success");
   } catch (error) {
     itemEl.dataset.status = "error";
@@ -2943,14 +3798,27 @@ async function executeCopyFileAcrossAccounts(file, options) {
           status.textContent = "Original excluído; movimentação concluída";
           updateActivityCenter();
         } catch (deleteError) {
-          showToast(friendlyDriveError(deleteError, sourceSlot, driveManager.getAccount(sourceSlot)?.email, "excluir o original"), "error");
+          showToast(
+            friendlyDriveError(
+              deleteError,
+              sourceSlot,
+              driveManager.getAccount(sourceSlot)?.email,
+              "excluir o original",
+            ),
+            "error",
+          );
         }
       };
       showToast("A cópia está segura, mas o original ainda existe.", "error");
       updateActivityCenter();
       return;
     }
-    const message = friendlyDriveError(error, targetSlot, driveManager.getAccount(targetSlot)?.email, "copiar o arquivo");
+    const message = friendlyDriveError(
+      error,
+      targetSlot,
+      driveManager.getAccount(targetSlot)?.email,
+      "copiar o arquivo",
+    );
     status.innerHTML = `${esc(message)} <button class="upload-retry" type="button">Tentar novamente</button>`;
     status.querySelector(".upload-retry").onclick = () => {
       itemEl.remove();
@@ -2966,45 +3834,72 @@ async function finalizeCopiedOriginalDeletion(file, sourceSlot) {
   try {
     await driveManager.deleteFile(sourceSlot, file.driveFileId);
   } catch (error) {
-    if (!/not found|404|File not found/i.test(String(error?.message || ""))) throw error;
+    if (!/not found|404|File not found/i.test(String(error?.message || "")))
+      throw error;
   }
   await deleteDoc(doc(db, "vault_files", file.id));
   await localTextSearch.remove(file.id);
 }
 
 $("btnNewFolder").onclick = () => openFolderCreateDialog(ROOT_ID);
-createSubfolderBtn?.addEventListener("click", () => openFolderCreateDialog(navState.folderId));
-$("cancelFolder").onclick  = () => folderModal.classList.remove("active");
+createSubfolderBtn?.addEventListener("click", () =>
+  openFolderCreateDialog(navState.folderId),
+);
+$("cancelFolder").onclick = () => folderModal.classList.remove("active");
 $("confirmFolder").onclick = createFolder;
-folderNameInput.onkeydown  = e => { if (e.key === "Enter") createFolder(); };
+folderNameInput.onkeydown = (e) => {
+  if (e.key === "Enter") createFolder();
+};
 folderNameInput.addEventListener("input", updateFolderDestinationPreview);
 folderAccountSelect.addEventListener("change", updateFolderDestinationPreview);
 
 function updateFolderDestinationPreview() {
   if (!folderDestination) return;
-  const parentId = toFirestoreFolderId(pendingFolderParentId);
+  const parentId = toLocalFolderId(pendingFolderParentId);
   const parent = parentId ? getFolder(parentId) : null;
   const slot = parent ? recordAccountSlot(parent) : folderAccountSelect.value;
   const parentPath = parent ? getFolderPathLabel(parent.id) : "";
-  const newName = folderNameInput.value.trim() || (parent ? "Nova subpasta" : "Nova coleção");
+  const newName =
+    folderNameInput.value.trim() || (parent ? "Nova subpasta" : "Nova pasta");
   const path = ["VAULT", parentPath, newName].filter(Boolean).join(" / ");
   folderDestination.innerHTML = `<strong>Destino:</strong> ${esc(accountFullLabel(slot))} / ${esc(path)}${parent ? "<br>Esta subpasta herdará a conta da pasta principal." : ""}`;
 }
 
 async function createFolder() {
-  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  if (!db) {
+    showToast("Configure as credenciais primeiro", "error");
+    return;
+  }
   const name = folderNameInput.value.trim();
   if (!name) return;
-  const parentId = toFirestoreFolderId(pendingFolderParentId);
+  const parentId = toLocalFolderId(pendingFolderParentId);
   const parent = parentId ? getFolder(parentId) : null;
-  const accountSlot = parent ? recordAccountSlot(parent) : folderAccountSelect.value;
-  if (accountSlot === "legacy") { showToast("Migre a pasta pai para o Drive antes de criar subpastas", "error"); return; }
-  if (!driveManager?.isConnected(accountSlot)) { showToast(`Conecte ${accountSlot.toUpperCase()} antes de criar a pasta`, "error"); return; }
+  const accountSlot = parent
+    ? recordAccountSlot(parent)
+    : folderAccountSelect.value;
+  if (accountSlot === "legacy") {
+    showToast(
+      "Migre a pasta pai para o Drive antes de criar subpastas",
+      "error",
+    );
+    return;
+  }
+  if (!driveManager?.isConnected(accountSlot)) {
+    showToast(
+      `Conecte ${accountSlot.toUpperCase()} antes de criar a pasta`,
+      "error",
+    );
+    return;
+  }
   try {
     const driveParentId = parent
       ? await ensureFolderOnDrive(parent, accountSlot)
       : await driveManager.ensureRootFolder(accountSlot);
-    const driveFolder = await driveManager.createFolder(accountSlot, name, driveParentId);
+    const driveFolder = await driveManager.createFolder(
+      accountSlot,
+      name,
+      driveParentId,
+    );
     await addDoc(collection(db, "vault_folders"), {
       name,
       parentId,
@@ -3015,7 +3910,10 @@ async function createFolder() {
     navState.expandedFolders.add(normalizeFolderId(pendingFolderParentId));
     folderModal.classList.remove("active");
     addHistory(`Pasta criada em ${accountSlot.toUpperCase()}: ${name}`);
-    showToast(`Pasta "${name}" criada em ${accountSlot.toUpperCase()}`, "success");
+    showToast(
+      `Pasta "${name}" criada em ${accountSlot.toUpperCase()}`,
+      "success",
+    );
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -3025,18 +3923,28 @@ async function ensureFolderOnDrive(folder, targetSlot = "") {
   if (!folder) throw new Error("Pasta nao encontrada");
   let accountSlot = recordAccountSlot(folder);
   if (accountSlot === "legacy") accountSlot = targetSlot;
-  if (!/^ac[1-4]$/.test(accountSlot)) throw new Error("Escolha a conta do Drive para esta pasta");
-  if (targetSlot && accountSlot !== targetSlot) throw new Error(`A pasta pertence a ${accountSlot.toUpperCase()}`);
-  if (!driveManager?.isConnected(accountSlot)) throw new Error(`Conecte ${accountSlot.toUpperCase()} ao Drive`);
+  if (!/^ac[1-4]$/.test(accountSlot))
+    throw new Error("Escolha a conta do Drive para esta pasta");
+  if (targetSlot && accountSlot !== targetSlot)
+    throw new Error(`A pasta pertence a ${accountSlot.toUpperCase()}`);
+  if (!driveManager?.isConnected(accountSlot))
+    throw new Error(`Conecte ${accountSlot.toUpperCase()} ao Drive`);
   if (folder.driveFolderId) return folder.driveFolderId;
   const parent = folder.parentId ? getFolder(folder.parentId) : null;
   const parentDriveId = parent
     ? await ensureFolderOnDrive(parent, accountSlot)
     : await driveManager.ensureRootFolder(accountSlot);
-  const created = await driveManager.createFolder(accountSlot, folder.name || "Pasta", parentDriveId);
+  const created = await driveManager.createFolder(
+    accountSlot,
+    folder.name || "Pasta",
+    parentDriveId,
+  );
   folder.accountSlot = accountSlot;
   folder.driveFolderId = created.id;
-  await updateDoc(doc(db, "vault_folders", folder.id), { accountSlot, driveFolderId: created.id });
+  await updateDoc(doc(db, "vault_folders", folder.id), {
+    accountSlot,
+    driveFolderId: created.id,
+  });
   return created.id;
 }
 
@@ -3050,7 +3958,9 @@ async function deleteFile(file) {
   });
   if (!confirmed) return;
   try {
-    await updateDoc(doc(db, "vault_files", file.id), { deletedAt: serverTimestamp() });
+    await updateDoc(doc(db, "vault_files", file.id), {
+      deletedAt: serverTimestamp(),
+    });
     addHistory(`Lixeira: ${file.name}`);
     showToast("Arquivo enviado para a lixeira", "success");
   } catch (e) {
@@ -3059,8 +3969,11 @@ async function deleteFile(file) {
 }
 
 async function emptyTrash() {
-  const trashed = files.filter(f => f.deletedAt && matchesAccountView(f));
-  if (!trashed.length) { showToast("Lixeira vazia"); return; }
+  const trashed = files.filter((f) => f.deletedAt && matchesAccountView(f));
+  if (!trashed.length) {
+    showToast("Lixeira vazia");
+    return;
+  }
   const confirmed = await openConfirmDialog({
     title: "Esvaziar lixeira",
     message: `Excluir definitivamente ${trashed.length} registro(s) da lixeira?`,
@@ -3080,8 +3993,11 @@ async function emptyTrash() {
 }
 
 async function restoreTrash() {
-  const trashed = files.filter(f => f.deletedAt && matchesAccountView(f));
-  if (!trashed.length) { showToast("Nada para restaurar"); return; }
+  const trashed = files.filter((f) => f.deletedAt && matchesAccountView(f));
+  if (!trashed.length) {
+    showToast("Nada para restaurar");
+    return;
+  }
   const confirmed = await openConfirmDialog({
     title: "Restaurar lixeira",
     message: `Restaurar ${trashed.length} arquivo(s) da lixeira?`,
@@ -3089,7 +4005,9 @@ async function restoreTrash() {
   });
   if (!confirmed) return;
   for (const file of trashed) {
-    try { await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null }); } catch {}
+    try {
+      await updateDoc(doc(db, "vault_files", file.id), { deletedAt: null });
+    } catch {}
   }
   addHistory(`Lixeira restaurada: ${trashed.length} item(s)`);
   showToast("Arquivos restaurados", "success");
@@ -3126,7 +4044,10 @@ async function permanentlyDeleteFile(file) {
 async function deleteStoredFilePermanently(file) {
   if (!isGoogleDriveRecord(file)) return;
   const slot = recordAccountSlot(file);
-  if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para excluir o arquivo do Drive`);
+  if (!driveManager?.isConnected(slot))
+    throw new Error(
+      `Conecte ${slot.toUpperCase()} para excluir o arquivo do Drive`,
+    );
   await driveManager.deleteFile(slot, file.driveFileId);
   const objectUrl = driveObjectUrls.get(file.id);
   if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -3143,11 +4064,15 @@ async function renameFile(file) {
   });
   if (name === null) return;
   const clean = name.trim();
-  if (!clean) { showToast("Nome vazio", "error"); return; }
+  if (!clean) {
+    showToast("Nome vazio", "error");
+    return;
+  }
   try {
     if (isGoogleDriveRecord(file)) {
       const slot = recordAccountSlot(file);
-      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para renomear no Drive`);
+      if (!driveManager?.isConnected(slot))
+        throw new Error(`Conecte ${slot.toUpperCase()} para renomear no Drive`);
       await driveManager.updateName(slot, file.driveFileId, clean);
     }
     await updateDoc(doc(db, "vault_files", file.id), { name: clean });
@@ -3208,7 +4133,13 @@ async function editFileInfo(file) {
     title: "Informacoes do arquivo",
     confirmText: "Salvar",
     fields: [
-      { name: "description", label: "Descricao", type: "textarea", value: file.description || "", rows: 4 },
+      {
+        name: "description",
+        label: "Descricao",
+        type: "textarea",
+        value: file.description || "",
+        rows: 4,
+      },
       {
         name: "priority",
         label: "Prioridade",
@@ -3220,17 +4151,43 @@ async function editFileInfo(file) {
           { value: "critical", label: "Critica" },
         ],
       },
-      { name: "eventDate", label: "Data do arquivo/evento", type: "date", value: file.eventDate || "" },
-      { name: "dueDate", label: "Data limite", type: "date", value: file.dueDate || "" },
-      { name: "fields", label: "Campos personalizados", value: customFieldsToText(file.customFields), placeholder: "chave: valor, outra: valor" },
-      { name: "note", label: "Adicionar anotacao", type: "textarea", value: "", rows: 3 },
+      {
+        name: "eventDate",
+        label: "Data do arquivo/evento",
+        type: "date",
+        value: file.eventDate || "",
+      },
+      {
+        name: "dueDate",
+        label: "Data limite",
+        type: "date",
+        value: file.dueDate || "",
+      },
+      {
+        name: "fields",
+        label: "Campos personalizados",
+        value: customFieldsToText(file.customFields),
+        placeholder: "chave: valor, outra: valor",
+      },
+      {
+        name: "note",
+        label: "Adicionar anotacao",
+        type: "textarea",
+        value: "",
+        rows: 3,
+      },
     ],
   });
   if (!values) return;
   const { description, priority, eventDate, dueDate, fields, note } = values;
-  const cleanPriority = ["normal", "important", "critical"].includes(priority.trim()) ? priority.trim() : "normal";
+  const cleanPriority = ["normal", "important", "critical"].includes(
+    priority.trim(),
+  )
+    ? priority.trim()
+    : "normal";
   const notes = normalizeNotes(file.notes);
-  if (note.trim()) notes.unshift({ text: note.trim(), at: new Date().toLocaleString() });
+  if (note.trim())
+    notes.unshift({ text: note.trim(), at: new Date().toLocaleString() });
   try {
     await updateDoc(doc(db, "vault_files", file.id), {
       description: description.trim(),
@@ -3249,7 +4206,10 @@ async function editFileInfo(file) {
 
 async function shareFile(file) {
   const url = isGoogleDriveRecord(file) ? driveViewUrl(file) : file.url;
-  if (!url) { showToast("Arquivo sem link", "error"); return; }
+  if (!url) {
+    showToast("Arquivo sem link", "error");
+    return;
+  }
   try {
     await navigator.clipboard.writeText(url);
     showToast("Link copiado", "success");
@@ -3266,7 +4226,9 @@ async function shareFile(file) {
 async function deleteFolder(folderId, name) {
   const descendantFolderIds = getDescendantFolderIds(folderId);
   const affectedFolderIds = [folderId, ...descendantFolderIds];
-  const count = files.filter(f => affectedFolderIds.includes(f.folderId)).length;
+  const count = files.filter((f) =>
+    affectedFolderIds.includes(f.folderId),
+  ).length;
   const subCount = descendantFolderIds.length;
   let msg = `Excluir a pasta "${name}"?`;
   if (count > 0) msg += `\n${count} arquivo(s) voltarao para a pasta pai.`;
@@ -3280,16 +4242,21 @@ async function deleteFolder(folderId, name) {
   if (!confirmed) return;
 
   // Move todos os arquivos da pasta e das subpastas para o pai.
-  const parentId = folders.find(f => f.id === folderId)?.parentId || null;
+  const parentId = folders.find((f) => f.id === folderId)?.parentId || null;
   const folder = getFolder(folderId);
   try {
-    for (const f of files.filter(x => affectedFolderIds.includes(x.folderId))) {
+    for (const f of files.filter((x) =>
+      affectedFolderIds.includes(x.folderId),
+    )) {
       await moveStoredFileTo(f, parentId);
       await updateDoc(doc(db, "vault_files", f.id), { folderId: parentId });
     }
     const slot = recordAccountSlot(folder);
     if (folder?.driveFolderId && slot !== "legacy") {
-      if (!driveManager?.isConnected(slot)) throw new Error(`Conecte ${slot.toUpperCase()} para excluir a pasta no Drive`);
+      if (!driveManager?.isConnected(slot))
+        throw new Error(
+          `Conecte ${slot.toUpperCase()} para excluir a pasta no Drive`,
+        );
       await driveManager.deleteFile(slot, folder.driveFolderId);
     }
     // Excluir subpastas recursivo
@@ -3327,7 +4294,8 @@ async function deleteFolderRecursive(folderId) {
 
 // ??? Lightbox ?????????????????????????????????????????????
 function openLightbox(file) {
-  lightboxIndex = lightboxFiles.findIndex(f => f.id === file.id);
+  const generation = ++lightboxGeneration;
+  lightboxIndex = lightboxFiles.findIndex((f) => f.id === file.id);
   lightboxInner.innerHTML = "";
   if (file.fileType === "image") {
     const img = document.createElement("img");
@@ -3336,12 +4304,23 @@ function openLightbox(file) {
     img.decoding = "async";
     if (isGoogleDriveRecord(file)) {
       img.src = mediaThumbUrl(file, 1600, 1200) || "";
-      storedObjectUrl(file).then(url => { img.src = url; }).catch(error => showMissingLightbox(file, error.message));
+      storedObjectUrl(file)
+        .then((url) => {
+          img.src = url;
+        })
+        .catch((error) => {
+          if (generation === lightboxGeneration)
+            showMissingLightbox(file, error.message);
+        });
     } else {
       const previewUrl = cloudPreview(file.cloudPublicId, "image") || file.url;
       img.src = previewUrl;
       img.onerror = () => {
-        if (img.src !== file.url && file.url) { img.src = file.url; return; }
+        if (generation !== lightboxGeneration) return;
+        if (img.src !== file.url && file.url) {
+          img.src = file.url;
+          return;
+        }
         showMissingLightbox(file);
       };
     }
@@ -3350,7 +4329,10 @@ function openLightbox(file) {
     if (isGoogleDriveRecord(file)) {
       const iframe = document.createElement("iframe");
       iframe.className = "drive-preview-frame";
-      iframe.src = drivePreviewUrl(file, driveManager?.getAccount(recordAccountSlot(file))?.email || "");
+      iframe.src = drivePreviewUrl(
+        file,
+        driveManager?.getAccount(recordAccountSlot(file))?.email || "",
+      );
       iframe.title = file.name;
       iframe.allow = "autoplay";
       lightboxInner.appendChild(iframe);
@@ -3362,28 +4344,34 @@ function openLightbox(file) {
       vid.playsInline = true;
       vid.preload = "metadata";
       vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
-      vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
-      vid.onvolumechange = () => localStorage.setItem("vault_video_volume", String(vid.volume));
-      vid.onratechange = () => localStorage.setItem("vault_video_speed", String(vid.playbackRate));
+      vid.playbackRate = Number(
+        localStorage.getItem("vault_video_speed") || "1",
+      );
+      vid.onvolumechange = () =>
+        localStorage.setItem("vault_video_volume", String(vid.volume));
+      vid.onratechange = () =>
+        localStorage.setItem("vault_video_speed", String(vid.playbackRate));
       vid.onerror = () => showMissingLightbox(file);
       lightboxInner.appendChild(vid);
     }
   } else {
-    renderDocumentPreview(file);
+    renderDocumentPreview(file, generation);
   }
 
   const folderName = file.folderId
-    ? (folders.find(f => f.id === file.folderId)?.name || "Pasta")
+    ? folders.find((f) => f.id === file.folderId)?.name || "Pasta"
     : "Raiz";
 
-  const favLabel  = file.favorite ? "Favoritado" : "Favoritar";
-  const imageActions = file.fileType === "image"
-    ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
-    : "";
-  const videoActions = file.fileType === "video" && !isGoogleDriveRecord(file)
-    ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
+  const favLabel = file.favorite ? "Favoritado" : "Favoritar";
+  const imageActions =
+    file.fileType === "image"
+      ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
+      : "";
+  const videoActions =
+    file.fileType === "video" && !isGoogleDriveRecord(file)
+      ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
        <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>`
-    : "";
+      : "";
 
   lightboxInfo.innerHTML = `
     <div class="lb-meta">
@@ -3394,8 +4382,8 @@ function openLightbox(file) {
     <div class="lb-actions">
       <button class="lb-nav-btn" id="lbPrevBtn" type="button">Anterior</button>
       <button class="lb-nav-btn" id="lbNextBtn" type="button">Proximo</button>
-      <button class="lb-action-btn" id="lbZoomOut" type="button" aria-label="Diminuir zoom">-</button>
-      <button class="lb-action-btn" id="lbZoomIn" type="button" aria-label="Aumentar zoom">+</button>
+      <button class="lb-action-btn" id="lbZoomOut" type="button" aria-label="Diminuir zoom">${icon("ZoomOut")}</button>
+      <button class="lb-action-btn" id="lbZoomIn" type="button" aria-label="Aumentar zoom">${icon("ZoomIn")}</button>
       <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${favLabel}</button>
       <button class="lb-action-btn" id="lbMoveBtn" type="button">Mover</button>
       <button class="lb-action-btn" id="lbRenameBtn" type="button">Renomear</button>
@@ -3406,7 +4394,13 @@ function openLightbox(file) {
       <button class="lb-action-btn lb-link" id="lbDownloadBtn" type="button">Baixar</button>
     </div>`;
 
-  $("lbFavBtn").onclick = () => { toggleFavorite(file); closeLightbox(); };
+  $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
+  $("lbZoomIn").hidden = $("lbZoomOut").hidden = file.fileType !== "image";
+  $("lbFavBtn").onclick = async () => {
+    await toggleFavorite(file);
+    const updated = fileById.get(file.id);
+    if (updated && lightbox.classList.contains("active")) openLightbox(updated);
+  };
   $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
   $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
   $("lbMoveBtn").onclick = () => openMoveModal(file);
@@ -3426,7 +4420,8 @@ function openLightbox(file) {
   $("lbPrevBtn").onclick = () => navigateLightbox(-1);
   $("lbNextBtn").onclick = () => navigateLightbox(1);
   $("lbPrevBtn").disabled = lightboxIndex <= 0;
-  $("lbNextBtn").disabled = lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
+  $("lbNextBtn").disabled =
+    lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
 
   lightbox.classList.add("active");
   lightboxZoom = 1;
@@ -3443,23 +4438,29 @@ function setLightboxZoom(value) {
   lightboxInner.classList.toggle("zoomed", lightboxZoom > 1);
 }
 
-async function renderDocumentPreview(file) {
+async function renderDocumentPreview(file, generation) {
   const ext = (file.name || "").split(".").pop().toLowerCase();
   if (isGoogleDriveRecord(file) && ext !== "txt") {
     lightboxInner.innerHTML = `<iframe class="doc-preview drive-preview-frame" src="${esc(drivePreviewUrl(file, driveManager?.getAccount(recordAccountSlot(file))?.email || ""))}" title="${esc(file.name)}"></iframe>`;
     return;
   }
   if (ext === "pdf") {
-    lightboxInner.innerHTML = `<iframe class="doc-preview" src="${file.url}" title="${esc(file.name)}"></iframe>`;
+    lightboxInner.innerHTML = `<iframe class="doc-preview" src="${esc(file.url)}" title="${esc(file.name)}"></iframe>`;
     return;
   }
   if (ext === "txt") {
     lightboxInner.innerHTML = `<pre class="text-preview">Carregando texto...</pre>`;
     try {
       const text = await (await fetchStoredBlob(file)).text();
-      lightboxInner.querySelector(".text-preview").textContent = text.slice(0, 200000);
+      if (generation !== lightboxGeneration) return;
+      lightboxInner.querySelector(".text-preview").textContent = text.slice(
+        0,
+        200000,
+      );
     } catch {
-      lightboxInner.querySelector(".text-preview").textContent = "Nao foi possivel carregar a previa do texto.";
+      if (generation !== lightboxGeneration) return;
+      lightboxInner.querySelector(".text-preview").textContent =
+        "Nao foi possivel carregar a previa do texto.";
     }
     return;
   }
@@ -3483,7 +4484,7 @@ function cycleVideoSpeed() {
   const video = lightboxInner.querySelector("video");
   if (!video) return;
   const speeds = [0.5, 1, 1.25, 1.5, 2];
-  const idx = speeds.findIndex(s => s > video.playbackRate + 0.01);
+  const idx = speeds.findIndex((s) => s > video.playbackRate + 0.01);
   video.playbackRate = idx >= 0 ? speeds[idx] : speeds[0];
   localStorage.setItem("vault_video_speed", String(video.playbackRate));
   showToast(`Velocidade ${video.playbackRate}x`, "success");
@@ -3493,7 +4494,9 @@ async function saveCurrentVideoFrame(file) {
   const video = lightboxInner.querySelector("video");
   if (!video) return;
   try {
-    await updateDoc(doc(db, "vault_files", file.id), { coverTime: Math.round(video.currentTime || 0) });
+    await updateDoc(doc(db, "vault_files", file.id), {
+      coverTime: Math.round(video.currentTime || 0),
+    });
     addHistory(`Capa do video: ${file.name}`);
     showToast("Frame salvo como capa", "success");
   } catch (e) {
@@ -3505,16 +4508,26 @@ function showMissingLightbox(file, detail = "") {
   lightboxInner.innerHTML = `
     <div class="missing-lightbox">
       <div class="missing-lightbox-title">Arquivo indisponivel</div>
-      <p>${esc(detail || "Este item ainda existe no Firestore, mas nao foi possivel encontra-lo no provedor de armazenamento.")}</p>
+      <p>${esc(detail || "Este item ainda existe no índice local, mas nao foi possivel encontra-lo no provedor de armazenamento.")}</p>
       <button id="removeMissingFile" type="button">Remover registro do app</button>
     </div>
   `;
-  $("removeMissingFile").onclick = async () => { await deleteFile(file); closeLightbox(); };
+  $("removeMissingFile").onclick = async () => {
+    await deleteFile(file);
+    closeLightbox();
+  };
 }
 
 $("lightboxClose").onclick = closeLightbox;
-lightbox.onclick = e => { if (e.target === lightbox) closeLightbox(); };
-document.onkeydown = e => {
+lightbox.onclick = (e) => {
+  if (e.target === lightbox) closeLightbox();
+};
+document.onkeydown = (e) => {
+  if (
+    e.defaultPrevented ||
+    e.target.closest("input, textarea, select, [contenteditable=true]")
+  )
+    return;
   if (mangaReader.classList.contains("active")) {
     if (e.key === "Escape") {
       closeMangaReader();
@@ -3531,7 +4544,7 @@ document.onkeydown = e => {
       return;
     }
   }
-  $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
+
   if (e.key === "Escape") {
     closeLightbox();
     folderModal.classList.remove("active");
@@ -3541,20 +4554,24 @@ document.onkeydown = e => {
     closeFolderCoverPicker();
     closeFolderActionsModal();
     if (configModal.style.display === "flex") {
-      if ($("cancelConfig").style.display !== "none") configModal.style.display = "none";
+      if ($("cancelConfig").style.display !== "none")
+        configModal.style.display = "none";
     }
   }
-  if (lightbox.classList.contains("active") && e.key === "ArrowLeft") navigateLightbox(-1);
-  if (lightbox.classList.contains("active") && e.key === "ArrowRight") navigateLightbox(1);
+  if (lightbox.classList.contains("active") && e.key === "ArrowLeft")
+    navigateLightbox(-1);
+  if (lightbox.classList.contains("active") && e.key === "ArrowRight")
+    navigateLightbox(1);
 };
 function closeLightbox() {
+  lightboxGeneration++;
   lightbox.classList.remove("active");
-  lightboxInner.querySelectorAll("video, audio").forEach(media => {
+  lightboxInner.querySelectorAll("video, audio").forEach((media) => {
     media.pause();
     media.removeAttribute("src");
     media.load();
   });
-  lightboxInner.querySelectorAll("iframe").forEach(frame => {
+  lightboxInner.querySelectorAll("iframe").forEach((frame) => {
     frame.src = "about:blank";
   });
   lightboxInner.innerHTML = "";
@@ -3563,7 +4580,9 @@ function closeLightbox() {
 
 // ??? Manga reader ?????????????????????????????????????????
 function openMangaReader(startFile = null) {
-  const folderId = startFile ? normalizeFolderId(startFile.folderId) : navState.folderId;
+  const folderId = startFile
+    ? normalizeFolderId(startFile.folderId)
+    : navState.folderId;
   const pages = getMangaPages(folderId);
   if (!pages.length) {
     showToast("Esta pasta nao tem imagens para leitura", "error");
@@ -3571,7 +4590,12 @@ function openMangaReader(startFile = null) {
   }
 
   mangaState.pages = pages;
-  mangaState.index = startFile ? Math.max(0, pages.findIndex(page => page.id === startFile.id)) : 0;
+  mangaState.index = startFile
+    ? Math.max(
+        0,
+        pages.findIndex((page) => page.id === startFile.id),
+      )
+    : 0;
   if (mangaState.index < 0) mangaState.index = 0;
   mangaTitle.textContent = getFolderPathLabel(folderId) || "Raiz";
   mangaReader.classList.add("active");
@@ -3580,29 +4604,43 @@ function openMangaReader(startFile = null) {
 }
 
 function getMangaPages(folderId) {
-  const firestoreFolderId = toFirestoreFolderId(folderId);
+  const firestoreFolderId = toLocalFolderId(folderId);
   return files
-    .filter(file => isActiveFile(file) && file.fileType === "image" && (file.folderId || null) === firestoreFolderId)
+    .filter(
+      (file) =>
+        isActiveFile(file) &&
+        file.fileType === "image" &&
+        (file.folderId || null) === firestoreFolderId,
+    )
     .sort(comparePageFiles);
 }
 
 function renderMangaReader() {
   mangaStage.className = `manga-stage ${mangaState.mode}`;
   mangaReader.style.setProperty("--manga-zoom", String(mangaState.zoom));
-  mangaModeHorizontal.classList.toggle("active", mangaState.mode === "horizontal");
+  mangaModeHorizontal.classList.toggle(
+    "active",
+    mangaState.mode === "horizontal",
+  );
   mangaModeVertical.classList.toggle("active", mangaState.mode === "vertical");
 
   if (mangaState.mode === "vertical") {
-    mangaStage.innerHTML = mangaState.pages.map((page, index) => `
+    mangaStage.innerHTML = mangaState.pages
+      .map(
+        (page, index) => `
       <figure class="manga-page-stack" data-index="${index}">
         <img src="${esc(mediaThumbUrl(page, 1800, 2400))}" data-drive-file-id="${isGoogleDriveRecord(page) ? esc(page.id) : ""}" alt="${esc(page.name)}" loading="${index < 2 ? "eager" : "lazy"}" />
         <figcaption>${index + 1}. ${esc(page.name)}</figcaption>
       </figure>
-    `).join("");
+    `,
+      )
+      .join("");
     mangaPrev.disabled = true;
     mangaNext.disabled = true;
     requestAnimationFrame(() => {
-      const current = mangaStage.querySelector(`[data-index="${mangaState.index}"]`);
+      const current = mangaStage.querySelector(
+        `[data-index="${mangaState.index}"]`,
+      );
       current?.scrollIntoView({ block: "start" });
     });
   } else {
@@ -3632,7 +4670,10 @@ function setMangaMode(mode) {
 
 function navigateManga(direction) {
   if (mangaState.mode === "vertical") {
-    mangaStage.scrollBy({ top: direction * Math.max(320, mangaStage.clientHeight * 0.82), behavior: "smooth" });
+    mangaStage.scrollBy({
+      top: direction * Math.max(320, mangaStage.clientHeight * 0.82),
+      behavior: "smooth",
+    });
     return;
   }
   const next = mangaState.index + direction;
@@ -3652,8 +4693,10 @@ function updateMangaIndexFromScroll() {
   const pages = [...mangaStage.querySelectorAll(".manga-page-stack")];
   let closestIndex = mangaState.index;
   let closestDistance = Number.POSITIVE_INFINITY;
-  pages.forEach(page => {
-    const distance = Math.abs(page.getBoundingClientRect().top - mangaStage.getBoundingClientRect().top);
+  pages.forEach((page) => {
+    const distance = Math.abs(
+      page.getBoundingClientRect().top - mangaStage.getBoundingClientRect().top,
+    );
     if (distance < closestDistance) {
       closestDistance = distance;
       closestIndex = Number(page.dataset.index || 0);
@@ -3679,10 +4722,13 @@ mangaClose.onclick = closeMangaReader;
 mangaStage.addEventListener("scroll", updateMangaIndexFromScroll);
 
 // ??? Upload ???????????????????????????????????????????????
-fileInput.onchange = e => handleFiles(Array.from(e.target.files));
+fileInput.onchange = (e) => handleFiles(Array.from(e.target.files));
 
 async function handleFiles(fileList) {
-  if (!db || !driveManager) { showToast("Configure o Firebase e o Google Drive primeiro", "error"); return; }
+  if (!db || !driveManager) {
+    showToast("Configure o Firebase e o Google Drive primeiro", "error");
+    return;
+  }
   if (!fileList.length) return;
   let destination;
   try {
@@ -3720,7 +4766,17 @@ async function handleFiles(fileList) {
   uploadPanel.style.display = "block";
   updateActivityCenter();
   pendingUploadAccountSlot = destination.accountSlot;
-  await runLimitedQueue(uniqueFiles, file => uploadOneFile(file, destination.accountSlot, destination.driveParentId, destination.folderId), UPLOAD_CONCURRENCY);
+  await runLimitedQueue(
+    uniqueFiles,
+    (file) =>
+      uploadOneFile(
+        file,
+        destination.accountSlot,
+        destination.driveParentId,
+        destination.folderId,
+      ),
+    UPLOAD_CONCURRENCY,
+  );
   pendingUploadAccountSlot = "";
   fileInput.value = "";
   showToast(`${uniqueFiles.length} upload(s) processado(s)`, "success");
@@ -3731,30 +4787,46 @@ async function chooseAccountSlot(title = "Escolher conta do Drive") {
   const values = await openFieldsDialog({
     title,
     confirmText: "Continuar",
-    fields: [{
-      name: "accountSlot",
-      label: "Conta",
-      type: "select",
-      value: "ac1",
-      options: ["ac1", "ac2", "ac3", "ac4"].map(slot => ({
-        value: slot,
-        label: `${accountLabel(slot)}${driveManager?.isConnected(slot) ? " · conectada" : " · desconectada"}`,
-      })),
-    }],
+    fields: [
+      {
+        name: "accountSlot",
+        label: "Conta",
+        type: "select",
+        value: "ac1",
+        options: ["ac1", "ac2", "ac3", "ac4"].map((slot) => ({
+          value: slot,
+          label: `${accountLabel(slot)}${driveManager?.isConnected(slot) ? " · conectada" : " · desconectada"}`,
+        })),
+      },
+    ],
   });
   if (!values) throw new Error("Operacao cancelada");
   return values.accountSlot;
 }
 
 async function resolveUploadDestination() {
-  const folder = navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
-  const accountSlot = folder ? recordAccountSlot(folder) : await chooseAccountSlot("Enviar arquivos para qual conta?");
-  if (accountSlot === "legacy") throw new Error("Migre esta pasta para o Drive antes de enviar novos arquivos");
-  if (!driveManager.isConnected(accountSlot)) throw new Error(`${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes de enviar arquivos.`);
+  const folder =
+    navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
+  const accountSlot = folder
+    ? recordAccountSlot(folder)
+    : await chooseAccountSlot("Enviar arquivos para qual conta?");
+  if (accountSlot === "legacy")
+    throw new Error(
+      "Migre esta pasta para o Drive antes de enviar novos arquivos",
+    );
+  if (!driveManager.isConnected(accountSlot))
+    throw new Error(
+      `${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes de enviar arquivos.`,
+    );
   const driveParentId = folder
     ? await ensureFolderOnDrive(folder, accountSlot)
     : await driveManager.ensureRootFolder(accountSlot);
-  return { accountSlot, driveParentId, folderId: folder?.id || null, label: formatDriveDestination(accountSlot, folder?.id || null) };
+  return {
+    accountSlot,
+    driveParentId,
+    folderId: folder?.id || null,
+    label: formatDriveDestination(accountSlot, folder?.id || null),
+  };
 }
 
 function formatDriveDestination(accountSlot, folderId = null) {
@@ -3776,18 +4848,23 @@ async function getOrComputeUploadHash(file) {
 }
 
 function isUploadDuplicate(file, contentHash = "") {
-  return files.some(existing => {
+  return files.some((existing) => {
     if (existing.deletedAt) return false;
     if (contentHash && existing.contentHash === contentHash) return true;
-    return (existing.name || "").toLowerCase() === file.name.toLowerCase()
-      && (existing.size || 0) === file.size
-      && (existing.fileType || "") === getFileType(file);
+    return (
+      (existing.name || "").toLowerCase() === file.name.toLowerCase() &&
+      (existing.size || 0) === file.size &&
+      (existing.fileType || "") === getFileType(file)
+    );
   });
 }
 
 function scheduleUploadItemRemoval(itemEl, delay = 2200) {
   setTimeout(() => {
-    if (itemEl.dataset.status === "active") itemEl.dataset.status = itemEl.classList.contains("upload-error") ? "error" : "complete";
+    if (itemEl.dataset.status === "active")
+      itemEl.dataset.status = itemEl.classList.contains("upload-error")
+        ? "error"
+        : "complete";
     updateActivityCenter();
   }, delay);
 }
@@ -3795,13 +4872,28 @@ function scheduleUploadItemRemoval(itemEl, delay = 2200) {
 function updateActivityCenter() {
   if (!uploadList) return;
   const items = [...uploadList.querySelectorAll(".upload-item")];
-  const active = items.filter(item => !["complete", "error", "cancelled"].includes(item.dataset.status)).length;
-  const errors = items.filter(item => item.dataset.status === "error" || item.classList.contains("upload-error")).length;
+  const active = items.filter(
+    (item) => !["complete", "error", "cancelled"].includes(item.dataset.status),
+  ).length;
+  const errors = items.filter(
+    (item) =>
+      item.dataset.status === "error" ||
+      item.classList.contains("upload-error"),
+  ).length;
   const pending = active + errors;
   activityCount.textContent = String(pending);
   activityCount.hidden = pending === 0;
-  activitySummary.textContent = active ? `${active} em andamento${errors ? ` · ${errors} com erro` : ""}` : errors ? `${errors} precisam de atenção` : items.length ? `${items.length} concluída(s)` : "Nenhuma atividade";
-  activityCenterBtn?.setAttribute("aria-expanded", uploadPanel.style.display !== "none" ? "true" : "false");
+  activitySummary.textContent = active
+    ? `${active} em andamento${errors ? ` · ${errors} com erro` : ""}`
+    : errors
+      ? `${errors} precisam de atenção`
+      : items.length
+        ? `${items.length} concluída(s)`
+        : "Nenhuma atividade";
+  activityCenterBtn?.setAttribute(
+    "aria-expanded",
+    uploadPanel.style.display !== "none" ? "true" : "false",
+  );
 }
 
 function showActivityCenter() {
@@ -3809,7 +4901,12 @@ function showActivityCenter() {
   updateActivityCenter();
 }
 
-async function uploadOneFile(file, accountSlot, driveParentId, targetFolderId = null) {
+async function uploadOneFile(
+  file,
+  accountSlot,
+  driveParentId,
+  targetFolderId = null,
+) {
   const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const itemEl = document.createElement("div");
   itemEl.className = "upload-item";
@@ -3843,22 +4940,36 @@ async function uploadOneFile(file, accountSlot, driveParentId, targetFolderId = 
   };
 
   try {
-    const metadata = await driveManager.uploadFile(accountSlot, file, driveParentId, {
-      onXhr: nextXhr => {
-        xhr = nextXhr;
-        activeUploads.set(uploadId, nextXhr);
+    const metadata = await driveManager.uploadFile(
+      accountSlot,
+      file,
+      driveParentId,
+      {
+        onXhr: (nextXhr) => {
+          xhr = nextXhr;
+          activeUploads.set(uploadId, nextXhr);
+        },
+        onProgress: (loaded, total) => {
+          const pct = total ? Math.round((loaded / total) * 100) : 0;
+          bar.style.width = `${pct}%`;
+          status.textContent = `${pct}% · ${slotTag(accountSlot)}`;
+          itemEl.setAttribute(
+            "aria-label",
+            `Enviando ${file.name}: ${pct}% para ${slotTag(accountSlot)}`,
+          );
+          updateActivityCenter();
+        },
       },
-      onProgress: (loaded, total) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 0;
-        bar.style.width = `${pct}%`;
-        status.textContent = `${pct}% · ${slotTag(accountSlot)}`;
-        itemEl.setAttribute("aria-label", `Enviando ${file.name}: ${pct}% para ${slotTag(accountSlot)}`);
-        updateActivityCenter();
-      },
-    });
+    );
     if (cancelled) return;
     const contentHash = uploadHashes.get(file) || "";
-    const photoInsights = photoMetadataCache.get(file) || { capturedAt: "", dateSource: "", isScreenshot: false, albumKey: "", albumLabel: "" };
+    const photoInsights = photoMetadataCache.get(file) || {
+      capturedAt: "",
+      dateSource: "",
+      isScreenshot: false,
+      albumKey: "",
+      albumLabel: "",
+    };
     const initialTags = photoInsights.isScreenshot ? ["captura-de-tela"] : [];
     const imageMetadata = metadata.imageMediaMetadata || {};
     const videoMetadata = metadata.videoMediaMetadata || {};
@@ -3894,18 +5005,22 @@ async function uploadOneFile(file, accountSlot, driveParentId, targetFolderId = 
       notes: [],
       createdAt: serverTimestamp(),
     });
-    if (metadata.thumbnailLink) driveThumbnailCache.set(savedFile.id, metadata.thumbnailLink);
-    scheduleLocalIndex({
-      id: savedFile.id,
-      name: file.name,
-      provider: "google-drive",
-      accountSlot,
-      driveFileId: metadata.id,
-      contentHash,
-      size: file.size,
-      fileType: getFileType(file),
-      mimeType: file.type,
-    }, file);
+    if (metadata.thumbnailLink)
+      driveThumbnailCache.set(savedFile.id, metadata.thumbnailLink);
+    scheduleLocalIndex(
+      {
+        id: savedFile.id,
+        name: file.name,
+        provider: "google-drive",
+        accountSlot,
+        driveFileId: metadata.id,
+        contentHash,
+        size: file.size,
+        fileType: getFileType(file),
+        mimeType: file.type,
+      },
+      file,
+    );
     addHistory(`Upload ${slotTag(accountSlot)}: ${file.name}`);
     status.textContent = "Concluido no Drive";
     status.style.color = "var(--accent)";
@@ -3937,12 +5052,15 @@ function getFileType(file) {
 }
 
 // ??? Drag & drop ??????????????????????????????????????????
-window.addEventListener("dragover", e => { e.preventDefault(); dropOverlay.classList.add("active"); });
-window.addEventListener("dragleave", e => {
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropOverlay.classList.add("active");
+});
+window.addEventListener("dragleave", (e) => {
   if (!e.relatedTarget || !document.body.contains(e.relatedTarget))
     dropOverlay.classList.remove("active");
 });
-window.addEventListener("drop", e => {
+window.addEventListener("drop", (e) => {
   e.preventDefault();
   dropOverlay.classList.remove("active");
   const dropped = Array.from(e.dataTransfer.files);
@@ -3951,7 +5069,9 @@ window.addEventListener("drop", e => {
 
 // ??? View toggle ??????????????????????????????????????????
 function clearViewModeButtons() {
-  Object.values(VIEW_BUTTONS).forEach(id => $(id)?.classList.remove("active"));
+  Object.values(VIEW_BUTTONS).forEach((id) =>
+    $(id)?.classList.remove("active"),
+  );
 }
 
 function setViewButtonState(mode) {
@@ -3963,7 +5083,7 @@ function setViewButtonState(mode) {
 function setViewMode(mode) {
   if (!VIEW_BUTTONS[mode]) return;
   if (mangaReader.classList.contains("active")) closeMangaReader();
-  openFilesSection({ render: false });
+  if (navState.section !== "photos") openFilesSection({ render: false });
   navState.viewMode = mode;
   visibleLimit = PAGE_SIZE;
   if (isSelectMode) {
@@ -3977,9 +5097,22 @@ function setViewMode(mode) {
 }
 
 function updateViewA11y() {
-  ["viewGrid", "viewList", "viewGallery", "viewFolders", "viewTimeline", "viewManga", "viewDensity", "viewSelect"].forEach(id => {
+  [
+    "viewGrid",
+    "viewList",
+    "viewGallery",
+    "viewFolders",
+    "viewTimeline",
+    "viewManga",
+    "viewDensity",
+    "viewSelect",
+  ].forEach((id) => {
     const btn = $(id);
-    if (btn) btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+    if (btn)
+      btn.setAttribute(
+        "aria-pressed",
+        btn.classList.contains("active") ? "true" : "false",
+      );
   });
 }
 
@@ -3997,7 +5130,7 @@ function togglePanel(panel, toggleBtn, otherPanel, otherToggle) {
 }
 
 function setActiveFilterChip(filterKey) {
-  document.querySelectorAll(".chip").forEach(chip => {
+  document.querySelectorAll(".chip").forEach((chip) => {
     chip.classList.toggle("active", chip.dataset.filter === filterKey);
   });
 }
@@ -4009,7 +5142,8 @@ function setContentFilter(filterKey) {
   setPanelOpen(filterPanel, $("filterPanelToggle"), false);
   setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
   sidebar.classList.remove("mobile-open");
-  if (navState.viewMode === "folders" || navState.viewMode === "timeline") navState.viewMode = "grid";
+  if (navState.viewMode === "folders" || navState.viewMode === "timeline")
+    navState.viewMode = "grid";
   visibleLimit = PAGE_SIZE;
   isSelectMode = false;
   selectedIds.clear();
@@ -4026,10 +5160,19 @@ $("viewFolders").onclick = () => setViewMode("folders");
 $("viewTimeline").onclick = () => setViewMode("timeline");
 $("viewManga").onclick = () => openMangaReader();
 $("dashboardTimelineBtn").onclick = () => {
-  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "timeline" });
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "all",
+    viewMode: "timeline",
+  });
 };
 $("dashboardAllFilesBtn").onclick = () => {
-  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "grid", resetAdvancedFilters: true });
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "all",
+    viewMode: "grid",
+    resetAdvancedFilters: true,
+  });
 };
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
@@ -4063,14 +5206,33 @@ loadMoreBtn.onclick = () => {
 };
 
 // ??? Filter chips ?????????????????????????????????????????
-document.querySelectorAll(".chip").forEach(chip => {
+document.querySelectorAll(".chip").forEach((chip) => {
   chip.onclick = () => {
     setContentFilter(chip.dataset.filter);
   };
 });
 
 navHome?.addEventListener("click", openHomeSection);
-navFiles?.addEventListener("click", () => openFilesSection());
+navFiles?.addEventListener("click", () =>
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "all",
+    viewMode: "grid",
+    resetAdvancedFilters: true,
+  }),
+);
+$("navPhotos").onclick = () => {
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "media",
+    viewMode: "gallery",
+    resetAdvancedFilters: true,
+  });
+  navState.section = "photos";
+  syncSectionUI();
+  renderBreadcrumb();
+  renderGrid();
+};
 accountViewSelect?.addEventListener("change", () => {
   activeAccountView = accountViewSelect.value;
   localStorage.setItem("vault_drive_account_view", activeAccountView);
@@ -4092,9 +5254,14 @@ accountConnectBtn?.addEventListener("click", () => {
 
 function attachRootDrop() {
   const rootItem = folderList.firstElementChild;
-  rootItem.addEventListener("dragover", e => { e.preventDefault(); rootItem.classList.add("drop-target"); });
-  rootItem.addEventListener("dragleave", () => rootItem.classList.remove("drop-target"));
-  rootItem.addEventListener("drop", async e => {
+  rootItem.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    rootItem.classList.add("drop-target");
+  });
+  rootItem.addEventListener("dragleave", () =>
+    rootItem.classList.remove("drop-target"),
+  );
+  rootItem.addEventListener("drop", async (e) => {
     e.preventDefault();
     rootItem.classList.remove("drop-target");
     const fileId = e.dataTransfer.getData("text/plain");
@@ -4121,9 +5288,16 @@ folderList.firstElementChild.onclick = () => {
 };
 
 $("sidebarToggle").onclick = () => {
+  if (matchMedia("(max-width:760px)").matches) {
+    sidebar.classList.remove("mobile-open");
+    return;
+  }
   sidebar.classList.toggle("hidden");
   mainEl.classList.toggle("sidebar-hidden");
-  $("sidebarOpenBtn").classList.toggle("visible", sidebar.classList.contains("hidden"));
+  $("sidebarOpenBtn").classList.toggle(
+    "visible",
+    sidebar.classList.contains("hidden"),
+  );
 };
 $("sidebarOpenBtn").onclick = () => {
   sidebar.classList.remove("hidden");
@@ -4136,20 +5310,30 @@ $("closePanel").onclick = () => {
   updateActivityCenter();
 };
 activityCenterBtn?.addEventListener("click", () => {
-  uploadPanel.style.display = uploadPanel.style.display === "none" ? "block" : "none";
+  uploadPanel.style.display =
+    uploadPanel.style.display === "none" ? "block" : "none";
   updateActivityCenter();
 });
 $("cancelActivities")?.addEventListener("click", () => {
-  activeUploads.forEach(xhr => xhr.abort());
+  activeUploads.forEach((xhr) => xhr.abort());
   activeUploads.clear();
-  uploadList.querySelectorAll('.upload-item[data-status="active"][data-cancellable="true"]').forEach(item => {
-    item.dataset.status = "cancelled";
-    item.querySelector(".upload-item-status").textContent = "Cancelado pelo usuário";
-  });
+  uploadList
+    .querySelectorAll(
+      '.upload-item[data-status="active"][data-cancellable="true"]',
+    )
+    .forEach((item) => {
+      item.dataset.status = "cancelled";
+      item.querySelector(".upload-item-status").textContent =
+        "Cancelado pelo usuário";
+    });
   updateActivityCenter();
 });
 $("clearActivities")?.addEventListener("click", () => {
-  uploadList.querySelectorAll('.upload-item[data-status="complete"], .upload-item[data-status="cancelled"]').forEach(item => item.remove());
+  uploadList
+    .querySelectorAll(
+      '.upload-item[data-status="complete"], .upload-item[data-status="cancelled"]',
+    )
+    .forEach((item) => item.remove());
   updateActivityCenter();
 });
 $("btnCheckFiles").onclick = verifyFiles;
@@ -4162,19 +5346,52 @@ $("btnSlideshow").onclick = startSlideshow;
 $("closeInfoModal").onclick = () => infoModal.classList.remove("active");
 $("cancelDescription").onclick = closeDescriptionModal;
 $("saveDescription").onclick = saveFileDescription;
-descriptionModal.onclick = e => { if (e.target === descriptionModal) closeDescriptionModal(); };
-descriptionInput.onkeydown = e => {
+descriptionModal.onclick = (e) => {
+  if (e.target === descriptionModal) closeDescriptionModal();
+};
+descriptionInput.onkeydown = (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") saveFileDescription();
 };
-$("emptyNewFolderBtn").onclick = () => openFolderCreateDialog(navState.folderId);
-$("filterPanelToggle").onclick = () => togglePanel(filterPanel, $("filterPanelToggle"), toolsPanel, $("toolsPanelToggle"));
-$("toolsPanelToggle").onclick = () => togglePanel(toolsPanel, $("toolsPanelToggle"), filterPanel, $("filterPanelToggle"));
-$("closeFilterPanel").onclick = () => setPanelOpen(filterPanel, $("filterPanelToggle"), false);
-$("closeToolsPanel").onclick = () => setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
-advFolderSelect.onchange = () => { advancedFilters.folderId = advFolderSelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
-advPrioritySelect.onchange = () => { advancedFilters.priority = advPrioritySelect.value; visibleLimit = PAGE_SIZE; renderGrid(); };
-advDateFrom.onchange = () => { advancedFilters.dateFrom = advDateFrom.value; visibleLimit = PAGE_SIZE; renderGrid(); };
-advDateTo.onchange = () => { advancedFilters.dateTo = advDateTo.value; visibleLimit = PAGE_SIZE; renderGrid(); };
+$("emptyNewFolderBtn").onclick = () =>
+  openFolderCreateDialog(navState.folderId);
+$("filterPanelToggle").onclick = () =>
+  togglePanel(
+    filterPanel,
+    $("filterPanelToggle"),
+    toolsPanel,
+    $("toolsPanelToggle"),
+  );
+$("toolsPanelToggle").onclick = () =>
+  togglePanel(
+    toolsPanel,
+    $("toolsPanelToggle"),
+    filterPanel,
+    $("filterPanelToggle"),
+  );
+$("closeFilterPanel").onclick = () =>
+  setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+$("closeToolsPanel").onclick = () =>
+  setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+advFolderSelect.onchange = () => {
+  advancedFilters.folderId = advFolderSelect.value;
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+advPrioritySelect.onchange = () => {
+  advancedFilters.priority = advPrioritySelect.value;
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+advDateFrom.onchange = () => {
+  advancedFilters.dateFrom = advDateFrom.value;
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+advDateTo.onchange = () => {
+  advancedFilters.dateTo = advDateTo.value;
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
 $("clearAdvancedBtn").onclick = () => {
   advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
   advFolderSelect.value = "";
@@ -4188,26 +5405,43 @@ $("importUrlBtn").onclick = importFromUrl;
 $("importJsonBtn").onclick = () => backupInput.click();
 $("indexSearchBtn").onclick = indexSearchLibrary;
 $("clearSearchIndexBtn").onclick = () => {
-  clearLocalSearchIndex().catch(error => showToast("Erro ao limpar indice: " + error.message, "error"));
+  clearLocalSearchIndex().catch((error) =>
+    showToast("Erro ao limpar indice: " + error.message, "error"),
+  );
 };
 $("analyzePhotosBtn").onclick = () => {
-  analyzeExistingPhotos().catch(error => showToast("Erro ao analisar fotos: " + error.message, "error"));
+  analyzeExistingPhotos().catch((error) =>
+    showToast("Erro ao analisar fotos: " + error.message, "error"),
+  );
 };
 $("migrateCloudinaryBtn").onclick = () => {
-  migrateLegacyFilesToDrive().catch(error => showToast(error.message, "error"));
+  migrateLegacyFilesToDrive().catch((error) =>
+    showToast(error.message, "error"),
+  );
 };
-backupInput.onchange = e => {
+backupInput.onchange = (e) => {
   const file = e.target.files?.[0];
   if (file) importBackupJson(file);
   backupInput.value = "";
 };
 
 async function migrateLegacyFilesToDrive() {
-  if (!db || !driveManager) throw new Error("Configure o Google Drive primeiro");
-  const accountSlot = await chooseAccountSlot("Migrar arquivos antigos para qual conta?");
-  if (!driveManager.isConnected(accountSlot)) throw new Error(`${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes da migração.`);
-  const legacyFiles = files.filter(file => !file.deletedAt && !isGoogleDriveRecord(file) && file.url);
-  if (!legacyFiles.length) { showToast("Nao ha arquivos antigos para migrar"); return; }
+  if (!db || !driveManager)
+    throw new Error("Configure o Google Drive primeiro");
+  const accountSlot = await chooseAccountSlot(
+    "Migrar arquivos antigos para qual conta?",
+  );
+  if (!driveManager.isConnected(accountSlot))
+    throw new Error(
+      `${slotTag(accountSlot)} não está disponível. Reconecte ${driveManager.getAccount(accountSlot)?.email || "a conta"} antes da migração.`,
+    );
+  const legacyFiles = files.filter(
+    (file) => !file.deletedAt && !isGoogleDriveRecord(file) && file.url,
+  );
+  if (!legacyFiles.length) {
+    showToast("Nao ha arquivos antigos para migrar");
+    return;
+  }
   const confirmed = await openConfirmDialog({
     title: "Migrar Cloudinary para Drive",
     message: `Origem: Cloudinary (${legacyFiles.length} arquivo(s)). Destino: ${formatDriveDestination(accountSlot)}. Os arquivos antigos não serão apagados automaticamente.`,
@@ -4218,19 +5452,28 @@ async function migrateLegacyFilesToDrive() {
   migrationLiveRegion.textContent = `Migração iniciada: ${legacyFiles.length} arquivos para ${accountFullLabel(accountSlot)}.`;
   let migrated = 0;
   let failed = 0;
-  await runLimitedQueue(legacyFiles, async record => {
-    try {
-      await migrateLegacyFile(record, accountSlot);
-      migrated += 1;
-      migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados.`;
-    } catch (error) {
-      failed += 1;
-      migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados, ${failed} com erro.`;
-      console.error(`Falha ao migrar ${record.name}`, error);
-    }
-  }, 2);
-  addHistory(`Migracao para ${slotTag(accountSlot)}: ${migrated} concluido(s), ${failed} falha(s)`);
-  showToast(`${migrated} migrado(s) para ${slotTag(accountSlot)}${failed ? ` · ${failed} falha(s)` : ""}`, failed ? "error" : "success");
+  await runLimitedQueue(
+    legacyFiles,
+    async (record) => {
+      try {
+        await migrateLegacyFile(record, accountSlot);
+        migrated += 1;
+        migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados.`;
+      } catch (error) {
+        failed += 1;
+        migrationLiveRegion.textContent = `Migração: ${migrated + failed} de ${legacyFiles.length} processados, ${failed} com erro.`;
+        console.error(`Falha ao migrar ${record.name}`, error);
+      }
+    },
+    2,
+  );
+  addHistory(
+    `Migracao para ${slotTag(accountSlot)}: ${migrated} concluido(s), ${failed} falha(s)`,
+  );
+  showToast(
+    `${migrated} migrado(s) para ${slotTag(accountSlot)}${failed ? ` · ${failed} falha(s)` : ""}`,
+    failed ? "error" : "success",
+  );
   migrationLiveRegion.textContent = `Migração concluída. ${migrated} enviados e ${failed} com erro.`;
   updateActivityCenter();
 }
@@ -4251,18 +5494,25 @@ async function migrateLegacyFile(record, accountSlot) {
   const status = itemEl.querySelector(".upload-item-status");
   try {
     const blob = await fetchStoredBlob(record);
-    const source = new File([blob], record.name || "arquivo", { type: record.mimeType || blob.type || "application/octet-stream" });
+    const source = new File([blob], record.name || "arquivo", {
+      type: record.mimeType || blob.type || "application/octet-stream",
+    });
     const folder = record.folderId ? getFolder(record.folderId) : null;
     const driveParentId = folder
       ? await ensureFolderOnDrive(folder, accountSlot)
       : await driveManager.ensureRootFolder(accountSlot);
-    const metadata = await driveManager.uploadFile(accountSlot, source, driveParentId, {
-      onProgress: (loaded, total) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 0;
-        bar.style.width = `${pct}%`;
-        status.textContent = `Enviando ao Drive · ${pct}%`;
+    const metadata = await driveManager.uploadFile(
+      accountSlot,
+      source,
+      driveParentId,
+      {
+        onProgress: (loaded, total) => {
+          const pct = total ? Math.round((loaded / total) * 100) : 0;
+          bar.style.width = `${pct}%`;
+          status.textContent = `Enviando ao Drive · ${pct}%`;
+        },
       },
-    });
+    );
     await updateDoc(doc(db, "vault_files", record.id), {
       provider: "google-drive",
       accountSlot,
@@ -4276,7 +5526,8 @@ async function migrateLegacyFile(record, accountSlot) {
       cloudPublicId: "",
       migratedAt: serverTimestamp(),
     });
-    if (metadata.thumbnailLink) driveThumbnailCache.set(record.id, metadata.thumbnailLink);
+    if (metadata.thumbnailLink)
+      driveThumbnailCache.set(record.id, metadata.thumbnailLink);
     status.textContent = "Migrado para o Drive";
     itemEl.classList.add("upload-complete");
     itemEl.dataset.status = "complete";
@@ -4287,8 +5538,11 @@ async function migrateLegacyFile(record, accountSlot) {
     status.innerHTML = `${esc(friendlyDriveError(error, accountSlot, driveManager.getAccount(accountSlot)?.email, "migrar este arquivo"))} <button class="upload-retry" type="button">Tentar novamente</button>`;
     status.querySelector(".upload-retry").onclick = async () => {
       itemEl.remove();
-      try { await migrateLegacyFile(record, accountSlot); }
-      catch (retryError) { console.error(retryError); }
+      try {
+        await migrateLegacyFile(record, accountSlot);
+      } catch (retryError) {
+        console.error(retryError);
+      }
       updateActivityCenter();
     };
     updateActivityCenter();
@@ -4297,7 +5551,10 @@ async function migrateLegacyFile(record, accountSlot) {
 }
 
 async function importFromUrl() {
-  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  if (!db) {
+    showToast("Configure as credenciais primeiro", "error");
+    return;
+  }
   const values = await openFieldsDialog({
     title: "Importar URL",
     confirmText: "Importar",
@@ -4308,27 +5565,48 @@ async function importFromUrl() {
   });
   if (!values?.url) return;
   const url = values.url.trim();
-  const name = (values.name || url.split("/").pop()?.split("?")[0] || "arquivo-url").trim();
+  const name = (
+    values.name ||
+    url.split("/").pop()?.split("?")[0] ||
+    "arquivo-url"
+  ).trim();
   if (!name) return;
   try {
     showToast("Baixando a URL para enviar ao Drive...");
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`A URL respondeu com erro ${response.status}`);
+    if (!response.ok)
+      throw new Error(`A URL respondeu com erro ${response.status}`);
     const blob = await response.blob();
-    const source = new File([blob], name, { type: blob.type || "application/octet-stream" });
+    const source = new File([blob], name, {
+      type: blob.type || "application/octet-stream",
+    });
     const destination = await resolveUploadDestination();
-    const confirmed = await openConfirmDialog({ title: "Confirmar destino", message: `“${name}” será enviado para ${destination.label}.`, confirmText: "Enviar" });
+    const confirmed = await openConfirmDialog({
+      title: "Confirmar destino",
+      message: `“${name}” será enviado para ${destination.label}.`,
+      confirmText: "Enviar",
+    });
     if (!confirmed) return;
     showActivityCenter();
-    await uploadOneFile(source, destination.accountSlot, destination.driveParentId, destination.folderId);
-    addHistory(`URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`);
+    await uploadOneFile(
+      source,
+      destination.accountSlot,
+      destination.driveParentId,
+      destination.folderId,
+    );
+    addHistory(
+      `URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`,
+    );
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
 }
 
 async function importBackupJson(file) {
-  if (!db) { showToast("Configure as credenciais primeiro", "error"); return; }
+  if (!db) {
+    showToast("Configure as credenciais primeiro", "error");
+    return;
+  }
   let backup;
   try {
     backup = JSON.parse(await file.text());
@@ -4337,6 +5615,44 @@ async function importBackupJson(file) {
     return;
   }
   const foldersToImport = Array.isArray(backup.folders) ? backup.folders : [];
+  if (backup.version === 3 && Array.isArray(backup.records)) {
+    const validCollections = [
+      "vault_files",
+      "vault_folders",
+      "vault_boards",
+      "vault_board_items",
+      "vault_board_edges",
+    ];
+    const rows = backup.records.filter(
+      (r) =>
+        validCollections.includes(r?.collection) &&
+        typeof r.id === "string" &&
+        r.data &&
+        typeof r.data === "object",
+    );
+    const confirmed = await openConfirmDialog({
+      title: "Restaurar backup completo",
+      message:
+        rows.length +
+        " registros, incluindo murais. Itens com o mesmo ID serão substituídos; exclusões registradas no backup também serão restauradas. Os originais no Drive não serão alterados.",
+      confirmText: "Restaurar",
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      for (const row of rows) {
+        await setDoc(doc(db, row.collection, row.id), row.data);
+        if (row.removed) await deleteDoc(doc(db, row.collection, row.id));
+      }
+      showToast(
+        "Backup restaurado neste navegador. Conecte as contas para sincronizar.",
+        "success",
+      );
+    } catch (error) {
+      showToast("Restauração interrompida: " + error.message, "error");
+    }
+    return;
+  }
   const filesToImport = Array.isArray(backup.files) ? backup.files : [];
   if (!foldersToImport.length && !filesToImport.length) {
     showToast("Backup sem pastas ou arquivos", "error");
@@ -4352,22 +5668,33 @@ async function importBackupJson(file) {
   try {
     for (const folder of foldersToImport) {
       if (!folder.id) continue;
-      await setDoc(doc(db, "vault_folders", folder.id), {
-        name: folder.name || "Pasta",
-        parentId: folder.parentId || null,
-        coverFileId: folder.coverFileId || null,
-        accountSlot: folder.accountSlot || "",
-        driveFolderId: folder.driveFolderId || "",
-        createdAt: folder.createdAt || serverTimestamp(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, "vault_folders", folder.id),
+        {
+          name: folder.name || "Pasta",
+          parentId: folder.parentId || null,
+          coverFileId: folder.coverFileId || null,
+          accountSlot: folder.accountSlot || "",
+          driveFolderId: folder.driveFolderId || "",
+          createdAt: folder.createdAt || serverTimestamp(),
+        },
+        { merge: true },
+      );
     }
 
     for (const fileRecord of filesToImport) {
-      if (!fileRecord.id || (!fileRecord.url && !fileRecord.driveFileId)) continue;
-      await setDoc(doc(db, "vault_files", fileRecord.id), normalizeBackupFile(fileRecord), { merge: true });
+      if (!fileRecord.id || (!fileRecord.url && !fileRecord.driveFileId))
+        continue;
+      await setDoc(
+        doc(db, "vault_files", fileRecord.id),
+        normalizeBackupFile(fileRecord),
+        { merge: true },
+      );
     }
 
-    addHistory(`Backup restaurado: ${foldersToImport.length} pasta(s), ${filesToImport.length} arquivo(s)`);
+    addHistory(
+      `Backup restaurado: ${foldersToImport.length} pasta(s), ${filesToImport.length} arquivo(s)`,
+    );
     showToast("Backup restaurado", "success");
   } catch (e) {
     showToast("Erro ao restaurar: " + e.message, "error");
@@ -4379,7 +5706,13 @@ function normalizeBackupFile(fileRecord) {
     name: fileRecord.name || "Arquivo",
     url: fileRecord.url || "",
     cloudPublicId: fileRecord.cloudPublicId || "",
-    provider: fileRecord.provider || (fileRecord.driveFileId ? "google-drive" : fileRecord.cloudPublicId ? "cloudinary" : "url"),
+    provider:
+      fileRecord.provider ||
+      (fileRecord.driveFileId
+        ? "google-drive"
+        : fileRecord.cloudPublicId
+          ? "cloudinary"
+          : "url"),
     accountSlot: fileRecord.accountSlot || "",
     driveFileId: fileRecord.driveFileId || "",
     driveWebViewLink: fileRecord.driveWebViewLink || "",
@@ -4391,13 +5724,17 @@ function normalizeBackupFile(fileRecord) {
     size: Number(fileRecord.size || 0),
     width: fileRecord.width || null,
     height: fileRecord.height || null,
-    fileType: fileRecord.fileType || guessFileTypeFromUrl(fileRecord.url || fileRecord.name || ""),
+    fileType:
+      fileRecord.fileType ||
+      guessFileTypeFromUrl(fileRecord.url || fileRecord.name || ""),
     mimeType: fileRecord.mimeType || "",
     folderId: fileRecord.folderId || null,
     favorite: !!fileRecord.favorite,
     tags: normalizeTags(fileRecord.tags),
     description: fileRecord.description || "",
-    priority: ["normal", "important", "critical"].includes(fileRecord.priority) ? fileRecord.priority : "normal",
+    priority: ["normal", "important", "critical"].includes(fileRecord.priority)
+      ? fileRecord.priority
+      : "normal",
     eventDate: fileRecord.eventDate || "",
     photoDateSource: fileRecord.photoDateSource || "",
     isScreenshot: !!fileRecord.isScreenshot,
@@ -4417,19 +5754,38 @@ function normalizeBackupFile(fileRecord) {
 
 function guessFileTypeFromUrl(url) {
   const ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
-  if (["jpg","jpeg","png","gif","webp","avif"].includes(ext)) return "image";
-  if (["mp4","webm","mov","m4v"].includes(ext)) return "video";
+  if (["jpg", "jpeg", "png", "gif", "webp", "avif"].includes(ext))
+    return "image";
+  if (["mp4", "webm", "mov", "m4v"].includes(ext)) return "video";
   return "document";
 }
 
 async function verifyFiles() {
-  const liveFiles = files.filter(f => !f.deletedAt && matchesAccountView(f) && (f.url || isGoogleDriveRecord(f)));
-  if (!liveFiles.length) { showToast("Nenhum arquivo para verificar"); return; }
-  await runFileVerification(liveFiles, activeAccountView === "all" ? "Todas as contas" : accountFullLabel(activeAccountView));
+  const liveFiles = files.filter(
+    (f) =>
+      !f.deletedAt &&
+      matchesAccountView(f) &&
+      (f.url || isGoogleDriveRecord(f)),
+  );
+  if (!liveFiles.length) {
+    showToast("Nenhum arquivo para verificar");
+    return;
+  }
+  await runFileVerification(
+    liveFiles,
+    activeAccountView === "all"
+      ? "Todas as contas"
+      : accountFullLabel(activeAccountView),
+  );
 }
 
 async function verifyDriveRecordsForSlot(slot) {
-  const records = files.filter(file => !file.deletedAt && isGoogleDriveRecord(file) && recordAccountSlot(file) === slot);
+  const records = files.filter(
+    (file) =>
+      !file.deletedAt &&
+      isGoogleDriveRecord(file) &&
+      recordAccountSlot(file) === slot,
+  );
   if (!records.length) return { missing: 0, skipped: 0, checked: 0 };
   return runFileVerification(records, accountFullLabel(slot), { quiet: true });
 }
@@ -4458,13 +5814,17 @@ async function runFileVerification(records, label, { quiet = false } = {}) {
       try {
         await updateDoc(doc(db, "vault_files", file.id), {
           missing: isMissing,
-          conflictReason: isMissing ? result.reason || "removed_from_provider" : "",
+          conflictReason: isMissing
+            ? result.reason || "removed_from_provider"
+            : "",
           checkedAt: serverTimestamp(),
         });
       } catch {}
     }
     const processed = checked + skipped;
-    const pct = records.length ? Math.round((processed / records.length) * 100) : 100;
+    const pct = records.length
+      ? Math.round((processed / records.length) * 100)
+      : 100;
     bar.style.width = `${pct}%`;
     status.textContent = `${processed} de ${records.length} · ${missing} conflito(s)${skipped ? ` · ${skipped} ignorado(s)` : ""}`;
   }
@@ -4482,41 +5842,63 @@ async function runFileVerification(records, label, { quiet = false } = {}) {
   }
   updateActivityCenter();
   renderAccountCenter();
-  if (!quiet) showToast(missing ? `${missing} conflito(s) encontrado(s)` : skipped ? `${skipped} arquivo(s) aguardam reconexão` : "Todos os arquivos verificados", missing || skipped ? "error" : "success");
+  if (!quiet)
+    showToast(
+      missing
+        ? `${missing} conflito(s) encontrado(s)`
+        : skipped
+          ? `${skipped} arquivo(s) aguardam reconexão`
+          : "Todos os arquivos verificados",
+      missing || skipped ? "error" : "success",
+    );
   return { missing, skipped, checked };
 }
 
 async function inspectFileAvailability(file) {
   if (isGoogleDriveRecord(file)) {
     const slot = recordAccountSlot(file);
-    if (!driveManager?.isConnected(slot)) return { status: "skipped", reason: "account_disconnected" };
+    if (!driveManager?.isConnected(slot))
+      return { status: "skipped", reason: "account_disconnected" };
     try {
-      const metadata = await driveManager.getMetadata(slot, file.driveFileId, "id,trashed");
-      return metadata.trashed ? { status: "missing", reason: "trashed_in_drive" } : { status: "available" };
+      const metadata = await driveManager.getMetadata(
+        slot,
+        file.driveFileId,
+        "id,trashed",
+      );
+      return metadata.trashed
+        ? { status: "missing", reason: "trashed_in_drive" }
+        : { status: "available" };
     } catch (error) {
       if (!driveManager.isConnected(slot)) {
         const runtime = accountRuntime(slot);
         runtime.state = "attention";
-        runtime.message = friendlyDriveError(error, slot, driveManager.getAccount(slot)?.email, "verificar os arquivos");
+        runtime.message = friendlyDriveError(
+          error,
+          slot,
+          driveManager.getAccount(slot)?.email,
+          "verificar os arquivos",
+        );
         return { status: "skipped", reason: "account_session_expired" };
       }
       return { status: "missing", reason: "removed_from_drive" };
     }
   }
   if (file.fileType === "image") {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve({ status: "available" });
-      img.onerror = () => resolve({ status: "missing", reason: "source_unavailable" });
+      img.onerror = () =>
+        resolve({ status: "missing", reason: "source_unavailable" });
       img.src = file.url;
     });
   }
   if (file.fileType === "video") {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const video = document.createElement("video");
       video.preload = "metadata";
       video.onloadedmetadata = () => resolve({ status: "available" });
-      video.onerror = () => resolve({ status: "missing", reason: "source_unavailable" });
+      video.onerror = () =>
+        resolve({ status: "missing", reason: "source_unavailable" });
       video.src = file.url;
     });
   }
@@ -4527,13 +5909,34 @@ async function inspectFileAvailability(file) {
 
 // ??? Storage UI ???????????????????????????????????????????
 function updateStorageUI() {
-  const visibleAccounts = (driveManager?.getAccounts() || []).filter(account => activeAccountView === "all" || account.slot === activeAccountView);
-  const quotaAccounts = visibleAccounts.filter(account => account.quota?.limit);
-  const hasQuota = quotaAccounts.length > 0 && (activeAccountView !== "all" || quotaAccounts.length === visibleAccounts.filter(account => account.email).length);
-  const acervoTotal = files.filter(f => !f.deletedAt && matchesAccountView(f)).reduce((s, f) => s + (f.size || 0), 0);
-  const total = hasQuota ? quotaAccounts.reduce((sum, account) => sum + Number(account.quota.usage || 0), 0) : acervoTotal;
-  const MAX = hasQuota ? quotaAccounts.reduce((sum, account) => sum + Number(account.quota.limit || 0), 0) : (activeAccountView === "all" ? 60 : 15) * 1024 * 1024 * 1024;
-  const pct   = Math.min((total / MAX) * 100, 100);
+  const visibleAccounts = (driveManager?.getAccounts() || []).filter(
+    (account) =>
+      activeAccountView === "all" || account.slot === activeAccountView,
+  );
+  const quotaAccounts = visibleAccounts.filter(
+    (account) => account.quota?.limit,
+  );
+  const hasQuota =
+    quotaAccounts.length > 0 &&
+    (activeAccountView !== "all" ||
+      quotaAccounts.length ===
+        visibleAccounts.filter((account) => account.email).length);
+  const acervoTotal = files
+    .filter((f) => !f.deletedAt && matchesAccountView(f))
+    .reduce((s, f) => s + (f.size || 0), 0);
+  const total = hasQuota
+    ? quotaAccounts.reduce(
+        (sum, account) => sum + Number(account.quota.usage || 0),
+        0,
+      )
+    : acervoTotal;
+  const MAX = hasQuota
+    ? quotaAccounts.reduce(
+        (sum, account) => sum + Number(account.quota.limit || 0),
+        0,
+      )
+    : (activeAccountView === "all" ? 60 : 15) * 1024 * 1024 * 1024;
+  const pct = Math.min((total / MAX) * 100, 100);
   storageBar.style.width = pct.toFixed(2) + "%";
   storageText.textContent = hasQuota
     ? `${fmtSize(total)} de ${fmtSize(MAX)} no Google${activeAccountView === "all" ? "" : ` · ${slotTag(activeAccountView)}`}`
@@ -4554,15 +5957,22 @@ function scheduleDashboardUpdate() {
 
 function updateDashboard() {
   if (navState.section !== "home") return;
-  const active = files.filter(f => !f.deletedAt && matchesAccountView(f));
+  const active = files.filter((f) => !f.deletedAt && matchesAccountView(f));
   $("dashTotal").textContent = active.length;
-  $("dashImages").textContent = active.filter(f => f.fileType === "image").length;
-  $("dashVideos").textContent = active.filter(f => f.fileType === "video").length;
-  $("dashDocs").textContent = active.filter(f => f.fileType === "document").length;
+  $("dashImages").textContent = active.filter(
+    (f) => f.fileType === "image",
+  ).length;
+  $("dashVideos").textContent = active.filter(
+    (f) => f.fileType === "video",
+  ).length;
+  $("dashDocs").textContent = active.filter(
+    (f) => f.fileType === "document",
+  ).length;
   const used = active.reduce((total, file) => total + (file.size || 0), 0);
   $("dashStorageSummary").textContent = fmtSize(used);
   const hour = new Date().getHours();
-  $("dashGreeting").textContent = hour < 12 ? "Bom dia." : hour < 18 ? "Boa tarde." : "Boa noite.";
+  $("dashGreeting").textContent =
+    hour < 12 ? "Bom dia." : hour < 18 ? "Boa tarde." : "Boa noite.";
   $("dashHeroText").textContent = active.length
     ? `${active.length} arquivo(s) prontos para você revisitar.`
     : "Comece guardando fotos, vídeos e documentos que importam.";
@@ -4578,10 +5988,13 @@ function renderPhotoDashboard(active) {
   if (!memoriesEl || !albumsEl) return;
   const today = new Date();
   const memories = active
-    .filter(file => file.fileType === "image" && file.eventDate)
-    .filter(file => {
+    .filter((file) => file.fileType === "image" && file.eventDate)
+    .filter((file) => {
       const date = fileDate(file);
-      return date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+      return (
+        date.getMonth() === today.getMonth() &&
+        date.getDate() === today.getDate()
+      );
     })
     .sort((a, b) => fileDate(b) - fileDate(a))
     .slice(0, 3);
@@ -4603,28 +6016,51 @@ function renderPhotoDashboard(active) {
   }
 
   const albums = new Map();
-  active.filter(file => file.fileType === "image" && file.suggestedAlbumKey && !file.isScreenshot).forEach(file => {
-    const current = albums.get(file.suggestedAlbumKey) || { key: file.suggestedAlbumKey, label: file.suggestedAlbumLabel, count: 0, cover: file };
-    current.count += 1;
-    albums.set(file.suggestedAlbumKey, current);
-  });
+  active
+    .filter(
+      (file) =>
+        file.fileType === "image" &&
+        file.suggestedAlbumKey &&
+        !file.isScreenshot,
+    )
+    .forEach((file) => {
+      const current = albums.get(file.suggestedAlbumKey) || {
+        key: file.suggestedAlbumKey,
+        label: file.suggestedAlbumLabel,
+        count: 0,
+        cover: file,
+      };
+      current.count += 1;
+      albums.set(file.suggestedAlbumKey, current);
+    });
   const monthSuggestions = [...albums.values()]
     .sort((a, b) => b.key.localeCompare(a.key))
-    .slice(0, 2)
-  const travelSuggestions = getTravelSuggestions(active).slice(0, 1).map(trip => ({ ...trip, cover: monthSuggestions[0]?.cover || null, key: "" }));
+    .slice(0, 2);
+  const travelSuggestions = getTravelSuggestions(active)
+    .slice(0, 1)
+    .map((trip) => ({
+      ...trip,
+      cover: monthSuggestions[0]?.cover || null,
+      key: "",
+    }));
   const suggestions = [...travelSuggestions, ...monthSuggestions].slice(0, 3);
   albumsEl.innerHTML = suggestions.length
-    ? suggestions.map(album => {
-      const thumb = album.cover ? dashboardThumb(album.cover, 360, 220) : "";
-      return `<button class="home-album-card" type="button" data-album-key="${esc(album.key || "")}" data-date-from="${esc(album.dateFrom || "")}" data-date-to="${esc(album.dateTo || "")}">
+    ? suggestions
+        .map((album) => {
+          const thumb = album.cover
+            ? dashboardThumb(album.cover, 360, 220)
+            : "";
+          return `<button class="home-album-card" type="button" data-album-key="${esc(album.key || "")}" data-date-from="${esc(album.dateFrom || "")}" data-date-to="${esc(album.dateTo || "")}">
         <span class="home-album-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(album.cover) ? esc(album.cover.id) : ""}" alt="" />` : `<span data-drive-thumb-id="${esc(album.cover?.id || "")}"></span>`}</span>
         <strong>${esc(album.label)}</strong><span>${album.count ? `${album.count} fotos` : "Sugestão automática"}</span>
       </button>`;
-    }).join("")
+        })
+        .join("")
     : `<span class="dash-memory-item">Analise fotos para receber sugestões</span>`;
-  albumsEl.querySelectorAll(".home-album-card").forEach(button => {
+  albumsEl.querySelectorAll(".home-album-card").forEach((button) => {
     button.onclick = () => {
-      if (button.dataset.dateFrom && button.dataset.dateTo) openSuggestedDateRange(button.dataset.dateFrom, button.dataset.dateTo);
+      if (button.dataset.dateFrom && button.dataset.dateTo)
+        openSuggestedDateRange(button.dataset.dateFrom, button.dataset.dateTo);
       else openSuggestedAlbum(button.dataset.albumKey);
     };
   });
@@ -4639,14 +6075,21 @@ function openSuggestedAlbum(key) {
   if (!match) return;
   const [year, month] = match[1].split("-").map(Number);
   const lastDay = new Date(year, month, 0).getDate();
-  openSuggestedDateRange(`${match[1]}-01`, `${match[1]}-${String(lastDay).padStart(2, "0")}`);
+  openSuggestedDateRange(
+    `${match[1]}-01`,
+    `${match[1]}-${String(lastDay).padStart(2, "0")}`,
+  );
 }
 
 function openSuggestedDateRange(dateFrom, dateTo) {
   advancedFilters = { ...advancedFilters, dateFrom, dateTo };
   advDateFrom.value = dateFrom;
   advDateTo.value = dateTo;
-  openLibraryView({ folderId: ROOT_ID, contentScope: "all", viewMode: "timeline" });
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "all",
+    viewMode: "timeline",
+  });
 }
 
 function renderDashboardHighlights(active) {
@@ -4654,49 +6097,65 @@ function renderDashboardHighlights(active) {
   if (!element) return;
   const highlights = [];
   const seen = new Set();
-  const isMedia = file => file.fileType === "image" || file.fileType === "video";
+  const isMedia = (file) =>
+    file.fileType === "image" || file.fileType === "video";
   for (const file of active) {
-    if (!isMedia(file) || !(file.favorite || ["important", "critical"].includes(file.priority))) continue;
+    if (!(file.favorite || ["important", "critical"].includes(file.priority)))
+      continue;
     highlights.push(file);
     seen.add(file.id);
     if (highlights.length === 3) break;
   }
   if (highlights.length < 3) {
     for (const file of active) {
-      if (!isMedia(file) || seen.has(file.id)) continue;
+      if (seen.has(file.id)) continue;
       highlights.push(file);
       if (highlights.length === 3) break;
     }
   }
   element.innerHTML = highlights.length
-    ? highlights.map(file => {
-      const thumb = dashboardThumb(file, 160, 160);
-      const label = file.favorite ? "Favorito" : file.priority === "critical" ? "Muito importante" : file.priority === "important" ? "Importante" : monthLabel(file);
-      return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
+    ? highlights
+        .map((file) => {
+          const thumb = dashboardThumb(file, 160, 160);
+          const label = file.favorite
+            ? "Favorito"
+            : file.priority === "critical"
+              ? "Muito importante"
+              : file.priority === "important"
+                ? "Importante"
+                : monthLabel(file);
+          return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
         <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />` : `<span data-drive-thumb-id="${esc(file.id)}"></span>`}</span>
         <span class="home-highlight-copy"><strong>${esc(file.name)}</strong><span>${esc(label)}</span></span>
       </button>`;
-    }).join("")
-    : `<span class="dash-memory-item">Marque fotos ou vídeos como favoritos para vê-los aqui.</span>`;
+        })
+        .join("")
+    : `<span class="dash-memory-item">Arquivos recentes e favoritos aparecerão aqui.</span>`;
   element.querySelectorAll(".home-highlight-item").forEach((button, index) => {
     const file = highlights[index];
-    if (file) button.onclick = () => {
-      lightboxFiles = highlights;
-      openLightbox(file);
-    };
+    if (file)
+      button.onclick = () => {
+        lightboxFiles = highlights;
+        openLightbox(file);
+      };
   });
 }
 
 function getTravelSuggestions(active) {
   const photos = active
-    .filter(file => file.fileType === "image" && file.eventDate && !file.isScreenshot)
-    .map(file => ({ file, date: fileDate(file) }))
+    .filter(
+      (file) =>
+        file.fileType === "image" && file.eventDate && !file.isScreenshot,
+    )
+    .map((file) => ({ file, date: fileDate(file) }))
     .sort((a, b) => a.date - b.date);
   const groups = [];
   let current = [];
-  photos.forEach(photo => {
+  photos.forEach((photo) => {
     const previous = current[current.length - 1];
-    const gapDays = previous ? Math.round((photo.date - previous.date) / 86400000) : 0;
+    const gapDays = previous
+      ? Math.round((photo.date - previous.date) / 86400000)
+      : 0;
     if (previous && gapDays > 3) {
       groups.push(current);
       current = [];
@@ -4705,13 +6164,25 @@ function getTravelSuggestions(active) {
   });
   if (current.length) groups.push(current);
   return groups
-    .filter(group => group.length >= 6 && Math.round((group[group.length - 1].date - group[0].date) / 86400000) >= 2)
+    .filter(
+      (group) =>
+        group.length >= 6 &&
+        Math.round((group[group.length - 1].date - group[0].date) / 86400000) >=
+          2,
+    )
     .sort((a, b) => b[b.length - 1].date - a[a.length - 1].date)
-    .map(group => {
+    .map((group) => {
       const first = group[0].date;
       const last = group[group.length - 1].date;
-      const start = first.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-      const end = last.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+      const start = first.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+      });
+      const end = last.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
       return {
         label: `Possivel viagem · ${start}–${end}`,
         count: group.length,
@@ -4722,12 +6193,18 @@ function getTravelSuggestions(active) {
 }
 
 function historyItems() {
-  try { return JSON.parse(localStorage.getItem("vault_history_v1")) || []; }
-  catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem("vault_history_v1")) || [];
+  } catch {
+    return [];
+  }
 }
 
 function addHistory(text) {
-  const items = [{ text, at: new Date().toLocaleString() }, ...historyItems()].slice(0, 12);
+  const items = [
+    { text, at: new Date().toLocaleString() },
+    ...historyItems(),
+  ].slice(0, 12);
   localStorage.setItem("vault_history_v1", JSON.stringify(items));
   renderHistory();
 }
@@ -4737,38 +6214,58 @@ function renderHistory() {
   if (!el) return;
   const items = historyItems().slice(0, 3);
   el.innerHTML = items.length
-    ? items.map(item => `<span title="${esc(item.at)}">${esc(item.text)}</span>`).join("")
+    ? items
+        .map((item) => `<span title="${esc(item.at)}">${esc(item.text)}</span>`)
+        .join("")
     : "Sem historico";
 }
 
 // ??? Helpers ??????????????????????????????????????????????
 function fmtSize(bytes) {
   if (!bytes) return "0 B";
-  if (bytes < 1024)      return bytes + " B";
+  if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + " KB";
   if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + " MB";
   return (bytes / 1024 ** 3).toFixed(2) + " GB";
 }
 function esc(str) {
   if (!str) return "";
-  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 function normalizeTags(value) {
-  if (Array.isArray(value)) return [...new Set(value.map(t => String(t).trim()).filter(Boolean))].slice(0, 12);
-  return [...new Set(String(value || "").split(/[,;]/).map(t => t.trim()).filter(Boolean))].slice(0, 12);
+  if (Array.isArray(value))
+    return [
+      ...new Set(value.map((t) => String(t).trim()).filter(Boolean)),
+    ].slice(0, 12);
+  return [
+    ...new Set(
+      String(value || "")
+        .split(/[,;]/)
+        .map((t) => t.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 12);
 }
 function parseCustomFields(value) {
   const fields = {};
-  String(value || "").split(",").forEach(pair => {
-    const [key, ...rest] = pair.split(":");
-    const cleanKey = (key || "").trim();
-    const cleanValue = rest.join(":").trim();
-    if (cleanKey && cleanValue) fields[cleanKey] = cleanValue;
-  });
+  String(value || "")
+    .split(",")
+    .forEach((pair) => {
+      const [key, ...rest] = pair.split(":");
+      const cleanKey = (key || "").trim();
+      const cleanValue = rest.join(":").trim();
+      if (cleanKey && cleanValue) fields[cleanKey] = cleanValue;
+    });
   return fields;
 }
 function customFieldsToText(fields) {
-  return Object.entries(fields || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+  return Object.entries(fields || {})
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
 }
 function customFieldSummary(file) {
   const entries = Object.entries(file.customFields || {}).slice(0, 2);
@@ -4781,7 +6278,9 @@ function dateSummary(file) {
   return parts.join(" · ");
 }
 function normalizeNotes(value) {
-  return Array.isArray(value) ? value.filter(n => n && n.text).slice(0, 20) : [];
+  return Array.isArray(value)
+    ? value.filter((n) => n && n.text).slice(0, 20)
+    : [];
 }
 function showToast(msg, type = "") {
   toast.textContent = msg;
@@ -4789,3 +6288,95 @@ function showToast(msg, type = "") {
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => toast.classList.remove("show"), 3200);
 }
+
+async function refreshSyncStatus() {
+  const summary = await getSyncSummary();
+  const el = $("syncStatus");
+  el.dataset.state = summary.pending ? "pending" : "local";
+  el.textContent = summary.pending
+    ? summary.pending + " alteração(ões) sem cópia no Drive"
+    : "Biblioteca local pronta";
+}
+window.addEventListener("vault-sync", ({ detail }) => {
+  $("syncStatus").textContent = detail.message;
+  $("syncStatus").dataset.state = detail.state;
+});
+$("syncNowBtn").onclick = async () => {
+  const connected =
+    driveManager?.getAccounts().filter((a) => a.connected) || [];
+  if (!connected.length) {
+    openAccountsModal();
+    return;
+  }
+  $("syncNowBtn").disabled = true;
+  try {
+    await Promise.all(connected.map((a) => syncAccount(a.slot)));
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    $("syncNowBtn").disabled = false;
+  }
+};
+$("legacyImportBtn").onclick = async () => {
+  const cfg = savedCfg?.projectId
+    ? savedCfg
+    : JSON.parse(localStorage.getItem("vault_legacy_firebase") || "null");
+  if (!cfg?.projectId) {
+    showToast("Restaure o backup JSON exportado pela versão anterior.");
+    $("importJsonBtn").click();
+    return;
+  }
+  const consent = await openConfirmDialog({
+    title: "Importar biblioteca anterior",
+    message:
+      "O VAULT vai ler os registros do antigo Firebase e copiar os itens ainda não presentes para este navegador. Nada será excluído na origem. Depois, conecte o Drive para sincronizar e exporte um backup JSON.",
+    confirmText: "Importar registros",
+  });
+  if (!consent) return;
+  $("legacyImportBtn").disabled = true;
+  try {
+    const { importLegacy } = await import("./modules/legacy-import.js");
+    const count = await importLegacy(cfg, db);
+    showToast(
+      count + " registros importados. Exporte um backup e sincronize o Drive.",
+      "success",
+    );
+  } catch (error) {
+    showToast("Importação não concluída: " + error.message, "error");
+  } finally {
+    $("legacyImportBtn").disabled = false;
+  }
+};
+if (savedCfg?.projectId)
+  localStorage.setItem("vault_legacy_firebase", JSON.stringify(savedCfg));
+$("clearSearchFilters").onclick = () => {
+  currentSearch = "";
+  searchInput.value = "";
+  activeAccountView = "all";
+  accountViewSelect.value = "all";
+  localStorage.setItem("vault_drive_account_view", "all");
+  openLibraryView({ contentScope: "all", resetAdvancedFilters: true });
+};
+const mural = createMural({
+  getDb: openLocalStore,
+  getFiles: () => files,
+  getAccounts: () => driveManager?.getAccounts() || normalizeDriveAccounts([]),
+  getThumbnail: (file) => mediaThumbUrl(file, 600, 400),
+  hydrate: hydrateDriveThumbnails,
+  openFile: (file) => {
+    lightboxFiles = files.filter((f) => !f.deletedAt);
+    openLightbox(file);
+  },
+  askFields: openFieldsDialog,
+  confirm: openConfirmDialog,
+  toast: showToast,
+});
+$("navMural").onclick = async () => {
+  navState.section = "mural";
+  syncSectionUI();
+  renderBreadcrumb();
+  renderGrid();
+  await mural.open();
+};
+installInterface();
+hydrateIcons();

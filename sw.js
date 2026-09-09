@@ -1,44 +1,54 @@
-const CACHE_NAME = "vault-shell-v12-card-contrast";
+const CACHE_NAME = "vault-shell-__VERSION__";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css",
-  "./layout.css",
-  "./theme.css",
-  "./app.js",
-  "./modules/async-queue.js",
-  "./modules/file-hash.js",
-  "./modules/page-order.js",
-  "./modules/local-text-search.js",
-  "./modules/photo-metadata.js",
-  "./modules/google-drive.js",
   "./manifest.webmanifest",
   "./icons/vault-icon.svg",
+  ...__ASSETS__,
 ];
-
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
-});
-
-self.addEventListener("activate", event => {
+self.addEventListener("install", (event) =>
   event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key.startsWith("vault-shell-") && key !== CACHE_NAME).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
+  ),
+);
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
-
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
+self.addEventListener("activate", (event) =>
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k.startsWith("vault-shell-") && k !== CACHE_NAME)
+            .map((k) => caches.delete(k)),
+        ),
+      )
+      .then(() => self.clients.claim()),
+  ),
+);
+self.addEventListener("fetch", (event) => {
+  const request = event.request,
+    url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(() =>
+        caches.open(CACHE_NAME).then((c) => c.match("./index.html")),
+      ),
+    );
+    return;
+  }
+  if (
+    !APP_SHELL.some(
+      (p) => new URL(p, self.registration.scope).href === url.href,
+    )
+  )
+    return;
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
-      if (response.ok && url.pathname.startsWith(self.registration.scope.replace(self.location.origin, ""))) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-      }
-      return response;
-    }))
+    caches
+      .open(CACHE_NAME)
+      .then(async (cache) => (await cache.match(request)) || fetch(request)),
   );
 });
