@@ -1,10 +1,30 @@
-const CACHE_NAME = "vault-shell-__VERSION__";
+// These concrete defaults also run when GitHub Pages serves the repository root.
+// The optional build replaces only these two declarations with hashed assets.
+const CACHE_NAME = "vault-shell-source-v4";
+const SOURCE_ASSETS = [
+  "./app.js",
+  "./styles.css",
+  "./vendor/lucide.js",
+  "./modules/async-queue.js",
+  "./modules/board-model.js",
+  "./modules/file-hash.js",
+  "./modules/google-drive.js",
+  "./modules/icons.js",
+  "./modules/interface.js",
+  "./modules/legacy-import.js",
+  "./modules/local-store.js",
+  "./modules/local-text-search.js",
+  "./modules/mural.js",
+  "./modules/page-order.js",
+  "./modules/photo-metadata.js",
+  "./modules/pwa.js",
+];
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./icons/vault-icon.svg",
-  ...__ASSETS__,
+  ...SOURCE_ASSETS,
 ];
 self.addEventListener("install", (event) =>
   event.waitUntil(
@@ -46,6 +66,24 @@ self.addEventListener("fetch", (event) => {
     )
   )
     return;
+  // Source filenames are stable, unlike the optional build's hashed assets.
+  // Prefer the network so an installed worker cannot pin old source code.
+  if (CACHE_NAME.startsWith("vault-shell-source-")) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        try {
+          const response = await fetch(request);
+          if (response.ok) await cache.put(request, response.clone());
+          return response;
+        } catch (error) {
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          throw error;
+        }
+      }),
+    );
+    return;
+  }
   event.respondWith(
     caches
       .open(CACHE_NAME)

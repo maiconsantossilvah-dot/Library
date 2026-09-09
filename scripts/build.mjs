@@ -48,8 +48,14 @@ const version = createHash("sha256")
   .digest("hex")
   .slice(0, 12);
 const worker = workerSource
-  .replace("__VERSION__", version)
-  .replace("__ASSETS__", JSON.stringify(assets));
+  .replace(
+    /const CACHE_NAME = "[^"]+";/,
+    `const CACHE_NAME = "vault-shell-${version}";`,
+  )
+  .replace(
+    /const SOURCE_ASSETS = \[[\s\S]*?\];/,
+    `const SOURCE_ASSETS = ${JSON.stringify(assets)};`,
+  );
 new Script(worker, { filename: "sw.js" });
 await fs.writeFile("dist/sw.js", worker);
 console.log(`VAULT ${version}: static site built in dist/`);

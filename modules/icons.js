@@ -45,7 +45,7 @@ import {
   ArrowRight,
   PanelLeftClose,
   FolderPlus,
-} from "lucide";
+} from "../vendor/lucide.js";
 
 const icons = {
   House,

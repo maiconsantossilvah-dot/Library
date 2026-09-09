@@ -32,8 +32,23 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     removeEventListener() {},
   });
   w.matchMedia = globalThis.matchMedia;
+  w.localStorage.setItem("vault_theme", "dark");
   await import("../app.js");
   await new Promise((r) => setTimeout(r, 150));
+  const themeToggle = document.getElementById("themeToggle");
+  assert.equal(
+    document.body.dataset.theme,
+    "dark",
+    "restores saved dark theme",
+  );
+  assert.equal(themeToggle.getAttribute("aria-label"), "Ativar modo claro");
+  themeToggle.click();
+  assert.equal(document.body.dataset.theme, "light");
+  assert.equal(w.localStorage.getItem("vault_theme"), "light");
+  themeToggle.click();
+  assert.equal(document.body.dataset.theme, "dark");
+  assert.equal(w.localStorage.getItem("vault_theme"), "dark");
+  assert.ok(document.querySelectorAll("svg.lucide").length > 20);
   document.getElementById("skipConfig").click();
   document.getElementById("navMural").click();
   await new Promise((r) => setTimeout(r, 30));

@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-const root = path.resolve("dist");
+const root = path.resolve(process.argv.includes("--source") ? "." : "dist");
 const types = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",

@@ -4,7 +4,9 @@ Aplicativo estático, sem backend próprio: HTML, CSS, JavaScript e ícones **Lu
 
 ## Executar e gerar a versão estática
 
-Requer Node.js 22 ou superior.
+A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique essa pasta junto com `modules/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
+
+Para testar a raiz localmente, com Node.js 22 ou superior: `npm run dev:source`. Para desenvolver com o build otimizado:
 
 ```sh
 npm ci
@@ -19,7 +21,9 @@ npm test
 npm run build
 ```
 
-Publique **o conteúdo de `dist/`**, não os arquivos-fonte da raiz. O build empacota Lucide e módulos, gera nomes de assets com hash e uma versão do service worker. Não há servidor de aplicação em produção; `serve.mjs` é apenas um servidor estático local. Nada é publicado automaticamente.
+Opcionalmente, publique **o conteúdo de `dist/`** em vez da raiz. O build empacota os módulos, gera nomes de assets com hash e uma versão do service worker. Ambos os modos funcionam. Não há servidor de aplicação em produção; `serve.mjs` é apenas um servidor estático local. Nada é publicado automaticamente.
+
+Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, execute `npm run vendor:icons` e inclua as alterações em `vendor/` no commit. O arquivo é gerado da biblioteca oficial e sua licença é preservada em `vendor/lucide.LICENSE`.
 
 ## Proteção dos metadados
 
