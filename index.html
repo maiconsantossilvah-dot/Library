@@ -291,6 +291,21 @@
             </div>
           </div>
 
+          <section
+            class="legacy-migration-notice"
+            id="legacyMigrationNotice"
+            aria-label="Recuperação do acervo"
+            hidden
+          >
+            <p id="legacyMigrationMessage" role="status"></p>
+            <button
+              class="utility-btn"
+              id="legacyMigrationAction"
+              type="button"
+            >
+              Recuperar do Firebase
+            </button>
+          </section>
           <div class="workspace-toolbar">
             <div class="view-toggle" aria-label="Modos de visualizacao">
               <span class="toolbar-label">Visualizar</span>
@@ -923,7 +938,7 @@
       <div class="lightbox-info" id="lightboxInfo"></div>
     </div>
 
-    <!-- MODAL: Config Firebase -->
+    <!-- MODAL: Configuração e recuperação do acervo -->
     <div class="modal-overlay" id="configModal" style="display: none">
       <div class="modal config-modal">
         <div class="config-header">
@@ -950,9 +965,41 @@
               ser perdidas ao limpar os dados do site. Exporte um backup JSON
               regularmente.
             </p>
-            <button class="utility-btn" id="legacyImportBtn" type="button">
-              Importar biblioteca da versão anterior
-            </button>
+            <details id="legacyFirebaseConfig">
+              <summary>Recuperar metadados do Firebase antigo</summary>
+              <p>
+                Lê arquivos e pastas do Firebase, preserva os IDs e envia os
+                metadados às contas Drive conectadas. Não apaga a origem nem
+                duplica fotos e vídeos. Use as mesmas contas e posições Ac1–Ac4
+                da versão anterior.
+              </p>
+              <label class="field-label" for="cfg_firebaseProjectId"
+                >Project ID do Firebase
+                <input
+                  class="modal-input"
+                  id="cfg_firebaseProjectId"
+                  autocomplete="off"
+                  placeholder="meu-projeto"
+                />
+              </label>
+              <label class="field-label" for="cfg_firebaseApiKey"
+                >API Key do aplicativo Web Firebase
+                <input
+                  class="modal-input"
+                  id="cfg_firebaseApiKey"
+                  autocomplete="off"
+                  placeholder="API Key da configuração antiga"
+                />
+              </label>
+              <p>
+                Esses valores estão na configuração Web do projeto Firebase. Não
+                informe chave privada nem credenciais de conta de serviço.
+              </p>
+              <button class="utility-btn" id="legacyImportBtn" type="button">
+                Migrar metadados: Firebase → Drive
+              </button>
+              <p id="legacyMigrationStatus" role="status"></p>
+            </details>
           </section>
           <section class="config-step drive-config-step">
             <p class="cfg-section-label">Google Drive · conexão opcional</p>

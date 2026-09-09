@@ -50,6 +50,15 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(w.localStorage.getItem("vault_theme"), "dark");
   assert.ok(document.querySelectorAll("svg.lucide").length > 20);
   document.getElementById("skipConfig").click();
+  assert.equal(document.getElementById("legacyMigrationNotice").hidden, false);
+  document.getElementById("legacyMigrationAction").click();
+  assert.equal(document.getElementById("legacyFirebaseConfig").open, true);
+  document.getElementById("legacyImportBtn").click();
+  assert.match(
+    document.getElementById("configError").textContent,
+    /Project ID e a API Key/,
+  );
+  document.getElementById("cancelConfig").click();
   document.getElementById("navMural").click();
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(document.body.dataset.section, "mural");
@@ -75,6 +84,7 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     folderId: null,
   });
   document.getElementById("clearSearchFilters").click();
+  assert.equal(document.getElementById("legacyMigrationNotice").hidden, true);
   const card = document.querySelector(".file-name");
   assert.ok(card);
   card.click();

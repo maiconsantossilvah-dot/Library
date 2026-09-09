@@ -42,6 +42,9 @@ import {
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
 let db;
+let legacyMigrationTask;
+let legacyMigrationState = "idle";
+let legacyMigrationMessage = "";
 let accountModalReturnFocus = null;
 let accountConnectReturnFocus = null;
 let accountSearchValue = "";
@@ -315,6 +318,8 @@ queueMicrotask(async () => {
   }
   prefillConfig(savedCfg || {});
   await initApp(savedCfg || {});
+  if (getLegacyConfig()) runLegacyMigration();
+  else refreshLegacyNotice();
   if (!savedCfg) openConfigModal(false);
   qualitySelect.value = thumbQuality;
   accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView)
@@ -331,6 +336,9 @@ document.addEventListener("click", (e) => {
 });
 
 function prefillConfig(cfg) {
+  const legacy = getLegacyConfig() || {};
+  $("cfg_firebaseProjectId").value = legacy.projectId || "";
+  $("cfg_firebaseApiKey").value = legacy.apiKey || "";
   $("cfg_cloudName").value = cfg.cloudName || "";
   $("cfg_uploadPreset").value = cfg.uploadPreset || "";
   $("cfg_googleClientId").value = cfg.googleClientId || "";
@@ -359,6 +367,7 @@ function configFromForm() {
     currentConfig?.driveAccounts || savedCfg?.driveAccounts || [],
   );
   return {
+    ...(currentConfig || savedCfg || {}),
     googleClientId: $("cfg_googleClientId").value.trim(),
     driveAccounts: previousAccounts,
     cloudName: $("cfg_cloudName").value.trim(),
@@ -599,6 +608,7 @@ async function initApp(cfg) {
 }
 
 $("saveConfig").onclick = async () => {
+  rememberLegacyForm();
   const cfg = configFromForm();
   if (
     cfg.googleClientId &&
@@ -613,6 +623,7 @@ $("saveConfig").onclick = async () => {
   showConfigError("");
   saveConfig(cfg);
   const connected = await initApp(cfg);
+  if (connected && getLegacyConfig()) runLegacyMigration();
   if (connected && cfg.googleClientId) {
     openAccountsModal(accountConnectBtn);
     showToast("Configuracao salva. Agora revise Ac1 a Ac4.", "success");
@@ -998,6 +1009,7 @@ async function connectDriveSlot(slot, trigger = document.activeElement) {
     await persistDriveAccounts(driveManager.getAccounts());
     await refreshDriveAccountHealth(slot, { silent: true });
     await syncAccount(slot).catch((error) => showToast(error.message, "error"));
+    if (getLegacyConfig()) await runLegacyMigration();
     showToast(
       `${slotTag(slot)} conectada: ${connectedAccount.email}`,
       "success",
@@ -1226,6 +1238,7 @@ function listenFiles() {
     query(collection(db, "vault_files"), orderBy("createdAt", "desc")),
     (snap) => {
       files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      refreshLegacyNotice();
       rebuildFileIndexes();
       updateStorageUI();
       scheduleDashboardUpdate();
@@ -6298,8 +6311,15 @@ async function refreshSyncStatus() {
     : "Biblioteca local pronta";
 }
 window.addEventListener("vault-sync", ({ detail }) => {
+  if (legacyMigrationState === "running") return;
+  if (["error", "empty"].includes(legacyMigrationState)) return;
   $("syncStatus").textContent = detail.message;
   $("syncStatus").dataset.state = detail.state;
+  if (legacyMigrationState === "pending" && detail.state === "synced") {
+    legacyMigrationState = "synced";
+    legacyMigrationMessage = "Metadados do Firebase sincronizados no Drive.";
+  }
+  refreshLegacyNotice();
 });
 $("syncNowBtn").onclick = async () => {
   const connected =
@@ -6310,6 +6330,10 @@ $("syncNowBtn").onclick = async () => {
   }
   $("syncNowBtn").disabled = true;
   try {
+    if (getLegacyConfig()) {
+      await runLegacyMigration();
+      return;
+    }
     await Promise.all(connected.map((a) => syncAccount(a.slot)));
   } catch (error) {
     showToast(error.message, "error");
@@ -6317,37 +6341,145 @@ $("syncNowBtn").onclick = async () => {
     $("syncNowBtn").disabled = false;
   }
 };
+function getLegacyConfig() {
+  let stored;
+  try {
+    stored = JSON.parse(
+      localStorage.getItem("vault_legacy_firebase") || "null",
+    );
+  } catch {
+    /* Fall back to the original saved configuration. */
+  }
+  const candidate = [stored, currentConfig, savedCfg].find(
+    (cfg) => cfg?.projectId && cfg?.apiKey,
+  );
+  if (!candidate) return null;
+  return Object.fromEntries(
+    [
+      "apiKey",
+      "projectId",
+      "authDomain",
+      "storageBucket",
+      "messagingSenderId",
+      "appId",
+    ]
+      .filter((key) => candidate[key])
+      .map((key) => [key, candidate[key]]),
+  );
+}
+
+function rememberLegacyForm() {
+  const projectId = $("cfg_firebaseProjectId").value.trim();
+  const apiKey = $("cfg_firebaseApiKey").value.trim();
+  if (projectId && apiKey) {
+    const previous = getLegacyConfig();
+    localStorage.setItem(
+      "vault_legacy_firebase",
+      JSON.stringify({
+        ...(previous?.projectId === projectId ? previous : {}),
+        projectId,
+        apiKey,
+      }),
+    );
+  }
+}
+
+function refreshLegacyNotice() {
+  const notice = $("legacyMigrationNotice");
+  notice.hidden =
+    legacyMigrationState === "synced" ||
+    (legacyMigrationState === "idle" && !getLegacyConfig() && files.length > 0);
+  $("legacyMigrationMessage").textContent =
+    legacyMigrationMessage ||
+    "Seu acervo antigo não aparece? Recupere os metadados do Firebase e guarde uma cópia no Drive.";
+  $("legacyMigrationAction").disabled = legacyMigrationState === "running";
+  $("legacyImportBtn").disabled = legacyMigrationState === "running";
+  $("legacyMigrationAction").textContent =
+    legacyMigrationState === "pending"
+      ? "Conectar Drive"
+      : "Recuperar do Firebase";
+}
+
+function migrationProgress(message, state = "running") {
+  legacyMigrationState = state;
+  legacyMigrationMessage = message;
+  $("syncStatus").textContent = message;
+  $("syncStatus").dataset.state = state === "running" ? "syncing" : state;
+  $("legacyMigrationStatus").textContent = message;
+  document.body.dataset.migration = state;
+  refreshLegacyNotice();
+}
+
+function runLegacyMigration({ force = false } = {}) {
+  if (legacyMigrationTask) return legacyMigrationTask;
+  const cfg = getLegacyConfig();
+  if (!cfg) {
+    refreshLegacyNotice();
+    return Promise.resolve();
+  }
+  legacyMigrationTask = (async () => {
+    migrationProgress("Preparando a migração Firebase → Drive…");
+    try {
+      const { migrateLegacyToDrive } =
+        await import("./modules/legacy-import.js");
+      const result = await migrateLegacyToDrive(cfg, db, {
+        force,
+        getAccounts: () => driveManager?.getAccounts() || [],
+        onProgress: (message) => migrationProgress(message),
+      });
+      const counts = `${result.files} arquivo(s) e ${result.folders} pasta(s)`;
+      const message =
+        result.state === "empty"
+          ? "Nenhum metadado encontrado no Firebase. Confira o projeto de origem; a migração não foi marcada como concluída."
+          : result.state === "synced"
+            ? `${counts} lidos do Firebase. Metadados sincronizados no Drive.`
+            : `${counts} lidos do Firebase e disponíveis neste navegador. Conecte as contas de origem para concluir a cópia no Drive.`;
+      migrationProgress(message, result.state);
+      return result;
+    } catch (error) {
+      const hint = /permission-denied|insufficient permissions/i.test(
+        error.message,
+      )
+        ? "O Firebase recusou a leitura. Confira o projeto e as permissões existentes; não torne o banco público."
+        : error.message;
+      migrationProgress(
+        `Migração pendente: ${hint} Os dados já importados foram preservados.`,
+        "error",
+      );
+    } finally {
+      legacyMigrationTask = null;
+      refreshLegacyNotice();
+    }
+  })();
+  return legacyMigrationTask;
+}
+
 $("legacyImportBtn").onclick = async () => {
-  const cfg = savedCfg?.projectId
-    ? savedCfg
-    : JSON.parse(localStorage.getItem("vault_legacy_firebase") || "null");
-  if (!cfg?.projectId) {
-    showToast("Restaure o backup JSON exportado pela versão anterior.");
-    $("importJsonBtn").click();
+  if (
+    !$("cfg_firebaseProjectId").value.trim() ||
+    !$("cfg_firebaseApiKey").value.trim()
+  ) {
+    $("legacyFirebaseConfig").open = true;
+    showConfigError(
+      "Informe o Project ID e a API Key do Firebase usado na versão anterior.",
+    );
+    $("cfg_firebaseProjectId").focus();
     return;
   }
-  const consent = await openConfirmDialog({
-    title: "Importar biblioteca anterior",
-    message:
-      "O VAULT vai ler os registros do antigo Firebase e copiar os itens ainda não presentes para este navegador. Nada será excluído na origem. Depois, conecte o Drive para sincronizar e exporte um backup JSON.",
-    confirmText: "Importar registros",
-  });
-  if (!consent) return;
-  $("legacyImportBtn").disabled = true;
-  try {
-    const { importLegacy } = await import("./modules/legacy-import.js");
-    const count = await importLegacy(cfg, db);
-    showToast(
-      count + " registros importados. Exporte um backup e sincronize o Drive.",
-      "success",
-    );
-  } catch (error) {
-    showToast("Importação não concluída: " + error.message, "error");
-  } finally {
-    $("legacyImportBtn").disabled = false;
-  }
+  rememberLegacyForm();
+  configModal.style.display = "none";
+  await runLegacyMigration({ force: true });
 };
-if (savedCfg?.projectId)
+$("legacyMigrationAction").onclick = () => {
+  if (legacyMigrationState === "pending") {
+    openAccountsModal();
+    return;
+  }
+  openConfigModal(true);
+  $("legacyFirebaseConfig").open = true;
+  $("cfg_firebaseProjectId").focus();
+};
+if (savedCfg?.projectId && !localStorage.getItem("vault_legacy_firebase"))
   localStorage.setItem("vault_legacy_firebase", JSON.stringify(savedCfg));
 $("clearSearchFilters").onclick = () => {
   currentSearch = "";

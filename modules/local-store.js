@@ -143,6 +143,52 @@ export const setDoc = (ref, data, options = {}) =>
   write(ref, data, { merge: !!options.merge });
 export const deleteDoc = (ref) => write(ref, {}, { removed: true });
 
+// Import atomically without replacing newer edits or tombstones. Legacy
+// revisions precede every edit made by the current application.
+export async function importMissingRecords(db, rows) {
+  let imported = 0;
+  await transaction(db, "readwrite", (store) => {
+    for (const row of rows) {
+      const key = `${row.collection}/${row.id}`;
+      const get = store.get(key);
+      get.onsuccess = () => {
+        if (get.result) return;
+        store.put({
+          ...row,
+          key,
+          data: structuredClone(row.data),
+          revision: "0000000000000001:firebase",
+          removed: false,
+          dirty: true,
+        });
+        imported++;
+      };
+    }
+  });
+  if (imported) {
+    await notify(db);
+    scheduleSync();
+  }
+  return imported;
+}
+
+export async function getLegacyImportState(db, projectId) {
+  return transaction(db, "readonly", (store, done) => {
+    const request = store.get(`vault_sync/firebase:${projectId}`);
+    request.onsuccess = () => done(request.result?.data);
+  });
+}
+
+export async function markLegacyImportRead(db, projectId, data) {
+  await transaction(db, "readwrite", (store) =>
+    store.put({
+      key: `vault_sync/firebase:${projectId}`,
+      collection: "vault_sync",
+      data,
+    }),
+  );
+}
+
 export function configureDriveSync(driveManager) {
   manager = driveManager;
 }
@@ -228,6 +274,12 @@ export function syncAccount(slot) {
   return task;
 }
 
+export async function flushAccount(slot) {
+  // A scheduled sync may have captured its upload before the import finished.
+  if (syncing.has(slot)) await syncing.get(slot);
+  return syncAccount(slot);
+}
+
 async function synchronize(slot) {
   const db = await openLocalStore();
   try {
@@ -284,12 +336,17 @@ async function synchronize(slot) {
         }
       });
     }
-    const remaining = (await allRecords(db)).some((r) => r.dirty);
+    const records = (await allRecords(db)).filter(
+      (r) => r.collection !== "vault_sync",
+    );
+    const remaining = records.some((r) => r.dirty);
     emit({
-      state: remaining ? "pending" : "synced",
+      state: remaining ? "pending" : records.length ? "synced" : "empty",
       message: remaining
         ? "Há alterações locais sem cópia no Drive"
-        : "Metadados sincronizados no Drive",
+        : records.length
+          ? "Metadados sincronizados no Drive"
+          : "Drive conectado · catálogo vazio. Importe os metadados antigos.",
     });
   } catch (error) {
     emit({

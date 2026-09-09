@@ -17,7 +17,11 @@ export function registerPwa() {
           const savingBoard =
             document.getElementById("boardSaveStatus")?.textContent ===
             "Salvando…";
-          if (active || savingBoard) {
+          if (
+            active ||
+            savingBoard ||
+            document.body.dataset.migration === "running"
+          ) {
             button.textContent = "Aguarde o salvamento terminar";
             return;
           }

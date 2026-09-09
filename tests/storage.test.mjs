@@ -143,3 +143,20 @@ test("metadados legados sem slot também ganham cópia externa", async () => {
   await s.syncAccount("ac1");
   assert.equal((await s.getSyncSummary()).pending, 0);
 });
+
+test("sincronização vazia não anuncia metadados sincronizados", async () => {
+  const { s } = await device(),
+    drive = remote(),
+    events = [];
+  const originalDispatch = globalThis.dispatchEvent;
+  globalThis.dispatchEvent = (event) => events.push(event.detail);
+  try {
+    s.configureDriveSync(drive);
+    await s.syncAccount("ac1");
+    assert.equal(events.at(-1).state, "empty");
+    assert.match(events.at(-1).message, /catálogo vazio/);
+  } finally {
+    globalThis.dispatchEvent = originalDispatch;
+    s.configureDriveSync(null);
+  }
+});

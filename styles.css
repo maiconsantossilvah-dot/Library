@@ -7621,6 +7621,30 @@ button:disabled {
     font-size: 12px;
   }
 }
+.legacy-migration-notice:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid currentColor;
+}
+.legacy-migration-notice p {
+  flex: 1 1 280px;
+  margin: 0;
+  font-size: 13px;
+}
+#legacyFirebaseConfig {
+  margin-top: 16px;
+}
+#legacyFirebaseConfig summary {
+  cursor: pointer;
+}
+#legacyFirebaseConfig .field-label {
+  display: block;
+  margin: 12px 0;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

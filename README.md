@@ -64,7 +64,13 @@ O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 
 Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Arquivos → Mais → Restaurar JSON** aceita o formato antigo e o completo v3. Registros com o mesmo ID podem ser substituídos após confirmação.
 
-Se a configuração antiga ainda estiver neste navegador, **Configurações → Importar biblioteca da versão anterior** lê o Firestore antigo, copia apenas IDs ainda ausentes e não altera a origem. Firebase é carregado somente nessa migração opcional; o uso normal não depende dele. As permissões do projeto antigo precisam permitir a leitura. Exporte um backup e sincronize as contas depois de importar. Não desative nem apague o projeto antigo antes de conferir o resultado.
+Se a configuração antiga ainda estiver neste navegador, o aplicativo inicia a migração **Firebase → catálogo local → Drive** automaticamente. Lê `vault_folders` e `vault_files` diretamente do servidor Firebase, preserva os IDs, relações entre pastas, tags, datas e referências aos arquivos originais e envia os metadados às contas conectadas. Fotos e vídeos não são duplicados. O Firebase nunca é alterado ou apagado.
+
+Se a configuração antiga não estiver salva, use **Recuperar do Firebase** no aviso do acervo vazio, ou **Configurações → Recuperar metadados do Firebase antigo**. Informe o Project ID e a API Key do aplicativo Web original e clique em **Migrar metadados: Firebase → Drive**. Não use chaves privadas nem contas de serviço. Conecte as mesmas contas nos mesmos slots Ac1–Ac4. Registros de contas desconectadas continuam pendentes, sem serem enviados para outra conta.
+
+O progresso diferencia leitura, envio, pendência e erro. Uma leitura vazia não conclui a migração. Falhas preservam o que já foi importado; tentar novamente não duplica IDs nem sobrescreve alterações ou exclusões mais recentes. Após uma leitura completa, as próximas conexões retomam o envio sem reler o Firebase; o botão de migração permite uma nova leitura manual. As permissões existentes do projeto precisam permitir a leitura; não torne o banco público para contornar um erro. O uso normal, após a migração, não depende do Firebase.
+
+Espere a confirmação de sincronização, confira os arquivos no acervo e exporte um backup JSON. Não desative nem apague o Firebase antes de verificar o resultado e a recuperação pelo Drive em outro navegador.
 
 A migração Cloudinary → Drive continua em **Mais** e preserva as referências antigas; ela não exclui os originais automaticamente.
 
