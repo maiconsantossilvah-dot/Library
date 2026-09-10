@@ -7030,7 +7030,12 @@ button:disabled {
 .vault-reimagined .sidebar-collections,
 .vault-reimagined .folder-list {
   min-width: 0;
+}
+.vault-reimagined .sidebar-scroll {
   overflow-x: hidden;
+}
+.vault-reimagined .sidebar-scroll > .sidebar-section {
+  flex: 0 0 auto;
 }
 .vault-reimagined .folder-list {
   width: 100%;
