@@ -7026,6 +7026,62 @@ button:disabled {
 .vault-reimagined .folder-rename {
   font-size: 12px;
 }
+.vault-reimagined .sidebar-scroll,
+.vault-reimagined .sidebar-collections,
+.vault-reimagined .folder-list {
+  min-width: 0;
+  overflow-x: hidden;
+}
+.vault-reimagined .folder-list {
+  width: 100%;
+}
+.vault-reimagined .folder-item {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: clamp(
+    8px,
+    calc(8px + (var(--folder-depth, 0) * 13px)),
+    56px
+  );
+}
+.vault-reimagined .folder-expander,
+.vault-reimagined .folder-icon,
+.vault-reimagined .folder-account-badge {
+  flex: 0 0 auto;
+}
+.vault-reimagined .folder-expander {
+  width: 22px;
+  min-width: 22px;
+}
+.vault-reimagined .folder-name {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-reimagined .folder-delete,
+.vault-reimagined .folder-rename {
+  display: none;
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+.vault-reimagined .folder-item:hover .folder-delete,
+.vault-reimagined .folder-item:hover .folder-rename,
+.vault-reimagined .folder-item:focus-within .folder-delete,
+.vault-reimagined .folder-item:focus-within .folder-rename {
+  display: inline-flex;
+  opacity: 1;
+}
+.vault-reimagined .folder-rename {
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .vault-reimagined .file-action-menu {
   max-height: 55vh;
   overflow: auto;
