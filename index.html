@@ -7,6 +7,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <script src="privacy-init.js"></script>
     <link rel="stylesheet" href="styles.css" />
     <title>VAULT - Seu Cofre Digital</title>
     <link rel="manifest" href="manifest.webmanifest" />
@@ -245,6 +246,25 @@
 
             <div class="masthead-actions">
               <button
+                class="utility-btn"
+                id="privacyToggle"
+                type="button"
+                title="Modo discreto"
+                aria-label="Modo discreto"
+                aria-pressed="false"
+              >
+                <span data-icon="ShieldAlert"></span>
+              </button>
+              <button
+                class="utility-btn"
+                id="privacyHide"
+                type="button"
+                title="Ocultar conteudo (Ctrl+Shift+H)"
+                aria-label="Ocultar conteudo"
+              >
+                <span data-icon="PanelLeftClose"></span>
+              </button>
+              <button
                 class="theme-toggle"
                 id="themeToggle"
                 type="button"
@@ -460,6 +480,19 @@
           </div>
 
           <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
+            <div class="privacy-settings">
+              <label
+                >Previa discreta
+                <select id="privacyPreview" class="sort-select">
+                  <option value="blur">Desfocar</option>
+                  <option value="hide">Ocultar</option>
+                </select></label
+              >
+              <label
+                ><input id="privacyMute" type="checkbox" checked /> Silenciar no
+                modo discreto</label
+              >
+            </div>
             <div class="panel-heading">
               <span>Seu acervo</span>
               <button
@@ -928,6 +961,15 @@
     <!-- MODAL: Lightbox -->
     <div class="lightbox" id="lightbox">
       <button
+        class="lightbox-close viewer-hide"
+        type="button"
+        data-privacy-hide
+        title="Ocultar conteudo (Ctrl+Shift+H)"
+        aria-label="Ocultar conteudo"
+      >
+        <span data-icon="PanelLeftClose"></span>
+      </button>
+      <button
         class="lightbox-close"
         id="lightboxClose"
         aria-label="Fechar visualizador"
@@ -1262,6 +1304,12 @@
         <h2 class="modal-title" id="coverModalTitle">Escolher capa</h2>
         <p class="move-file-label" id="coverModalSub"></p>
         <div class="cover-picker-grid" id="coverPickerGrid"></div>
+        <label class="field-label"
+          >Imagem do dispositivo<input
+            id="coverUpload"
+            type="file"
+            accept="image/*"
+        /></label>
         <div class="modal-actions">
           <button class="modal-btn cancel" id="clearFolderCover" type="button">
             Remover capa
@@ -1324,6 +1372,25 @@
           <button class="manga-btn" id="mangaModeVertical" type="button">
             Vertical
           </button>
+          <select
+            class="manga-btn"
+            id="mangaFit"
+            aria-label="Tamanho da pagina"
+          >
+            <option value="width">Ajustar a largura</option>
+            <option value="page">Pagina inteira</option>
+            <option value="original">Tamanho original</option>
+          </select>
+          <output id="mangaZoomLabel" aria-live="polite">100%</output>
+          <button
+            class="manga-btn"
+            id="mangaZoomReset"
+            type="button"
+            title="Restaurar tamanho"
+            aria-label="Restaurar tamanho"
+          >
+            <span data-icon="RefreshCw"></span>
+          </button>
           <button
             class="manga-btn"
             id="mangaZoomOut"
@@ -1342,6 +1409,15 @@
           </button>
           <button class="manga-btn" id="mangaClose" type="button">
             Fechar
+          </button>
+          <button
+            class="manga-btn"
+            type="button"
+            data-privacy-hide
+            title="Ocultar conteudo (Ctrl+Shift+H)"
+            aria-label="Ocultar conteudo"
+          >
+            <span data-icon="PanelLeftClose"></span>
           </button>
         </div>
       </div>
@@ -1427,6 +1503,17 @@
       ></div>
     </div>
 
+    <div
+      id="privacyScreen"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-label="Conteudo oculto"
+      tabindex="-1"
+    >
+      <p>Conteudo oculto</p>
+      <button id="privacyRestore" type="button">Voltar ao acervo</button>
+    </div>
     <script type="module" src="app.js"></script>
   </body>
 </html>

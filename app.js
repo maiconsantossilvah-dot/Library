@@ -23,6 +23,8 @@ import {
 import { icon, hydrateIcons } from "./modules/icons.js";
 import { installInterface } from "./modules/interface.js";
 import { registerPwa } from "./modules/pwa.js";
+import { installPrivacy } from "./modules/privacy.js";
+import { installVideoScenes, captureCover } from "./modules/video-scenes.js";
 import { createMural } from "./modules/mural.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
@@ -113,6 +115,7 @@ let fileToMove = null;
 let bulkMoveMode = false;
 let fileToDescribe = null;
 let folderToCover = null;
+let videoToCover = null;
 let folderForActions = null;
 let pendingFolderParentId = ROOT_ID;
 let activeUploads = new Map();
@@ -120,11 +123,13 @@ let lightboxFiles = [];
 let lightboxIndex = -1;
 let lightboxZoom = 1;
 let lightboxGeneration = 0;
+let lightboxVideoUrl = null;
 let mangaState = {
   pages: [],
   index: 0,
   mode: localStorage.getItem("vault_manga_mode") || "horizontal",
   zoom: Number(localStorage.getItem("vault_manga_zoom") || "1"),
+  fit: localStorage.getItem("vault_manga_fit") || "width",
 };
 let disposeMangaImages = () => {};
 let visibleLimit = 60;
@@ -2655,6 +2660,10 @@ function cloudPreview(publicId, resourceType, w = 1920, h = 1440) {
 
 function mediaThumbUrl(file, w = 520, h = 360) {
   if (!file) return "";
+  if (file.customCover) return file.customCover;
+  const cover = file.coverFileId && fileById.get(file.coverFileId);
+  if (cover && !cover.deletedAt && cover.fileType === "image")
+    return mediaThumbUrl(cover, w, h);
   if (isGoogleDriveRecord(file))
     return driveThumbnailCache.get(file.id) || file.driveThumbnailLink || "";
   if (file.fileType === "image")
@@ -2665,6 +2674,12 @@ function mediaThumbUrl(file, w = 520, h = 360) {
 }
 
 async function loadDriveThumbnail(file, force = false) {
+  if (file.customCover) return file.customCover;
+  const cover = file.coverFileId && fileById.get(file.coverFileId);
+  if (cover && !cover.deletedAt && cover.fileType === "image")
+    return isGoogleDriveRecord(cover)
+      ? loadDriveThumbnail(cover, force)
+      : mediaThumbUrl(cover);
   if (
     !isGoogleDriveRecord(file) ||
     !driveManager?.isConnected(recordAccountSlot(file))
@@ -2811,7 +2826,8 @@ function makeFolderCard(folder, count) {
     : null;
   const coverFile =
     coverCandidate && !coverCandidate.deletedAt ? coverCandidate : null;
-  const coverUrl = coverFile ? folderCoverUrl(coverFile) : "";
+  const coverUrl =
+    folder.customCover || (coverFile ? folderCoverUrl(coverFile) : "");
   const coverRatio =
     coverFile?.width && coverFile?.height
       ? `${coverFile.width} / ${coverFile.height}`
@@ -2820,7 +2836,7 @@ function makeFolderCard(folder, count) {
   card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
-      ${coverUrl ? `<img src="${coverUrl}" data-drive-file-id="${isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${icon("Folder")}</span>`}
+      ${coverUrl ? `<img src="${esc(coverUrl)}" data-drive-file-id="${!folder.customCover && isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${icon("Folder")}</span>`}
       <span class="account-badge folder-card-account">${accountBadge(folder)}</span>
       <button class="folder-card-cover-btn" type="button" title="Escolher capa da pasta">Capa</button>
     </div>
@@ -2873,6 +2889,7 @@ async function setFolderCover(file) {
   try {
     await updateDoc(doc(db, "vault_folders", file.folderId), {
       coverFileId: file.id,
+      customCover: null,
     });
     addHistory(`Capa da pasta: ${file.name}`);
     showToast("Capa da pasta atualizada", "success");
@@ -2882,13 +2899,31 @@ async function setFolderCover(file) {
 }
 
 function openFolderCoverPicker(folder) {
+  videoToCover = null;
   folderToCover = folder;
-  const imageFiles = getImagesForFolderTree(folder.id);
+  renderCoverPicker(folder, getImagesForFolderTree(folder.id));
+}
+
+function openVideoCoverPicker(file) {
+  folderToCover = null;
+  videoToCover = file;
+  renderCoverPicker(
+    file,
+    files
+      .filter((item) => !item.deletedAt && item.fileType === "image")
+      .sort(comparePageFiles),
+  );
+}
+
+function renderCoverPicker(target, imageFiles) {
+  const folder = target;
   coverModalTitle.textContent = `Capa de ${folder.name || "pasta"}`;
   coverModalSub.textContent = imageFiles.length
     ? "Escolha uma imagem desta pasta ou de qualquer subpasta."
     : "Nenhuma imagem encontrada nesta pasta ou nas subpastas.";
-  clearFolderCoverBtn.hidden = !folder.coverFileId;
+  clearFolderCoverBtn.hidden =
+    !folder.coverFileId && !folder.customCover && folder.coverTime == null;
+  $("coverUpload").value = "";
   coverPickerGrid.innerHTML = imageFiles.length
     ? imageFiles
         .map((file) => {
@@ -2897,7 +2932,7 @@ function openFolderCoverPicker(folder) {
           const path = getFolderPathLabel(file.folderId) || "Raiz";
           return `
         <button class="cover-option${active}" type="button" data-file-id="${esc(file.id)}">
-          <span class="cover-option-thumb">${thumb ? `<img src="${thumb}" alt="${esc(file.name)}" loading="lazy" />` : "IMG"}</span>
+          <span class="cover-option-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="${esc(file.name)}" loading="lazy" />` : "IMG"}</span>
           <span class="cover-option-name">${esc(file.name)}</span>
           <span class="cover-option-path">${esc(path)}</span>
         </button>`;
@@ -2908,6 +2943,7 @@ function openFolderCoverPicker(folder) {
     button.onclick = () => applyFolderCover(button.dataset.fileId);
   });
   coverModal.classList.add("active");
+  hydrateDriveThumbnails(coverPickerGrid);
 }
 
 function getImagesForFolderTree(folderId) {
@@ -2916,20 +2952,26 @@ function getImagesForFolderTree(folderId) {
     .filter(
       (file) =>
         !file.deletedAt &&
-        file.fileType === "image" &&
+        (file.fileType === "image" ||
+          (file.fileType === "video" && mediaThumbUrl(file))) &&
         folderIds.has(file.folderId),
     )
     .sort(comparePageFiles);
 }
 
 async function applyFolderCover(fileId) {
-  if (!folderToCover || !fileId) return;
+  const target = videoToCover || folderToCover;
+  if (!target || !fileId) return;
   const file = files.find((item) => item.id === fileId);
   try {
-    await updateDoc(doc(db, "vault_folders", folderToCover.id), {
-      coverFileId: fileId,
-    });
-    addHistory(`Capa do album: ${folderToCover.name}`);
+    await updateDoc(
+      doc(db, videoToCover ? "vault_files" : "vault_folders", target.id),
+      {
+        coverFileId: fileId,
+        customCover: null,
+      },
+    );
+    addHistory(`Capa: ${target.name}`);
     showToast(
       file ? `Capa definida: ${file.name}` : "Capa definida",
       "success",
@@ -2941,12 +2983,18 @@ async function applyFolderCover(fileId) {
 }
 
 async function clearFolderCover() {
-  if (!folderToCover) return;
+  const target = videoToCover || folderToCover;
+  if (!target) return;
   try {
-    await updateDoc(doc(db, "vault_folders", folderToCover.id), {
-      coverFileId: null,
-    });
-    addHistory(`Capa removida: ${folderToCover.name}`);
+    await updateDoc(
+      doc(db, videoToCover ? "vault_files" : "vault_folders", target.id),
+      {
+        coverFileId: null,
+        customCover: null,
+        coverTime: null,
+      },
+    );
+    addHistory(`Capa removida: ${target.name}`);
     showToast("Capa removida", "success");
     closeFolderCoverPicker();
   } catch (e) {
@@ -2958,7 +3006,31 @@ function closeFolderCoverPicker() {
   coverModal.classList.remove("active");
   coverPickerGrid.innerHTML = "";
   folderToCover = null;
+  videoToCover = null;
 }
+
+$("coverUpload").onchange = async (event) => {
+  const target = videoToCover || folderToCover;
+  const collectionName = videoToCover ? "vault_files" : "vault_folders";
+  const upload = event.target.files[0];
+  if (!upload || !target) return;
+  const url = URL.createObjectURL(upload);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    await updateDoc(doc(db, collectionName, target.id), {
+      customCover: captureCover(image),
+      coverFileId: null,
+    });
+    closeFolderCoverPicker();
+    showToast("Capa atualizada", "success");
+  } catch (error) {
+    showToast(`Nao foi possivel usar esta imagem: ${error.message}`, "error");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
 
 closeCoverModal.onclick = closeFolderCoverPicker;
 clearFolderCoverBtn.onclick = clearFolderCover;
@@ -4308,6 +4380,7 @@ async function deleteFolderRecursive(folderId) {
 
 // ??? Lightbox ?????????????????????????????????????????????
 function openLightbox(file) {
+  closeLightbox();
   const generation = ++lightboxGeneration;
   lightboxIndex = lightboxFiles.findIndex((f) => f.id === file.id);
   lightboxInner.innerHTML = "";
@@ -4340,33 +4413,46 @@ function openLightbox(file) {
     }
     lightboxInner.appendChild(img);
   } else if (file.fileType === "video") {
-    if (isGoogleDriveRecord(file)) {
-      const iframe = document.createElement("iframe");
-      iframe.className = "drive-preview-frame";
-      iframe.src = drivePreviewUrl(
+    const vid = document.createElement("video");
+    vid.crossOrigin = "anonymous";
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.muted = privacy.muted();
+    vid.playsInline = true;
+    vid.preload = "metadata";
+    vid.poster = mediaThumbUrl(file) || "";
+    vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
+    vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
+    vid.onvolumechange = () =>
+      localStorage.setItem("vault_video_volume", String(vid.volume));
+    vid.onratechange = () =>
+      localStorage.setItem("vault_video_speed", String(vid.playbackRate));
+    vid.onerror = () => {
+      if (generation !== lightboxGeneration) return;
+      showMissingLightbox(
         file,
-        driveManager?.getAccount(recordAccountSlot(file))?.email || "",
+        "Nao foi possivel reproduzir este video. Verifique a conexao ou o formato do arquivo.",
       );
-      iframe.title = file.name;
-      iframe.allow = "autoplay";
-      lightboxInner.appendChild(iframe);
+    };
+    lightboxInner.appendChild(vid);
+    if (isGoogleDriveRecord(file)) {
+      const status = document.createElement("span");
+      status.textContent = "Carregando video original...";
+      status.setAttribute("role", "status");
+      lightboxInner.append(status);
+      fetchStoredBlob(file)
+        .then((blob) => {
+          if (generation !== lightboxGeneration) return;
+          lightboxVideoUrl = URL.createObjectURL(blob);
+          vid.src = lightboxVideoUrl;
+          status.remove();
+        })
+        .catch((error) => {
+          if (generation === lightboxGeneration)
+            showMissingLightbox(file, error.message);
+        });
     } else {
-      const vid = document.createElement("video");
       vid.src = file.url;
-      vid.controls = true;
-      vid.autoplay = true;
-      vid.playsInline = true;
-      vid.preload = "metadata";
-      vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
-      vid.playbackRate = Number(
-        localStorage.getItem("vault_video_speed") || "1",
-      );
-      vid.onvolumechange = () =>
-        localStorage.setItem("vault_video_volume", String(vid.volume));
-      vid.onratechange = () =>
-        localStorage.setItem("vault_video_speed", String(vid.playbackRate));
-      vid.onerror = () => showMissingLightbox(file);
-      lightboxInner.appendChild(vid);
     }
   } else {
     renderDocumentPreview(file, generation);
@@ -4382,9 +4468,10 @@ function openLightbox(file) {
       ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
       : "";
   const videoActions =
-    file.fileType === "video" && !isGoogleDriveRecord(file)
+    file.fileType === "video"
       ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
-       <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>`
+       <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>
+       <button class="lb-action-btn" id="lbChooseCoverBtn" type="button">Escolher capa</button>`
       : "";
 
   lightboxInfo.innerHTML = `
@@ -4406,7 +4493,7 @@ function openLightbox(file) {
       ${imageActions}
       ${videoActions}
       <button class="lb-action-btn lb-link" id="lbDownloadBtn" type="button">Baixar</button>
-    </div>`;
+    </div>${file.fileType === "video" ? '<div class="video-scenes" id="videoScenes" aria-label="Cenas salvas"></div>' : ""}`;
 
   $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
   $("lbZoomIn").hidden = $("lbZoomOut").hidden = file.fileType !== "image";
@@ -4427,9 +4514,23 @@ function openLightbox(file) {
       openMangaReader(file);
     };
   }
-  if (file.fileType === "video" && !isGoogleDriveRecord(file)) {
+  if (file.fileType === "video") {
     $("lbSpeedBtn").onclick = () => cycleVideoSpeed();
     $("lbCoverBtn").onclick = () => saveCurrentVideoFrame(file);
+    $("lbChooseCoverBtn").onclick = () =>
+      openVideoCoverPicker(fileById.get(file.id) || file);
+    installVideoScenes({
+      video: lightboxInner.querySelector("video"),
+      container: $("videoScenes"),
+      getFile: () => fileById.get(file.id) || file,
+      save: async (sceneBookmarks) => {
+        await updateDoc(doc(db, "vault_files", file.id), { sceneBookmarks });
+        file.sceneBookmarks = sceneBookmarks;
+      },
+      ask: openTextDialog,
+      icon,
+      toast: showToast,
+    });
   }
   $("lbPrevBtn").onclick = () => navigateLightbox(-1);
   $("lbNextBtn").onclick = () => navigateLightbox(1);
@@ -4510,6 +4611,8 @@ async function saveCurrentVideoFrame(file) {
   try {
     await updateDoc(doc(db, "vault_files", file.id), {
       coverTime: Math.round(video.currentTime || 0),
+      customCover: captureCover(video),
+      coverFileId: null,
     });
     addHistory(`Capa do video: ${file.name}`);
     showToast("Frame salvo como capa", "success");
@@ -4542,6 +4645,18 @@ document.onkeydown = (e) => {
     e.target.closest("input, textarea, select, [contenteditable=true]")
   )
     return;
+  if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === "KeyN") {
+    if (
+      document.querySelector(
+        ".modal-overlay.active,.lightbox.active,.manga-reader.active",
+      ) ||
+      configModal.style.display === "flex"
+    )
+      return;
+    e.preventDefault();
+    openFolderCreateDialog(navState.folderId);
+    return;
+  }
   if (mangaReader.classList.contains("active")) {
     if (e.key === "Escape") {
       closeMangaReader();
@@ -4590,7 +4705,24 @@ function closeLightbox() {
   });
   lightboxInner.innerHTML = "";
   lightboxInfo.innerHTML = "";
+  if (lightboxVideoUrl) URL.revokeObjectURL(lightboxVideoUrl);
+  lightboxVideoUrl = null;
 }
+
+const privacy = installPrivacy({
+  closeMedia: () => {
+    closeLightbox();
+    closeMangaReader();
+    document.querySelectorAll("iframe").forEach((frame) => {
+      frame.src = "about:blank";
+    });
+  },
+});
+createSubfolderBtn.title = "Criar subpasta (Ctrl+Alt+N)";
+createSubfolderBtn.setAttribute(
+  "aria-keyshortcuts",
+  "Control+Alt+N Meta+Alt+N",
+);
 
 // ??? Manga reader ?????????????????????????????????????????
 function openMangaReader(startFile = null) {
@@ -4683,9 +4815,49 @@ function sizeMangaImage(image, width, height) {
     mangaStage.clientWidth -
     parseFloat(style.paddingLeft) -
     parseFloat(style.paddingRight);
-  image.style.setProperty("--manga-page-width", `${Math.min(width, available)}px`);
+  const availableHeight =
+    mangaStage.clientHeight -
+    parseFloat(style.paddingTop) -
+    parseFloat(style.paddingBottom) -
+    34;
+  const fit = mangaState.fit || "width";
+  const base =
+    fit === "original"
+      ? width
+      : fit === "page"
+        ? Math.min(
+            width,
+            available,
+            (Math.max(1, availableHeight) * width) / height,
+          )
+        : Math.min(width, available);
+  image.style.setProperty("--manga-page-width", `${base}px`);
   image.style.aspectRatio = `${width} / ${height}`;
+  image.dataset.baseScale = String(base / width);
+  updateMangaControls();
 }
+
+function updateMangaControls() {
+  const current = mangaStage.querySelector(
+    `img[data-page-index="${mangaState.index}"]`,
+  );
+  const scale = Number(current?.dataset.baseScale || 1);
+  $("mangaZoomLabel").textContent =
+    `${Math.round(scale * mangaState.zoom * 100)}%`;
+  $("mangaFit").value = mangaState.fit || "width";
+  mangaZoomOut.disabled = mangaState.zoom <= 0.1;
+  mangaZoomIn.disabled = mangaState.zoom >= 4;
+}
+
+$("mangaFit").onchange = (event) => {
+  mangaState.fit = event.target.value;
+  mangaState.zoom = 1;
+  localStorage.setItem("vault_manga_fit", mangaState.fit);
+  setMangaZoom(1);
+  resizeMangaImages();
+  mangaStage.scrollLeft = 0;
+};
+$("mangaZoomReset").onclick = () => setMangaZoom(1);
 
 function loadMangaImages() {
   let disposed = false;
@@ -4761,16 +4933,22 @@ function loadMangaImages() {
   };
 }
 
-window.addEventListener("resize", () => {
+function resizeMangaImages() {
   if (!mangaReader.classList.contains("active")) return;
   mangaStage.querySelectorAll("img").forEach((image) => {
-    if (image.naturalWidth)
-      sizeMangaImage(image, image.naturalWidth, image.naturalHeight);
+    const page = mangaState.pages[Number(image.dataset.pageIndex)];
+    sizeMangaImage(
+      image,
+      image.naturalWidth || Number(page.width) || 800,
+      image.naturalHeight || Number(page.height) || 1200,
+    );
   });
-});
+}
+window.addEventListener("resize", resizeMangaImages);
 
 function updateMangaCounter() {
   mangaCounter.textContent = `${mangaState.index + 1} / ${mangaState.pages.length}`;
+  updateMangaControls();
 }
 
 function setMangaMode(mode) {
@@ -4794,9 +4972,13 @@ function navigateManga(direction) {
 }
 
 function setMangaZoom(nextZoom) {
-  mangaState.zoom = Math.max(0.7, Math.min(2.2, nextZoom));
+  mangaState.zoom = Math.max(
+    0.1,
+    Math.min(4, Math.round(nextZoom * 100) / 100),
+  );
   localStorage.setItem("vault_manga_zoom", String(mangaState.zoom));
   mangaReader.style.setProperty("--manga-zoom", String(mangaState.zoom));
+  updateMangaControls();
 }
 
 function updateMangaIndexFromScroll() {

@@ -38,7 +38,9 @@ const html = (await fs.readFile("index.html", "utf8"))
 await fs.writeFile("dist/index.html", html);
 await fs.cp("icons", "dist/icons", { recursive: true });
 await fs.copyFile("manifest.webmanifest", "dist/manifest.webmanifest");
+await fs.copyFile("privacy-init.js", "dist/privacy-init.js");
 const assets = [
+  "privacy-init.js",
   ...Object.keys(js.metafile.outputs),
   ...Object.keys(css.metafile.outputs),
 ].map((p) => "./" + p.replace("dist/", ""));
