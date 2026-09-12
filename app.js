@@ -126,6 +126,7 @@ let mangaState = {
   mode: localStorage.getItem("vault_manga_mode") || "horizontal",
   zoom: Number(localStorage.getItem("vault_manga_zoom") || "1"),
 };
+let disposeMangaImages = () => {};
 let visibleLimit = 60;
 const PAGE_SIZE = 60;
 
@@ -4629,6 +4630,7 @@ function getMangaPages(folderId) {
 }
 
 function renderMangaReader() {
+  disposeMangaImages();
   mangaStage.className = `manga-stage ${mangaState.mode}`;
   mangaReader.style.setProperty("--manga-zoom", String(mangaState.zoom));
   mangaModeHorizontal.classList.toggle(
@@ -4642,7 +4644,8 @@ function renderMangaReader() {
       .map(
         (page, index) => `
       <figure class="manga-page-stack" data-index="${index}">
-        <img src="${esc(mediaThumbUrl(page, 1800, 2400))}" data-drive-file-id="${isGoogleDriveRecord(page) ? esc(page.id) : ""}" alt="${esc(page.name)}" loading="${index < 2 ? "eager" : "lazy"}" />
+        <img data-page-index="${index}" alt="${esc(page.name)}" decoding="async" />
+        <span class="manga-page-status" role="status">Carregando...</span>
         <figcaption>${index + 1}. ${esc(page.name)}</figcaption>
       </figure>
     `,
@@ -4660,16 +4663,111 @@ function renderMangaReader() {
     const page = mangaState.pages[mangaState.index];
     mangaStage.innerHTML = `
       <figure class="manga-page-single">
-        <img src="${esc(mediaThumbUrl(page, 1800, 2400))}" data-drive-file-id="${isGoogleDriveRecord(page) ? esc(page.id) : ""}" alt="${esc(page.name)}" />
+        <img data-page-index="${mangaState.index}" alt="${esc(page.name)}" decoding="async" />
+        <span class="manga-page-status" role="status">Carregando...</span>
         <figcaption>${esc(page.name)}</figcaption>
       </figure>`;
     mangaPrev.disabled = mangaState.index <= 0;
     mangaNext.disabled = mangaState.index >= mangaState.pages.length - 1;
   }
 
-  hydrateDriveThumbnails(mangaStage);
+  loadMangaImages();
+  mangaStage.scrollTop = 0;
+  mangaStage.scrollLeft = 0;
   updateMangaCounter();
 }
+
+function sizeMangaImage(image, width, height) {
+  const style = getComputedStyle(mangaStage);
+  const available =
+    mangaStage.clientWidth -
+    parseFloat(style.paddingLeft) -
+    parseFloat(style.paddingRight);
+  image.style.setProperty("--manga-page-width", `${Math.min(width, available)}px`);
+  image.style.aspectRatio = `${width} / ${height}`;
+}
+
+function loadMangaImages() {
+  let disposed = false;
+  const objectUrls = new Set();
+  const pages = mangaState.pages;
+  const load = async (image) => {
+    if (disposed || image.dataset.loading) return;
+    image.dataset.loading = "true";
+    const page = pages[Number(image.dataset.pageIndex)];
+    const status = image.parentElement.querySelector(".manga-page-status");
+    status.textContent = "Carregando...";
+    image.onload = () => {
+      if (disposed) return;
+      sizeMangaImage(image, image.naturalWidth, image.naturalHeight);
+      status.hidden = true;
+    };
+    const fail = () => {
+      if (disposed) return;
+      status.replaceChildren();
+      const retry = document.createElement("button");
+      retry.className = "manga-btn";
+      retry.textContent = "Tentar novamente";
+      retry.onclick = () => {
+        delete image.dataset.loading;
+        load(image);
+      };
+      status.append("Nao foi possivel carregar a imagem. ", retry);
+    };
+    image.onerror = fail;
+    try {
+      let url;
+      if (isGoogleDriveRecord(page)) {
+        const blob = await fetchStoredBlob(page);
+        if (disposed) return;
+        url = URL.createObjectURL(blob);
+        objectUrls.add(url);
+      } else {
+        url =
+          page.url ||
+          (page.cloudPublicId && cloudName
+            ? `https://res.cloudinary.com/${cloudName}/image/upload/${page.cloudPublicId}`
+            : "");
+      }
+      if (!url) throw new Error("Imagem sem endereco de origem");
+      if (!disposed) image.src = url;
+    } catch {
+      fail();
+    }
+  };
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(({ target, isIntersecting }) => {
+        if (!isIntersecting) return;
+        observer.unobserve(target);
+        load(target);
+      });
+    },
+    { root: mangaStage, rootMargin: "600px 0px" },
+  );
+  mangaStage.querySelectorAll("img[data-page-index]").forEach((image) => {
+    const page = pages[Number(image.dataset.pageIndex)];
+    sizeMangaImage(
+      image,
+      Number(page.width || page.mediaWidth) || 800,
+      Number(page.height || page.mediaHeight) || 1200,
+    );
+    observer.observe(image);
+  });
+  disposeMangaImages = () => {
+    disposed = true;
+    observer.disconnect();
+    objectUrls.forEach((url) => URL.revokeObjectURL(url));
+  };
+}
+
+window.addEventListener("resize", () => {
+  if (!mangaReader.classList.contains("active")) return;
+  mangaStage.querySelectorAll("img").forEach((image) => {
+    if (image.naturalWidth)
+      sizeMangaImage(image, image.naturalWidth, image.naturalHeight);
+  });
+});
 
 function updateMangaCounter() {
   mangaCounter.textContent = `${mangaState.index + 1} / ${mangaState.pages.length}`;
@@ -4720,6 +4818,7 @@ function updateMangaIndexFromScroll() {
 }
 
 function closeMangaReader() {
+  disposeMangaImages();
   mangaReader.classList.remove("active");
   $("viewManga")?.classList.remove("active");
   mangaStage.innerHTML = "";
