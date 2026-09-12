@@ -29,6 +29,7 @@ import { createMural } from "./modules/mural.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
+import { buildFolderCoverIndex } from "./modules/folder-covers.js";
 import {
   createLocalTextSearch,
   extractSearchText,
@@ -71,6 +72,7 @@ let unsubFolders = null;
 let folderById = new Map();
 let folderChildrenByParent = new Map();
 let fileById = new Map();
+let automaticFolderCovers = null;
 let activeFileCountByFolder = new Map();
 let descendantFileCountByFolder = new Map();
 let descendantFolderCountByFolder = new Map();
@@ -1271,6 +1273,7 @@ function toLocalFolderId(folderId) {
 }
 
 function rebuildFolderIndexes() {
+  automaticFolderCovers = null;
   folderById = new Map(folders.map((folder) => [folder.id, folder]));
   folderChildrenByParent = new Map();
   folders.forEach((folder) => {
@@ -1289,6 +1292,7 @@ function rebuildFolderIndexes() {
 }
 
 function rebuildFileIndexes() {
+  automaticFolderCovers = null;
   fileById = new Map(files.map((file) => [file.id, file]));
   activeFileCountByFolder = new Map();
   duplicateFileIds = new Set();
@@ -1819,6 +1823,7 @@ function renderFolderChildrenSection() {
     fragment.appendChild(makeFolderCard(folder, countFilesInFolder(folder.id))),
   );
   folderChildrenGrid.replaceChildren(fragment);
+  hydrateDriveThumbnails(folderChildrenGrid);
   return children.length;
 }
 
@@ -2721,7 +2726,11 @@ function hydrateDriveThumbnails(root = document) {
   ids.forEach(async (id) => {
     const file = fileById.get(id);
     if (!file) return;
-    const thumbnail = await loadDriveThumbnail(file);
+    let thumbnail = await loadDriveThumbnail(file);
+    const current = fileById.get(id);
+    if (!current || current.deletedAt) return;
+    if (current.customCover || current.coverFileId)
+      thumbnail = (await loadDriveThumbnail(current)) || mediaThumbUrl(current);
     if (!thumbnail) return;
     root
       .querySelectorAll?.(`[data-drive-file-id="${CSS.escape(id)}"]`)
@@ -2736,6 +2745,7 @@ function hydrateDriveThumbnails(root = document) {
         image.alt = file.name || "Arquivo";
         image.loading = "lazy";
         image.dataset.driveFileId = id;
+        placeholder.closest(".folder-card-cover")?.classList.add("has-cover");
         placeholder.replaceWith(image);
       });
   });
@@ -2825,18 +2835,24 @@ function makeFolderCard(folder, count) {
     ? fileById.get(folder.coverFileId)
     : null;
   const coverFile =
-    coverCandidate && !coverCandidate.deletedAt ? coverCandidate : null;
+    coverCandidate &&
+    !coverCandidate.deletedAt &&
+    ["image", "video"].includes(coverCandidate.fileType)
+      ? coverCandidate
+      : getAutomaticFolderCover(folder.id);
   const coverUrl =
     folder.customCover || (coverFile ? folderCoverUrl(coverFile) : "");
   const coverRatio =
     coverFile?.width && coverFile?.height
       ? `${coverFile.width} / ${coverFile.height}`
-      : "16 / 9";
+      : coverFile?.fileType === "image" || folder.customCover
+        ? "3 / 4"
+        : "16 / 9";
   const subCount = descendantFolderCountByFolder.get(folder.id) || 0;
   card.style.setProperty("--folder-cover-ratio", coverRatio);
   card.innerHTML = `
     <div class="folder-card-cover ${coverUrl ? "has-cover" : ""}">
-      ${coverUrl ? `<img src="${esc(coverUrl)}" data-drive-file-id="${!folder.customCover && isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span>${icon("Folder")}</span>`}
+      ${coverUrl ? `<img src="${esc(coverUrl)}" data-drive-file-id="${!folder.customCover && isGoogleDriveRecord(coverFile) ? esc(coverFile.id) : ""}" alt="${esc(folder.name)}" loading="lazy" />` : `<span${isGoogleDriveRecord(coverFile) ? ` data-drive-thumb-id="${esc(coverFile.id)}"` : ""}>${icon("Folder")}</span>`}
       <span class="account-badge folder-card-account">${accountBadge(folder)}</span>
       <button class="folder-card-cover-btn" type="button" title="Escolher capa da pasta">Capa</button>
     </div>
@@ -2879,6 +2895,14 @@ function getFolderPathLabel(folderId) {
 
 function folderCoverUrl(file) {
   return mediaThumbUrl(file, 520, 260);
+}
+
+function getAutomaticFolderCover(folderId) {
+  automaticFolderCovers ||= buildFolderCoverIndex(
+    folders,
+    files.filter(matchesAccountView),
+  );
+  return automaticFolderCovers.get(folderId) || null;
 }
 
 async function setFolderCover(file) {
