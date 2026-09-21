@@ -238,8 +238,50 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     /Ainda não há etiquetas/,
   );
   document.getElementById("closeTagManagerFooter").click();
-  const card = document.querySelector(".file-name");
+  await store.setDoc(store.doc(db, "vault_folders", "qa-folder"), {
+    name: "Pasta fixada",
+    parentId: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+  await store.setDoc(store.doc(db, "vault_files", "qa-document"), {
+    name: "Documento de apoio.pdf",
+    fileType: "document",
+    size: 2048,
+    url: "data:application/pdf;base64,",
+    createdAt: "2020-01-01T00:00:00.000Z",
+    folderId: null,
+  });
+  await new Promise((r) => setTimeout(r, 80));
+  document.querySelector('.folder-pin[aria-label*="Pasta fixada"]').click();
+  assert.equal(document.getElementById("pinnedFoldersSection").hidden, false);
+  assert.match(w.localStorage.getItem("vault_pinned_folders_v1"), /qa-folder/);
+  const dropTarget = document.querySelector('[data-pinned-folder="qa-folder"]');
+  const dropEvent = new w.Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(dropEvent, "dataTransfer", {
+    value: {
+      types: ["application/x-vault-file-ids"],
+      getData: (type) =>
+        type === "application/x-vault-file-ids"
+          ? JSON.stringify(["qa-image", "qa-document"])
+          : "qa-image",
+    },
+  });
+  dropTarget.dispatchEvent(dropEvent);
+  await new Promise((r) => setTimeout(r, 100));
+  const movedRecords = await store.allRecords(db);
+  assert.equal(
+    movedRecords.find((record) => record.id === "qa-image").data.folderId,
+    "qa-folder",
+  );
+  assert.equal(
+    movedRecords.find((record) => record.id === "qa-document").data.folderId,
+    "qa-folder",
+  );
+  const card = [...document.querySelectorAll(".file-name")].find(
+    (button) => button.textContent === "Imagem vertical de teste com nome completo",
+  );
   assert.ok(card);
+  assert.equal(card.closest(".file-card").draggable, true);
   document.getElementById("lightboxInner").scrollTop = 80;
   document.getElementById("lightboxInner").scrollLeft = 40;
   document.getElementById("lightboxInfo").scrollTop = 120;
@@ -258,9 +300,9 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(document.getElementById("lightboxType").textContent, "Foto");
   assert.equal(
     document.getElementById("lightboxPosition").textContent,
-    "1 de 1",
+    "1 de 2",
   );
-  assert.equal(document.querySelectorAll(".lightbox-filmstrip-item").length, 1);
+  assert.equal(document.querySelectorAll(".lightbox-filmstrip-item").length, 2);
   assert.equal(
     document
       .querySelector(".lightbox-filmstrip-item")
@@ -268,12 +310,52 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     "true",
   );
   assert.equal(document.getElementById("lbPrevBtn").disabled, true);
-  assert.equal(document.getElementById("lbNextBtn").disabled, true);
+  assert.equal(document.getElementById("lbNextBtn").disabled, false);
   assert.match(document.getElementById("lightboxInfo").textContent, /Detalhes/);
   assert.match(
     document.getElementById("lightboxInfo").textContent,
     /720 × 1280/,
   );
+  assert.ok(document.getElementById("lbFitBtn"));
+  assert.ok(document.getElementById("lbOriginalBtn"));
+  assert.ok(document.getElementById("lbFullscreenBtn"));
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "+", bubbles: true }),
+  );
+  assert.equal(
+    document.querySelector("#lightboxInner img").style.transform,
+    "scale(1.25)",
+  );
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "0", bubbles: true }),
+  );
+  assert.equal(
+    document.querySelector("#lightboxInner img").style.transform,
+    "scale(1)",
+  );
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "1", bubbles: true }),
+  );
+  assert.equal(
+    document.getElementById("lightboxInner").classList.contains("original-size"),
+    true,
+  );
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "0", bubbles: true }),
+  );
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: " ", bubbles: true }),
+  );
+  assert.equal(document.getElementById("lightboxType").textContent, "Documento");
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+  );
+  assert.equal(document.getElementById("lightboxType").textContent, "Foto");
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "m", bubbles: true }),
+  );
+  assert.equal(document.getElementById("moveModal").classList.contains("active"), true);
+  document.getElementById("closeMoveModal").click();
   document.getElementById("lightboxInfoToggle").click();
   assert.equal(
     document.getElementById("lightbox").classList.contains("info-hidden"),
@@ -286,6 +368,10 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     "true",
   );
   document.getElementById("lightboxClose").click();
+  document.getElementById("navHome").click();
+  await new Promise((r) => setTimeout(r, 140));
+  assert.equal(document.getElementById("dashboardContinueSection").hidden, false);
+  assert.ok(document.querySelectorAll(".continue-file-item").length >= 2);
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),
   );

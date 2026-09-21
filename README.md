@@ -31,6 +31,14 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 - Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
+- Arraste um cartão para uma pasta da árvore, uma pasta fixada ou um cartão de pasta para movê-lo. Ao arrastar um item selecionado, todos os selecionados são movidos juntos; arquivos do computador continuam abrindo a área de envio.
+- Fixe as pastas mais usadas pela estrela ao lado do nome ou em **Ações da pasta**. A seção **Continuar de onde parei**, no Início, reabre os últimos arquivos visualizados.
+
+### Visualizador
+
+- Use `←` e `→` para navegar, `Espaço` para avançar, `F` para favoritar, `T` para editar etiquetas e `M` para mover.
+- Em fotos e vídeos, `0` ajusta à tela, `1` mostra o tamanho original e `Enter` alterna a tela cheia. Em fotos, `+` e `-` controlam o zoom.
+- As miniaturas são carregadas progressivamente. URLs temporárias do Drive são reaproveitadas enquanto válidas e os arquivos vizinhos são pré-carregados para reduzir a espera ao navegar.
 
 ### Etiquetas coloridas
 

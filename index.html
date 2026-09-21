@@ -135,6 +135,16 @@
                 <span data-icon="FolderPlus"></span>
               </button>
             </div>
+            <div class="pinned-folders" id="pinnedFoldersSection" hidden>
+              <p class="pinned-folders-label">
+                <span data-icon="Star" aria-hidden="true"></span> Fixadas
+              </p>
+              <div
+                class="pinned-folder-list"
+                id="pinnedFolderList"
+                aria-label="Pastas fixadas"
+              ></div>
+            </div>
             <div class="folder-breadcrumb" id="folderBreadcrumb"></div>
             <ul class="folder-list" id="folderList">
               <li class="folder-item active" data-folder="root">
@@ -854,6 +864,30 @@
                 <div id="dashHighlights" class="home-highlight-list">
                   Nenhum destaque ainda
                 </div>
+              </article>
+            </section>
+
+            <section
+              class="dashboard-continue"
+              id="dashboardContinueSection"
+              hidden
+              aria-label="Continuar de onde parei"
+            >
+              <article class="home-panel continue-panel">
+                <div class="home-panel-head">
+                  <div>
+                    <span class="eyebrow">ACESSADOS RECENTEMENTE</span>
+                    <h2>Continuar de onde parei</h2>
+                  </div>
+                  <button
+                    class="text-panel-action"
+                    id="clearRecentlyViewed"
+                    type="button"
+                  >
+                    Limpar histórico
+                  </button>
+                </div>
+                <div class="continue-file-list" id="dashContinue"></div>
               </article>
             </section>
 
@@ -1718,6 +1752,13 @@
       <div class="modal folder-actions-modal">
         <h2 class="modal-title" id="folderActionsTitle">Pasta</h2>
         <div class="folder-action-list">
+          <button
+            class="folder-action-option"
+            id="folderActionPin"
+            type="button"
+          >
+            Fixar na barra lateral
+          </button>
           <button
             class="folder-action-option"
             id="folderActionRename"

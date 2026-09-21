@@ -79,6 +79,31 @@ const NAV_CONTENT_SCOPES = new Set([
   "favorites",
 ]);
 const DEFAULT_TAG_COLOR = "#4bce97";
+const RECENTLY_VIEWED_KEY = "vault_recently_viewed_v1";
+const PINNED_FOLDERS_KEY = "vault_pinned_folders_v1";
+const DRIVE_THUMBNAIL_CACHE_KEY = "vault_drive_thumbnails_v1";
+const DRIVE_THUMBNAIL_CACHE_TTL = 24 * 60 * 60 * 1000;
+const DRIVE_THUMBNAIL_CACHE_LIMIT = 240;
+
+function readStoredArray(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function readPersistedDriveThumbnails() {
+  const now = Date.now();
+  return readStoredArray(DRIVE_THUMBNAIL_CACHE_KEY).filter(
+    (entry) =>
+      entry?.id &&
+      entry?.url &&
+      Number.isFinite(entry.savedAt) &&
+      now - entry.savedAt < DRIVE_THUMBNAIL_CACHE_TTL,
+  );
+}
 
 function loadNavigationMemory() {
   try {
@@ -99,6 +124,10 @@ let activeAccountView =
 let isCompactView = false;
 let isSelectMode = false;
 let selectedIds = new Set();
+let pinnedFolderIds = new Set(readStoredArray(PINNED_FOLDERS_KEY));
+let recentlyViewed = readStoredArray(RECENTLY_VIEWED_KEY)
+  .filter((entry) => entry?.id && Number.isFinite(entry.viewedAt))
+  .slice(0, 20);
 let advancedFilters = { folderId: "", priority: "", dateFrom: "", dateTo: "" };
 let slideshowTimer = null;
 let folders = [];
@@ -152,7 +181,13 @@ let googleClientId = "";
 let driveManager = null;
 let currentConfig = null;
 let pendingUploadAccountSlot = "";
-const driveThumbnailCache = new Map();
+const persistedDriveThumbnails = readPersistedDriveThumbnails();
+const driveThumbnailCache = new Map(
+  persistedDriveThumbnails.map((entry) => [entry.id, entry.url]),
+);
+const driveThumbnailSavedAt = new Map(
+  persistedDriveThumbnails.map((entry) => [entry.id, entry.savedAt]),
+);
 const driveThumbnailRequests = new Map();
 const driveObjectUrls = new Map();
 
@@ -178,6 +213,9 @@ let lightboxGeneration = 0;
 let lightboxVideoUrl = null;
 let lightboxInfoVisible =
   localStorage.getItem("vault_viewer_details") !== "hidden";
+let lightboxFitMode = "fit";
+let lightboxPrefetchTimer = null;
+let loadMoreObserver = null;
 let mangaState = {
   pages: [],
   index: 0,
@@ -232,6 +270,8 @@ const searchTagsPanel = $("searchTagsPanel");
 const searchTagOptions = $("searchTagOptions");
 const searchTagsCount = $("searchTagsCount");
 const searchTagsLabel = $("searchTagsLabel");
+const pinnedFoldersSection = $("pinnedFoldersSection");
+const pinnedFolderList = $("pinnedFolderList");
 const sortSelect = $("sortSelect");
 const qualitySelect = $("qualitySelect");
 const accountViewSelect = $("accountViewSelect");
@@ -331,6 +371,7 @@ const folderActionsModal = $("folderActionsModal");
 const folderActionsTitle = $("folderActionsTitle");
 const folderActionRename = $("folderActionRename");
 const folderActionDelete = $("folderActionDelete");
+const folderActionPin = $("folderActionPin");
 const folderActionsClose = $("folderActionsClose");
 const backupInput = $("backupInput");
 const mangaReader = $("mangaReader");
@@ -345,6 +386,8 @@ const mangaZoomIn = $("mangaZoomIn");
 const mangaZoomOut = $("mangaZoomOut");
 const mangaClose = $("mangaClose");
 const connectionStatus = $("connectionStatus");
+const dashboardContinueSection = $("dashboardContinueSection");
+const dashContinue = $("dashContinue");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -1372,6 +1415,14 @@ function listenFolders() {
     query(collection(db, "vault_folders"), orderBy("createdAt", "asc")),
     (snap) => {
       folders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const validFolderIds = new Set(folders.map((folder) => folder.id));
+      const validPinnedIds = [...pinnedFolderIds].filter((id) =>
+        validFolderIds.has(id),
+      );
+      if (validPinnedIds.length !== pinnedFolderIds.size) {
+        pinnedFolderIds = new Set(validPinnedIds);
+        persistPinnedFolders();
+      }
       rebuildFolderIndexes();
       ensureCurrentFolderExists();
       renderBreadcrumb();
@@ -1596,7 +1647,47 @@ function renderFolderList() {
     "active",
     navState.folderId === ROOT_ID,
   );
+  renderPinnedFolders();
   renderFolderBreadcrumb();
+}
+
+function persistPinnedFolders() {
+  localStorage.setItem(PINNED_FOLDERS_KEY, JSON.stringify([...pinnedFolderIds]));
+}
+
+function renderPinnedFolders() {
+  if (!pinnedFoldersSection || !pinnedFolderList) return;
+  const pinned = [...pinnedFolderIds]
+    .map((id) => getFolder(id))
+    .filter((folder) => folder && matchesAccountView(folder));
+  pinnedFoldersSection.hidden = pinned.length === 0;
+  pinnedFolderList.innerHTML = pinned
+    .map(
+      (folder) => `<button class="pinned-folder-item${navState.folderId === folder.id ? " active" : ""}" type="button" data-pinned-folder="${esc(folder.id)}" title="Abrir ${esc(folder.name)}">
+        <span class="pinned-folder-icon">${icon("Folder")}</span>
+        <span>${esc(folder.name)}</span>
+        <span class="pinned-folder-star" aria-hidden="true">${icon("Star")}</span>
+      </button>`,
+    )
+    .join("");
+  pinnedFolderList.querySelectorAll("[data-pinned-folder]").forEach((button) => {
+    const folderId = button.dataset.pinnedFolder;
+    button.onclick = () => dispatchNavigation("open", { folderId });
+    attachFolderDrop(button, folderId);
+  });
+}
+
+function togglePinnedFolder(folder) {
+  if (!folder) return;
+  const willPin = !pinnedFolderIds.has(folder.id);
+  if (willPin) pinnedFolderIds.add(folder.id);
+  else pinnedFolderIds.delete(folder.id);
+  persistPinnedFolders();
+  renderFolderList();
+  showToast(
+    willPin ? "Pasta fixada na barra lateral" : "Pasta removida das fixadas",
+    "success",
+  );
 }
 
 function renderFolderTreeNode(folder, depth) {
@@ -1606,7 +1697,8 @@ function renderFolderTreeNode(folder, depth) {
   const li = document.createElement("li");
   li.className =
     "folder-item tree-folder-item" +
-    (navState.folderId === folder.id ? " active" : "");
+    (navState.folderId === folder.id ? " active" : "") +
+    (pinnedFolderIds.has(folder.id) ? " is-pinned" : "");
   li.style.setProperty("--folder-depth", depth);
   li.innerHTML = `
     <button class="folder-expander ${hasChildren ? "" : "empty"}" aria-expanded="${isExpanded}" title="${hasChildren ? "Expandir/Recolher" : ""}">
@@ -1615,6 +1707,7 @@ function renderFolderTreeNode(folder, depth) {
     <span class="folder-icon">${icon("Folder")}</span>
     <span class="account-badge folder-account-badge">${accountBadge(folder)}</span>
     <button type="button" class="folder-name" title="${esc(folder.name)}">${esc(folder.name)}</button>
+    <button class="folder-pin${pinnedFolderIds.has(folder.id) ? " active" : ""}" type="button" title="${pinnedFolderIds.has(folder.id) ? "Desafixar pasta" : "Fixar pasta"}" aria-label="${pinnedFolderIds.has(folder.id) ? "Desafixar" : "Fixar"} ${esc(folder.name)}" aria-pressed="${pinnedFolderIds.has(folder.id)}">${icon("Star")}</button>
     <button class="folder-rename" title="Renomear pasta">Renomear</button>
     <button class="folder-delete" title="Excluir pasta">${icon("X")}</button>`;
 
@@ -1625,6 +1718,10 @@ function renderFolderTreeNode(folder, depth) {
   li.querySelector(".folder-rename").onclick = (e) => {
     e.stopPropagation();
     renameFolder(folder);
+  };
+  li.querySelector(".folder-pin").onclick = (e) => {
+    e.stopPropagation();
+    togglePinnedFolder(folder);
   };
   li.querySelector(".folder-delete").onclick = (e) => {
     e.stopPropagation();
@@ -2762,15 +2859,46 @@ function makeFileCard(file) {
   };
   card.draggable = !isTrash;
   card.addEventListener("dragstart", (e) => {
+    const ids = selectedIds.has(file.id) ? [...selectedIds] : [file.id];
+    e.dataTransfer.setData(
+      "application/x-vault-file-ids",
+      JSON.stringify(ids),
+    );
     e.dataTransfer.setData("text/plain", file.id);
     e.dataTransfer.effectAllowed = "move";
+    card.classList.add("is-dragging");
+    document.body.classList.add("dragging-library-files");
+    document.body.dataset.dragCount = String(ids.length);
+  });
+  card.addEventListener("dragend", () => {
+    card.classList.remove("is-dragging");
+    document.body.classList.remove("dragging-library-files");
+    delete document.body.dataset.dragCount;
+    document
+      .querySelectorAll(".drop-target")
+      .forEach((target) => target.classList.remove("drop-target"));
   });
 
   const mediaEl = card.querySelector(".file-thumb img, .file-thumb video");
   if (file.missing) markFileUnavailable(card, file);
   if (mediaEl) {
-    mediaEl.addEventListener("error", () => markFileUnavailable(card), {
-      once: true,
+    let retriedDriveThumbnail = false;
+    mediaEl.addEventListener("error", async () => {
+      if (
+        isGoogleDriveRecord(file) &&
+        mediaEl.tagName === "IMG" &&
+        !retriedDriveThumbnail
+      ) {
+        retriedDriveThumbnail = true;
+        driveThumbnailCache.delete(file.id);
+        driveThumbnailSavedAt.delete(file.id);
+        const refreshed = await loadDriveThumbnail(file, true);
+        if (refreshed) {
+          mediaEl.src = refreshed;
+          return;
+        }
+      }
+      markFileUnavailable(card, file);
     });
   }
   if (
@@ -2884,6 +3012,29 @@ function mediaThumbUrl(file, w = 520, h = 360) {
   return "";
 }
 
+function persistDriveThumbnailCache() {
+  try {
+    const entries = [...driveThumbnailCache.entries()]
+      .map(([id, url]) => ({
+        id,
+        url,
+        savedAt: driveThumbnailSavedAt.get(id) || Date.now(),
+      }))
+      .sort((a, b) => b.savedAt - a.savedAt)
+      .slice(0, DRIVE_THUMBNAIL_CACHE_LIMIT);
+    localStorage.setItem(DRIVE_THUMBNAIL_CACHE_KEY, JSON.stringify(entries));
+  } catch {
+    // A biblioteca continua usando o cache em memória quando a cota local acaba.
+  }
+}
+
+function rememberDriveThumbnail(id, url) {
+  if (!id || !url) return;
+  driveThumbnailCache.set(id, url);
+  driveThumbnailSavedAt.set(id, Date.now());
+  persistDriveThumbnailCache();
+}
+
 async function loadDriveThumbnail(file, force = false) {
   if (file.customCover) return file.customCover;
   const cover = file.coverFileId && fileById.get(file.coverFileId);
@@ -2904,7 +3055,7 @@ async function loadDriveThumbnail(file, force = false) {
     .getMetadata(recordAccountSlot(file), file.driveFileId)
     .then((metadata) => {
       const thumbnail = metadata.thumbnailLink || "";
-      if (thumbnail) driveThumbnailCache.set(file.id, thumbnail);
+      if (thumbnail) rememberDriveThumbnail(file.id, thumbnail);
       file.driveThumbnailLink = thumbnail;
       file.driveWebViewLink =
         metadata.webViewLink || file.driveWebViewLink || "";
@@ -3085,6 +3236,9 @@ function makeFolderCard(folder, count) {
 function openFolderActionsModal(folder) {
   folderForActions = folder;
   folderActionsTitle.textContent = folder.name || "Pasta";
+  folderActionPin.textContent = pinnedFolderIds.has(folder.id)
+    ? "Desafixar da barra lateral"
+    : "Fixar na barra lateral";
   folderActionsModal.classList.add("active");
 }
 
@@ -3268,6 +3422,11 @@ coverModal.onclick = (e) => {
   if (e.target === coverModal) closeFolderCoverPicker();
 };
 folderActionsClose.onclick = closeFolderActionsModal;
+folderActionPin.onclick = () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  togglePinnedFolder(folder);
+};
 folderActionRename.onclick = async () => {
   const folder = folderForActions;
   closeFolderActionsModal();
@@ -3282,27 +3441,82 @@ folderActionsModal.onclick = (e) => {
   if (e.target === folderActionsModal) closeFolderActionsModal();
 };
 function attachFolderDrop(el, folderId) {
+  const acceptsVaultFiles = (event) =>
+    [...(event.dataTransfer?.types || [])].includes(
+      "application/x-vault-file-ids",
+    );
   el.addEventListener("dragover", (e) => {
+    if (!acceptsVaultFiles(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
     el.classList.add("drop-target");
   });
-  el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
-  el.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    el.classList.remove("drop-target");
-    const fileId = e.dataTransfer.getData("text/plain");
-    if (!fileId) return;
-    try {
-      const file = fileById.get(fileId);
-      if (!file) return;
-      await moveStoredFileTo(file, folderId);
-      await updateDoc(doc(db, "vault_files", fileId), { folderId });
-      addHistory("Movido por arrastar");
-      showToast("Arquivo movido", "success");
-    } catch (err) {
-      showToast("Erro: " + err.message, "error");
-    }
+  el.addEventListener("dragleave", (e) => {
+    if (!el.contains(e.relatedTarget)) el.classList.remove("drop-target");
   });
+  el.addEventListener("drop", async (e) => {
+    if (!acceptsVaultFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove("drop-target");
+    let ids = [];
+    try {
+      ids = JSON.parse(
+        e.dataTransfer.getData("application/x-vault-file-ids") || "[]",
+      );
+    } catch {}
+    if (!ids.length) {
+      const fallbackId = e.dataTransfer.getData("text/plain");
+      if (fallbackId) ids = [fallbackId];
+    }
+    await moveFilesByDrag(ids, folderId);
+  });
+}
+
+async function moveFilesByDrag(ids, targetFolderId) {
+  const uniqueIds = [...new Set(ids)].filter(Boolean);
+  if (!uniqueIds.length) return;
+  const normalizedTarget = targetFolderId || null;
+  let moved = 0;
+  let failed = 0;
+  for (const id of uniqueIds) {
+    const file = fileById.get(id);
+    if (!file || file.deletedAt) continue;
+    if ((file.folderId || null) === normalizedTarget) continue;
+    try {
+      await moveStoredFileTo(file, normalizedTarget);
+      await updateDoc(doc(db, "vault_files", id), {
+        folderId: normalizedTarget,
+      });
+      file.folderId = normalizedTarget;
+      moved += 1;
+    } catch (error) {
+      console.warn(`Falha ao mover ${file.name}`, error);
+      failed += 1;
+    }
+  }
+  document.body.classList.remove("dragging-library-files");
+  delete document.body.dataset.dragCount;
+  if (uniqueIds.some((id) => selectedIds.has(id))) {
+    selectedIds.clear();
+    isSelectMode = false;
+    $("viewSelect").classList.remove("active");
+    updateBulkBar();
+  }
+  if (moved) {
+    const destination = normalizedTarget
+      ? getFolder(normalizedTarget)?.name || "pasta"
+      : "Raiz";
+    addHistory(`${moved} arquivo(s) movido(s) para ${destination}`);
+    renderGrid();
+    showToast(
+      `${moved} arquivo${moved === 1 ? "" : "s"} movido${moved === 1 ? "" : "s"} para “${destination}”`,
+      failed ? "error" : "success",
+    );
+  } else if (failed) {
+    showToast("Não foi possível mover os arquivos selecionados", "error");
+  }
 }
 
 async function renameFolder(folder) {
@@ -4374,6 +4588,8 @@ async function deleteStoredFilePermanently(file) {
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   driveObjectUrls.delete(file.id);
   driveThumbnailCache.delete(file.id);
+  driveThumbnailSavedAt.delete(file.id);
+  persistDriveThumbnailCache();
 }
 
 async function renameFile(file) {
@@ -5093,6 +5309,37 @@ function renderLightboxFilmstrip(file) {
   hydrateDriveThumbnails(lightboxFilmstrip);
 }
 
+function scheduleLightboxPrefetch() {
+  clearTimeout(lightboxPrefetchTimer);
+  const generation = lightboxGeneration;
+  lightboxPrefetchTimer = setTimeout(() => {
+    if (
+      generation !== lightboxGeneration ||
+      !lightbox.classList.contains("active")
+    )
+      return;
+    const candidates = [
+      lightboxFiles[lightboxIndex + 1],
+      lightboxFiles[lightboxIndex - 1],
+    ].filter(Boolean);
+    candidates.forEach((candidate, index) => {
+      if (!["image", "video"].includes(candidate.fileType)) return;
+      if (isGoogleDriveRecord(candidate)) {
+        loadDriveThumbnail(candidate).catch(() => {});
+        return;
+      }
+      const url =
+        candidate.fileType === "image" && index === 0
+          ? cloudPreview(candidate.cloudPublicId, "image") || candidate.url
+          : mediaThumbUrl(candidate, 900, 650);
+      if (!url) return;
+      const preload = new Image();
+      preload.decoding = "async";
+      preload.src = url;
+    });
+  }, 180);
+}
+
 function openLightbox(file) {
   closeLightbox();
   const generation = ++lightboxGeneration;
@@ -5101,6 +5348,7 @@ function openLightbox(file) {
     lightboxFiles = [file];
     lightboxIndex = 0;
   }
+  rememberRecentlyViewed(file);
 
   lightboxTitle.textContent = file.name || "Arquivo sem nome";
   lightboxType.textContent = lightboxFileTypeLabel(file);
@@ -5194,10 +5442,14 @@ function openLightbox(file) {
     { important: "Importante", critical: "Muito importante" }[file.priority] ||
     "Normal";
   const favLabel = file.favorite ? "Favoritado" : "Favoritar";
+  const mediaViewActions = ["image", "video"].includes(file.fileType)
+    ? `<button class="lb-action-btn is-active" id="lbFitBtn" type="button" aria-pressed="true" title="Ajustar à tela (0)">${icon("ScanLine")}<span>Ajustar</span></button>
+       <button class="lb-action-btn" id="lbOriginalBtn" type="button" aria-pressed="false" title="Tamanho original (1)">${icon("Square")}<span>Original</span></button>`
+    : "";
   const imageActions =
     file.fileType === "image"
-      ? `<button class="lb-action-btn" id="lbZoomOut" type="button">${icon("ZoomOut")}<span>Diminuir</span></button>
-         <button class="lb-action-btn" id="lbZoomIn" type="button">${icon("ZoomIn")}<span>Aumentar</span></button>
+      ? `<button class="lb-action-btn" id="lbZoomOut" type="button" title="Diminuir zoom (-)">${icon("ZoomOut")}<span>Diminuir</span></button>
+         <button class="lb-action-btn" id="lbZoomIn" type="button" title="Aumentar zoom (+)">${icon("ZoomIn")}<span>Aumentar</span></button>
          <button class="lb-action-btn" id="lbMangaBtn" type="button">${icon("BookOpen")}<span>Ler pasta</span></button>`
       : "";
   const videoActions =
@@ -5233,7 +5485,9 @@ function openLightbox(file) {
     </section>
     <section class="lb-panel-section">
       <div class="lb-section-heading"><div><span class="lb-eyebrow">Atalhos</span><h2>Ações</h2></div></div>
+      <p class="lb-shortcut-help"><kbd>F</kbd> favorito <kbd>T</kbd> etiquetas <kbd>M</kbd> mover <kbd>0</kbd> ajustar <kbd>1</kbd> original <kbd>Enter</kbd> tela cheia</p>
       <div class="lb-actions">
+        ${mediaViewActions}
         ${imageActions}
         ${videoActions}
         <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${icon("Star")}<span>${favLabel}</span></button>
@@ -5242,6 +5496,7 @@ function openLightbox(file) {
         <button class="lb-action-btn" id="lbMoveBtn" type="button">${icon("FolderOpen")}<span>Mover</span></button>
         <button class="lb-action-btn" id="lbRenameBtn" type="button">${icon("FileText")}<span>Renomear</span></button>
         <button class="lb-action-btn" id="lbShareBtn" type="button">${icon("Copy")}<span>Copiar link</span></button>
+        <button class="lb-action-btn" id="lbFullscreenBtn" type="button" title="Tela cheia (Enter)">${icon("PanelLeftClose")}<span>Tela cheia</span></button>
         <button class="lb-action-btn lb-link lb-download-btn" id="lbDownloadBtn" type="button">${icon("Download")}<span>Baixar arquivo</span></button>
       </div>
     </section>
@@ -5264,6 +5519,11 @@ function openLightbox(file) {
   };
   $("lbDescriptionBtn").onclick = () => openDescriptionModal(file);
   $("lbShareBtn").onclick = () => shareFile(file);
+  $("lbFullscreenBtn").onclick = toggleLightboxFullscreen;
+  if (["image", "video"].includes(file.fileType)) {
+    $("lbFitBtn").onclick = () => setLightboxFitMode("fit");
+    $("lbOriginalBtn").onclick = () => setLightboxFitMode("original");
+  }
   if (file.fileType === "image") {
     $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
     $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
@@ -5299,14 +5559,65 @@ function openLightbox(file) {
   renderLightboxFilmstrip(file);
   setLightboxInfoVisible(lightboxInfoVisible, false);
   lightbox.classList.add("active");
-  lightboxZoom = 1;
-  setLightboxZoom(1);
+  setLightboxFitMode("fit");
   lightboxInner.scrollTop = 0;
   lightboxInner.scrollLeft = 0;
   lightboxInfo.scrollTop = 0;
+  scheduleLightboxPrefetch();
 }
 
-function setLightboxZoom(value) {
+function syncLightboxViewControls() {
+  const fitButton = $("lbFitBtn");
+  const originalButton = $("lbOriginalBtn");
+  if (fitButton) {
+    const active = lightboxFitMode === "fit";
+    fitButton.classList.toggle("is-active", active);
+    fitButton.setAttribute("aria-pressed", String(active));
+  }
+  if (originalButton) {
+    const active = lightboxFitMode === "original";
+    originalButton.classList.toggle("is-active", active);
+    originalButton.setAttribute("aria-pressed", String(active));
+  }
+  const fullscreenButton = $("lbFullscreenBtn");
+  if (fullscreenButton) {
+    const label = fullscreenButton.querySelector("span:last-child");
+    if (label)
+      label.textContent = document.fullscreenElement
+        ? "Sair da tela cheia"
+        : "Tela cheia";
+  }
+}
+
+function setLightboxFitMode(mode) {
+  lightboxFitMode = mode === "original" ? "original" : "fit";
+  lightboxInner.classList.toggle(
+    "original-size",
+    lightboxFitMode === "original",
+  );
+  setLightboxZoom(1, { keepMode: true });
+  lightboxInner.scrollTop = 0;
+  lightboxInner.scrollLeft = 0;
+  if (lightboxFitMode === "original") {
+    requestAnimationFrame(() => {
+      lightboxInner.scrollTop = Math.max(
+        0,
+        (lightboxInner.scrollHeight - lightboxInner.clientHeight) / 2,
+      );
+      lightboxInner.scrollLeft = Math.max(
+        0,
+        (lightboxInner.scrollWidth - lightboxInner.clientWidth) / 2,
+      );
+    });
+  }
+  syncLightboxViewControls();
+}
+
+function setLightboxZoom(value, options = {}) {
+  if (!options.keepMode) {
+    lightboxFitMode = "custom";
+    lightboxInner.classList.remove("original-size");
+  }
   lightboxZoom = Math.max(0.5, Math.min(3, value));
   const media = lightboxInner.querySelector("img, video");
   if (media) {
@@ -5314,7 +5625,25 @@ function setLightboxZoom(value) {
     media.style.transformOrigin = "center center";
   }
   lightboxInner.classList.toggle("zoomed", lightboxZoom > 1);
+  syncLightboxViewControls();
 }
+
+async function toggleLightboxFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (lightbox.requestFullscreen) await lightbox.requestFullscreen();
+    else {
+      showToast("Tela cheia não está disponível neste navegador", "error");
+      return;
+    }
+    syncLightboxViewControls();
+  } catch (error) {
+    showToast("Não foi possível abrir em tela cheia", "error");
+    console.warn("Falha ao alternar tela cheia", error);
+  }
+}
+
+document.addEventListener("fullscreenchange", syncLightboxViewControls);
 
 async function renderDocumentPreview(file, generation) {
   const ext = (file.name || "").split(".").pop().toLowerCase();
@@ -5403,6 +5732,49 @@ $("lightboxClose").onclick = closeLightbox;
 lightbox.onclick = (e) => {
   if (e.target === lightbox) closeLightbox();
 };
+
+function currentLightboxFile() {
+  return lightboxIndex >= 0 ? lightboxFiles[lightboxIndex] : null;
+}
+
+function handleLightboxShortcut(event) {
+  if (!lightbox.classList.contains("active")) return false;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  if (
+    event.target.closest("button, a") &&
+    ["Enter", " "].includes(event.key)
+  )
+    return false;
+  const file = currentLightboxFile();
+  const key = event.key.toLowerCase();
+  const run = (callback) => {
+    event.preventDefault();
+    callback();
+    return true;
+  };
+  if (key === "f" && file)
+    return run(async () => {
+      await toggleFavorite(file);
+      if (lightbox.classList.contains("active"))
+        openLightbox(fileById.get(file.id) || file);
+    });
+  if (key === "t" && file)
+    return run(async () => {
+      if ((await editTags(file)) && lightbox.classList.contains("active"))
+        openLightbox(fileById.get(file.id) || file);
+    });
+  if (key === "m" && file) return run(() => openMoveModal(file));
+  if (["+", "="].includes(event.key))
+    return run(() => setLightboxZoom(lightboxZoom + 0.25));
+  if (event.key === "-")
+    return run(() => setLightboxZoom(lightboxZoom - 0.25));
+  if (event.key === "0") return run(() => setLightboxFitMode("fit"));
+  if (event.key === "1") return run(() => setLightboxFitMode("original"));
+  if (event.key === "Enter") return run(toggleLightboxFullscreen);
+  if (event.key === " ") return run(() => navigateLightbox(1));
+  return false;
+}
+
 document.onkeydown = (e) => {
   const primaryModifier = e.ctrlKey || e.metaKey;
   const blockingOverlay = document.querySelector(
@@ -5448,6 +5820,12 @@ document.onkeydown = (e) => {
     e.target.closest("input, textarea, select, [contenteditable=true]")
   )
     return;
+  if (
+    lightbox.classList.contains("active") &&
+    !document.querySelector(".modal-overlay.active") &&
+    handleLightboxShortcut(e)
+  )
+    return;
   if (mangaReader.classList.contains("active")) {
     if (e.key === "Escape") {
       closeMangaReader();
@@ -5485,7 +5863,11 @@ document.onkeydown = (e) => {
 };
 function closeLightbox() {
   lightboxGeneration++;
+  clearTimeout(lightboxPrefetchTimer);
+  if (document.fullscreenElement === lightbox)
+    document.exitFullscreen?.().catch(() => {});
   lightbox.classList.remove("active");
+  lightboxInner.classList.remove("zoomed", "original-size");
   lightboxInner.querySelectorAll("video, audio").forEach((media) => {
     media.pause();
     media.removeAttribute("src");
@@ -6143,15 +6525,30 @@ function getFileType(file) {
 }
 
 // ??? Drag & drop ??????????????????????????????????????????
+function isInternalLibraryDrag(event) {
+  return [...(event.dataTransfer?.types || [])].includes(
+    "application/x-vault-file-ids",
+  );
+}
+
 window.addEventListener("dragover", (e) => {
+  if (isInternalLibraryDrag(e)) {
+    e.preventDefault();
+    return;
+  }
   e.preventDefault();
   dropOverlay.classList.add("active");
 });
 window.addEventListener("dragleave", (e) => {
+  if (isInternalLibraryDrag(e)) return;
   if (!e.relatedTarget || !document.body.contains(e.relatedTarget))
     dropOverlay.classList.remove("active");
 });
 window.addEventListener("drop", (e) => {
+  if (isInternalLibraryDrag(e)) {
+    e.preventDefault();
+    return;
+  }
   e.preventDefault();
   dropOverlay.classList.remove("active");
   const dropped = Array.from(e.dataTransfer.files);
@@ -6267,6 +6664,12 @@ $("dashboardAllFilesBtn").onclick = () => {
     resetAdvancedFilters: true,
   });
 };
+$("clearRecentlyViewed").onclick = () => {
+  recentlyViewed = [];
+  persistRecentlyViewed();
+  renderRecentlyViewed([]);
+  showToast("Histórico de visualização limpo", "success");
+};
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
   $("viewDensity").classList.toggle("active", isCompactView);
@@ -6319,6 +6722,31 @@ loadMoreBtn.onclick = () => {
   renderGrid();
 };
 
+function setupProgressiveLoading() {
+  if (!("IntersectionObserver" in window) || loadMoreObserver) return;
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (
+        !entry?.isIntersecting ||
+        navState.section !== "files" ||
+        loadMoreBtn.style.display === "none" ||
+        loadMoreBtn.dataset.loading === "true"
+      )
+        return;
+      loadMoreBtn.dataset.loading = "true";
+      requestAnimationFrame(() => {
+        visibleLimit += PAGE_SIZE;
+        renderGrid();
+        delete loadMoreBtn.dataset.loading;
+      });
+    },
+    { rootMargin: "500px 0px" },
+  );
+  loadMoreObserver.observe(loadMoreBtn);
+}
+setupProgressiveLoading();
+
 // ??? Filter chips ?????????????????????????????????????????
 document.querySelectorAll(".chip").forEach((chip) => {
   chip.onclick = () => {
@@ -6350,28 +6778,7 @@ accountConnectBtn?.addEventListener("click", () => {
 
 function attachRootDrop() {
   const rootItem = folderList.firstElementChild;
-  rootItem.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    rootItem.classList.add("drop-target");
-  });
-  rootItem.addEventListener("dragleave", () =>
-    rootItem.classList.remove("drop-target"),
-  );
-  rootItem.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    rootItem.classList.remove("drop-target");
-    const fileId = e.dataTransfer.getData("text/plain");
-    if (!fileId) return;
-    try {
-      const file = fileById.get(fileId);
-      if (!file) return;
-      await moveStoredFileTo(file, null);
-      await updateDoc(doc(db, "vault_files", fileId), { folderId: null });
-      showToast("Arquivo movido para a raiz", "success");
-    } catch (err) {
-      showToast("Erro: " + err.message, "error");
-    }
-  });
+  attachFolderDrop(rootItem, null);
 }
 attachRootDrop();
 // ??? Sidebar ??????????????????????????????????????????????
@@ -7189,7 +7596,70 @@ function updateDashboard() {
   renderHistory();
   renderPhotoDashboard(active);
   renderDashboardHighlights(active);
+  renderRecentlyViewed(active);
   hydrateDriveThumbnails(dashboard);
+}
+
+function persistRecentlyViewed() {
+  try {
+    localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(recentlyViewed));
+  } catch {
+    // O histórico recente é opcional e não bloqueia o visualizador.
+  }
+}
+
+function rememberRecentlyViewed(file) {
+  if (!file?.id || file.deletedAt) return;
+  recentlyViewed = [
+    { id: file.id, viewedAt: Date.now() },
+    ...recentlyViewed.filter((entry) => entry.id !== file.id),
+  ].slice(0, 20);
+  persistRecentlyViewed();
+  if (navState.section === "home")
+    renderRecentlyViewed(files.filter((item) => !item.deletedAt));
+}
+
+function recentViewedLabel(timestamp) {
+  const elapsed = Math.max(0, Date.now() - Number(timestamp || 0));
+  if (elapsed < 60_000) return "Agora";
+  if (elapsed < 3_600_000)
+    return `Há ${Math.max(1, Math.round(elapsed / 60_000))} min`;
+  if (elapsed < 86_400_000)
+    return `Há ${Math.max(1, Math.round(elapsed / 3_600_000))} h`;
+  return new Date(timestamp).toLocaleDateString("pt-BR");
+}
+
+function renderRecentlyViewed(active) {
+  if (!dashboardContinueSection || !dashContinue) return;
+  const activeById = new Map(active.map((file) => [file.id, file]));
+  const recentFiles = recentlyViewed
+    .map((entry) => ({ file: activeById.get(entry.id), ...entry }))
+    .filter((entry) => entry.file && matchesAccountView(entry.file))
+    .slice(0, 8);
+  dashboardContinueSection.hidden = recentFiles.length === 0;
+  dashContinue.innerHTML = recentFiles
+    .map(({ file, viewedAt }) => {
+      const thumb = dashboardThumb(file, 260, 180);
+      const preview = ["image", "video"].includes(file.fileType)
+        ? thumb
+          ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />`
+          : `<span class="continue-file-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}">${icon(file.fileType === "video" ? "Film" : "Image")}</span>`
+        : `<span class="continue-file-placeholder">${docIcon(file.name)}</span>`;
+      return `<button class="continue-file-item" type="button" data-recent-file="${esc(file.id)}" title="Continuar em ${esc(file.name)}">
+        <span class="continue-file-thumb">${preview}${file.fileType === "video" ? `<span class="continue-file-play">${icon("Play")}</span>` : ""}</span>
+        <span class="continue-file-copy"><strong>${esc(file.name)}</strong><span>${esc(recentViewedLabel(viewedAt))} · ${esc(getFolderPathLabel(file.folderId) || "Raiz")}</span></span>
+      </button>`;
+    })
+    .join("");
+  dashContinue.querySelectorAll("[data-recent-file]").forEach((button) => {
+    button.onclick = () => {
+      const recentFileList = recentFiles.map((entry) => entry.file);
+      const file = activeById.get(button.dataset.recentFile);
+      if (!file) return;
+      lightboxFiles = recentFileList;
+      openLightbox(file);
+    };
+  });
 }
 
 function renderPhotoDashboard(active) {
