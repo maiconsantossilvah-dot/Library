@@ -2576,7 +2576,6 @@ function makeFileCard(file) {
   const mediaLayout = getMediaLayout(file);
   const isMedia = file.fileType === "image" || file.fileType === "video";
   const description = String(file.description || "").trim();
-  const hasMediaDescription = isMedia;
   card.className =
     "file-card" +
     (file.favorite ? " is-favorite" : "") +
@@ -2585,13 +2584,7 @@ function makeFileCard(file) {
       : "") +
     (isDuplicateFile(file) ? " is-duplicate" : "") +
     (selectedIds.has(file.id) ? " selected" : "") +
-    (isMedia ? ` media-${mediaLayout.orientation}` : "") +
-    (hasMediaDescription ? " has-media-description" : "");
-  if (hasMediaDescription && mediaLayout.orientation === "vertical") {
-    card.style.setProperty("--card-width", "min(100%, 390px)");
-  } else if (mediaLayout.cardWidth) {
-    card.style.setProperty("--card-width", mediaLayout.cardWidth);
-  }
+    (isMedia ? ` media-${mediaLayout.orientation}` : "");
 
   let thumbHtml = "";
   if (file.fileType === "image") {
@@ -2625,16 +2618,8 @@ function makeFileCard(file) {
     !!file.folderId && (file.fileType === "image" || file.fileType === "video");
   const canReadAsManga = file.fileType === "image";
   const canCopyAcrossAccounts = isGoogleDriveRecord(file);
-  const mediaDescriptionText = description || "Adicionar descricao...";
-  const mediaDescriptionClass = description ? "" : " is-empty";
-  const mediaDescriptionTop = hasMediaDescription
-    ? `<button type="button" class="media-description media-description-top${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</button>`
-    : "";
-  const mediaDescriptionSide = hasMediaDescription
-    ? `<button type="button" class="media-description media-description-side${mediaDescriptionClass}" title="Clique para editar a descricao">${esc(mediaDescriptionText)}</button>`
-    : "";
   const thumbBlock = `
-    <div class="file-thumb" ${mediaLayout.ratio ? `style="--media-ratio:${mediaLayout.ratio}"` : ""}>
+    <div class="file-thumb">
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
       <span class="account-badge file-account-badge">${accountBadge(file)}</span>
@@ -2643,41 +2628,46 @@ function makeFileCard(file) {
     </div>`;
 
   card.innerHTML = `
-    ${isMedia ? `<div class="file-media-frame">${mediaDescriptionTop}${thumbBlock}${mediaDescriptionSide}</div>` : thumbBlock}
+    ${isMedia ? `<div class="file-media-frame">${thumbBlock}</div>` : thumbBlock}
     <div class="file-info">
-      <div class="file-meta">
+      <div class="file-card-heading">
         <button type="button" class="file-name" title="${esc(file.name)}">${esc(file.name)}</button>
+        <div class="file-actions">
+          ${
+            isTrash
+              ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
+               <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
+               <div class="file-action-menu" role="menu">
+                 <button class="file-menu-item permanent-delete" type="button" role="menuitem">Excluir definitivo</button>
+               </div>`
+              : `<button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
+               <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
+               <div class="file-action-menu" role="menu">
+                 <button class="file-menu-item description-btn" type="button" role="menuitem">Descricao</button>
+                 <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
+                 <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
+                 <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
+                 <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
+                 ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
+                 ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
+                 ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
+                 <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
+               </div>`
+          }
+        </div>
+      </div>
+      <div class="file-card-details">
+        ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
+        <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
+      </div>
+      <div class="file-meta">
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
         ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
-        ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
         ${automaticLabels.map((label) => `<span class="auto-badge">${esc(label)}</span>`).join("")}
+        ${isMedia && description ? `<button type="button" class="media-description file-description" title="Editar descricao">${esc(description)}</button>` : ""}
         ${!isMedia && description ? `<p class="file-description">${esc(description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
         ${tags.length ? `<div class="tag-row">${renderTagPills(tags, { interactive: true })}</div>` : ""}
-      </div>
-      <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
-      <div class="file-actions">
-        ${
-          isTrash
-            ? `<button class="file-action-btn restore-btn" title="Restaurar">Restaurar</button>
-             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
-             <div class="file-action-menu" role="menu">
-               <button class="file-menu-item permanent-delete" type="button" role="menuitem">Excluir definitivo</button>
-             </div>`
-            : `<button class="file-action-btn move-btn" title="Mover para pasta">Mover</button>
-             <button class="file-action-btn action-menu-btn" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false" type="button">${icon("MoreHorizontal")}</button>
-             <div class="file-action-menu" role="menu">
-               <button class="file-menu-item description-btn" type="button" role="menuitem">Descricao</button>
-               <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
-               <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
-               <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
-               <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
-               ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
-               ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
-               ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
-               <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
-             </div>`
-        }
       </div>
     </div>`;
 
@@ -2763,19 +2753,25 @@ function makeFileCard(file) {
       once: true,
     });
   }
-  if (mediaEl && !mediaLayout.ratio) {
+  if (
+    mediaEl &&
+    !file.width &&
+    !file.height &&
+    !file.mediaWidth &&
+    !file.mediaHeight
+  ) {
     mediaEl.addEventListener(
       "load",
-      () => applyLoadedMediaRatio(card, mediaEl),
+      () => applyLoadedMediaOrientation(card, mediaEl),
       { once: true },
     );
     mediaEl.addEventListener(
       "loadedmetadata",
-      () => applyLoadedMediaRatio(card, mediaEl),
+      () => applyLoadedMediaOrientation(card, mediaEl),
       { once: true },
     );
     if (mediaEl.complete || mediaEl.readyState >= 1)
-      applyLoadedMediaRatio(card, mediaEl);
+      applyLoadedMediaOrientation(card, mediaEl);
   }
   return card;
 }
@@ -2810,38 +2806,22 @@ function markFileUnavailable(card, file = null) {
 function getMediaLayout(file) {
   const w = Number(file.width || file.mediaWidth);
   const h = Number(file.height || file.mediaHeight);
-  if (!w || !h) return { ratio: "", cardWidth: "", orientation: "horizontal" };
+  if (!w || !h) return { orientation: "horizontal" };
   return mediaLayoutFromSize(w, h);
 }
 
 function mediaLayoutFromSize(w, h) {
   const ratioValue = w / h;
   const orientation = ratioValue < 1 ? "vertical" : "horizontal";
-  let cardWidth = "";
-  if (ratioValue < 0.62) cardWidth = "min(72%, 220px)";
-  else if (ratioValue < 0.85) cardWidth = "min(82%, 250px)";
-  return { ratio: `${w} / ${h}`, cardWidth, orientation };
+  return { orientation };
 }
 
-function applyLoadedMediaRatio(card, mediaEl) {
+function applyLoadedMediaOrientation(card, mediaEl) {
   const w = mediaEl.naturalWidth || mediaEl.videoWidth;
   const h = mediaEl.naturalHeight || mediaEl.videoHeight;
   if (!w || !h) return;
   const layout = mediaLayoutFromSize(w, h);
-  card
-    .querySelector(".file-thumb")
-    ?.style.setProperty("--media-ratio", layout.ratio);
   setMediaOrientationClass(card, layout.orientation);
-  if (
-    card.classList.contains("has-media-description") &&
-    layout.orientation === "vertical"
-  ) {
-    card.style.setProperty("--card-width", "min(100%, 390px)");
-  } else if (layout.cardWidth) {
-    card.style.setProperty("--card-width", layout.cardWidth);
-  } else {
-    card.style.removeProperty("--card-width");
-  }
 }
 
 function setMediaOrientationClass(card, orientation) {
@@ -7109,9 +7089,13 @@ function customFieldSummary(file) {
 }
 function dateSummary(file) {
   const parts = [];
-  if (file.eventDate) parts.push(`Data: ${file.eventDate}`);
-  if (file.dueDate) parts.push(`Limite: ${file.dueDate}`);
+  if (file.eventDate) parts.push(`Data ${formatCardDate(file.eventDate)}`);
+  if (file.dueDate) parts.push(`Limite ${formatCardDate(file.dueDate)}`);
   return parts.join(" · ");
+}
+function formatCardDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || "");
 }
 function normalizeNotes(value) {
   return Array.isArray(value)

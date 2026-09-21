@@ -103,9 +103,12 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   const store = await import("../modules/local-store.js");
   const db = await store.openLocalStore();
   await store.setDoc(store.doc(db, "vault_files", "qa-image"), {
-    name: "Imagem de teste",
+    name: "Imagem vertical de teste com nome completo",
     fileType: "image",
     size: 1,
+    width: 720,
+    height: 1280,
+    eventDate: "2026-08-04",
     tags: [{ name: "Viagem", color: "#579dff" }],
     url: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
     createdAt: new Date().toISOString(),
@@ -117,6 +120,15 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(initiallyStoredImage.tags[0].color, "#579dff");
   document.getElementById("clearSearchFilters").click();
   assert.equal(document.getElementById("legacyMigrationNotice").hidden, true);
+  const mediaCard = document.querySelector(".file-card");
+  assert.equal(mediaCard.classList.contains("media-vertical"), true);
+  assert.equal(mediaCard.style.getPropertyValue("--card-width"), "");
+  assert.equal(mediaCard.querySelector(".media-description"), null);
+  assert.match(
+    mediaCard.querySelector(".file-card-details").textContent,
+    /Data 04\/08\/2026/,
+  );
+  assert.equal(mediaCard.querySelectorAll(".file-actions").length, 1);
   const tagChip = document.querySelector(".tag-chip");
   assert.equal(tagChip.textContent, "Viagem");
   assert.match(tagChip.getAttribute("style"), /#579dff/);
