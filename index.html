@@ -69,14 +69,10 @@
           <button class="app-nav-item" id="navFiles" type="button">
             <span
               class="app-nav-icon"
-              data-icon="Files"
+              data-icon="Library"
               aria-hidden="true"
             ></span
-            ><span>Arquivos</span>
-          </button>
-          <button class="app-nav-item" id="navPhotos" type="button">
-            <span data-icon="Images" aria-hidden="true"></span
-            ><span>Fotos</span>
+            ><span>Biblioteca</span>
           </button>
           <button class="app-nav-item" id="navMural" type="button">
             <span data-icon="LayoutGrid" aria-hidden="true"></span
@@ -89,16 +85,8 @@
             class="sidebar-section sidebar-library-section"
             aria-label="Navegação principal"
           >
-            <p class="sidebar-label">Atalhos</p>
+            <p class="sidebar-label">Acesso rápido</p>
             <div class="filter-chips nav-chips">
-              <button class="chip active" data-filter="all">
-                <span
-                  class="nav-chip-icon"
-                  data-icon="Files"
-                  aria-hidden="true"
-                ></span
-                ><span>Todos os arquivos</span>
-              </button>
               <button class="chip" data-filter="recent">
                 <span
                   class="nav-chip-icon"
@@ -122,22 +110,6 @@
                   aria-hidden="true"
                 ></span
                 ><span>Importantes</span>
-              </button>
-              <button class="chip" data-filter="duplicates">
-                <span
-                  class="nav-chip-icon"
-                  data-icon="Copy"
-                  aria-hidden="true"
-                ></span
-                ><span>Duplicados</span>
-              </button>
-              <button class="chip" data-filter="screenshots">
-                <span
-                  class="nav-chip-icon"
-                  data-icon="ScanLine"
-                  aria-hidden="true"
-                ></span
-                ><span>Capturas</span>
               </button>
               <button class="chip" data-filter="trash">
                 <span
@@ -171,32 +143,9 @@
               </li>
             </ul>
           </section>
-
-          <section class="sidebar-section filter-section sidebar-file-types">
-            <p class="sidebar-label">Por tipo</p>
-            <div class="filter-chips type-chips">
-              <button class="chip" data-filter="media">Mídia</button>
-              <button class="chip" data-filter="image">Imagens</button>
-              <button class="chip" data-filter="video">Vídeos</button>
-              <button class="chip" data-filter="document">Documentos</button>
-              <button class="chip" data-filter="untagged">Sem tags</button>
-              <button class="chip" data-filter="largeVideos">
-                Vídeos grandes
-              </button>
-            </div>
-          </section>
         </div>
 
         <footer class="sidebar-footer">
-          <section class="sidebar-section maintenance-section">
-            <p class="sidebar-label">Cuidado do acervo</p>
-            <button class="btn-new-folder" id="btnCheckFiles">
-              Verificar arquivos
-            </button>
-            <p class="storage-text helper-text">
-              Confere os arquivos da conta ou da visão atual.
-            </p>
-          </section>
           <div class="sidebar-storage">
             <p class="sidebar-label">Espaço do acervo</p>
             <div class="storage-bar-wrap">
@@ -241,69 +190,30 @@
                 id="searchInput"
                 placeholder="Buscar no seu acervo..."
                 aria-label="Buscar arquivo, tag ou conteúdo indexado"
+                aria-keyshortcuts="Control+K Meta+K"
               />
+              <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
             </div>
 
             <div class="masthead-actions">
               <button
                 class="utility-btn"
-                id="privacyToggle"
+                id="toolsPanelToggle"
                 type="button"
-                title="Modo discreto"
-                aria-label="Modo discreto"
-                aria-pressed="false"
+                aria-expanded="false"
+                aria-controls="toolsPanel"
+                title="Abrir ferramentas"
               >
-                <span data-icon="ShieldAlert"></span>
+                <span data-icon="SlidersHorizontal"></span
+                ><span>Ferramentas</span>
               </button>
-              <button
-                class="utility-btn"
-                id="privacyHide"
-                type="button"
-                title="Ocultar conteudo (Ctrl+Shift+H)"
-                aria-label="Ocultar conteudo"
-              >
-                <span data-icon="PanelLeftClose"></span>
-              </button>
-              <button
-                class="theme-toggle"
-                id="themeToggle"
-                type="button"
-                aria-label="Ativar modo escuro"
-                title="Ativar modo escuro"
-              >
-                <span class="theme-icon-moon" data-icon="Moon"></span
-                ><span class="theme-icon-sun" data-icon="Sun"></span>
-                <span class="sr-only" id="themeToggleText"
-                  >Ativar modo escuro</span
-                >
-              </button>
-              <span
-                class="sync-status"
-                id="syncStatus"
-                role="status"
-                aria-live="polite"
-                >Carregando biblioteca local…</span
-              >
-              <button
-                id="updateAppBtn"
-                class="utility-btn"
-                type="button"
-                hidden
-              >
-                Atualizar aplicativo
-              </button>
-              <span
-                class="connection-status"
-                id="connectionStatus"
-                role="status"
-                aria-live="polite"
-                >Verificando conexao</span
-              >
               <div class="primary-actions">
                 <button
                   class="action-btn action-primary"
                   type="button"
                   data-upload
+                  title="Adicionar arquivos (Ctrl+U)"
+                  aria-keyshortcuts="Control+U Meta+U"
                 >
                   <span data-icon="Plus"></span><span>Adicionar</span></button
                 ><input type="file" id="fileInput" multiple hidden />
@@ -327,8 +237,27 @@
             </button>
           </section>
           <div class="workspace-toolbar">
+            <div
+              class="library-scope-tabs"
+              role="group"
+              aria-label="Tipo de arquivo"
+            >
+              <button class="library-scope-tab chip active" data-filter="all">
+                Todos
+              </button>
+              <button class="library-scope-tab chip" data-filter="image">
+                Fotos
+              </button>
+              <button class="library-scope-tab chip" data-filter="video">
+                Vídeos
+              </button>
+              <button class="library-scope-tab chip" data-filter="document">
+                Documentos
+              </button>
+            </div>
+
             <div class="view-toggle" aria-label="Modos de visualizacao">
-              <span class="toolbar-label">Visualizar</span>
+              <span class="sr-only">Visualizar</span>
               <button
                 class="view-btn active"
                 id="viewGrid"
@@ -378,15 +307,6 @@
               >
                 Filtros
               </button>
-              <button
-                class="utility-btn"
-                id="toolsPanelToggle"
-                type="button"
-                aria-expanded="false"
-                aria-controls="toolsPanel"
-              >
-                Mais
-              </button>
             </div>
             <div class="trash-actions" id="trashActions" hidden>
               <button class="utility-btn" id="btnRestoreTrash" type="button">
@@ -412,6 +332,18 @@
                 aria-label="Fechar filtros"
               >
                 <span data-icon="X"></span>
+              </button>
+            </div>
+            <div
+              class="smart-filter-row"
+              role="group"
+              aria-label="Filtros rápidos"
+            >
+              <button class="chip" data-filter="duplicates">Duplicados</button>
+              <button class="chip" data-filter="screenshots">Capturas</button>
+              <button class="chip" data-filter="untagged">Sem tags</button>
+              <button class="chip" data-filter="largeVideos">
+                Vídeos grandes
               </button>
             </div>
             <div class="panel-grid">
@@ -480,6 +412,74 @@
           </div>
 
           <div class="topbar-panel tools-panel" id="toolsPanel" hidden>
+            <div class="panel-heading">
+              <span>Ferramentas e preferências</span>
+              <button
+                class="panel-close"
+                id="closeToolsPanel"
+                type="button"
+                aria-label="Fechar ferramentas"
+              >
+                <span data-icon="X"></span>
+              </button>
+            </div>
+            <div class="tools-status" aria-label="Status do aplicativo">
+              <span
+                class="sync-status"
+                id="syncStatus"
+                role="status"
+                aria-live="polite"
+                >Carregando biblioteca local…</span
+              >
+              <span
+                class="connection-status"
+                id="connectionStatus"
+                role="status"
+                aria-live="polite"
+                >Verificando conexao</span
+              >
+              <button
+                id="updateAppBtn"
+                class="utility-btn"
+                type="button"
+                hidden
+              >
+                Atualizar aplicativo
+              </button>
+            </div>
+            <div class="settings-shortcuts">
+              <button
+                class="utility-btn"
+                id="privacyToggle"
+                type="button"
+                title="Modo discreto"
+                aria-label="Modo discreto"
+                aria-pressed="false"
+              >
+                <span data-icon="ShieldAlert"></span><span>Modo discreto</span>
+              </button>
+              <button
+                class="utility-btn"
+                id="privacyHide"
+                type="button"
+                title="Ocultar conteudo (Ctrl+Shift+H)"
+                aria-label="Ocultar conteudo"
+              >
+                <span data-icon="PanelLeftClose"></span
+                ><span>Ocultar conteúdo</span>
+              </button>
+              <button
+                class="theme-toggle"
+                id="themeToggle"
+                type="button"
+                aria-label="Ativar modo escuro"
+                title="Ativar modo escuro"
+              >
+                <span class="theme-icon-moon" data-icon="Moon"></span
+                ><span class="theme-icon-sun" data-icon="Sun"></span>
+                <span id="themeToggleText">Ativar modo escuro</span>
+              </button>
+            </div>
             <div class="privacy-settings">
               <label
                 >Previa discreta
@@ -492,17 +492,6 @@
                 ><input id="privacyMute" type="checkbox" checked /> Silenciar no
                 modo discreto</label
               >
-            </div>
-            <div class="panel-heading">
-              <span>Seu acervo</span>
-              <button
-                class="panel-close"
-                id="closeToolsPanel"
-                type="button"
-                aria-label="Fechar ferramentas"
-              >
-                <span data-icon="X"></span>
-              </button>
             </div>
             <div class="advanced-views" aria-label="Mais visualizações">
               <button
@@ -596,6 +585,9 @@
               </button>
             </div>
             <div class="tool-grid">
+              <button class="utility-btn" id="btnCheckFiles" type="button">
+                Verificar arquivos
+              </button>
               <button class="utility-btn" id="syncNowBtn" type="button">
                 Sincronizar metadados
               </button>

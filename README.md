@@ -25,10 +25,17 @@ Opcionalmente, publique **o conteúdo de `dist/`** em vez da raiz. O build empac
 
 Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, execute `npm run vendor:icons` e inclua as alterações em `vendor/` no commit. O arquivo é gerado da biblioteca oficial e sua licença é preservada em `vendor/lucide.LICENSE`.
 
+## Navegação no computador
+
+- **Início** resume o acervo; **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual.
+- Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
+- Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
+- Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
+
 ## Proteção dos metadados
 
 - **Salvo neste navegador** não significa backup. Limpar os dados do site ou perder o dispositivo antes de sincronizar pode apagar alterações.
-- Ao conectar uma conta, o VAULT recupera seu índice no Drive e envia as alterações pendentes. Alterações posteriores são agrupadas para envio após uma breve pausa. **Arquivos → Mais → Sincronizar metadados** permite tentar novamente manualmente.
+- Ao conectar uma conta, o VAULT recupera seu índice no Drive e envia as alterações pendentes. Alterações posteriores são agrupadas para envio após uma breve pausa. **Ferramentas → Sincronizar metadados** permite tentar novamente manualmente.
 - Com a página visível e a sessão válida, verifica novas alterações a cada minuto, ao voltar para a aba e ao recuperar a conexão. Não há sincronização com o aplicativo fechado.
 - Espere **Metadados sincronizados no Drive** antes de limpar dados ou trocar de dispositivo. Itens de contas desconectadas continuam pendentes.
 - **Exportar JSON** salva um backup completo dos metadados, murais, notas, conexões e exclusões. Não inclui os arquivos binários. CSV é uma listagem, não um backup completo.
@@ -62,7 +69,7 @@ O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 
 ## Migrar da versão anterior
 
-Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Arquivos → Mais → Restaurar JSON** aceita o formato antigo e o completo v3. Registros com o mesmo ID podem ser substituídos após confirmação.
+Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Ferramentas → Restaurar JSON** aceita o formato antigo e o completo v3. Registros com o mesmo ID podem ser substituídos após confirmação.
 
 Se a configuração antiga ainda estiver neste navegador, o aplicativo inicia a migração **Firebase → catálogo local → Drive** automaticamente. Lê `vault_folders` e `vault_files` diretamente do servidor Firebase, preserva os IDs, relações entre pastas, tags, datas e referências aos arquivos originais e envia os metadados às contas conectadas. Fotos e vídeos não são duplicados. O Firebase nunca é alterado ou apagado.
 
@@ -72,7 +79,7 @@ O progresso diferencia leitura, envio, pendência e erro. Uma leitura vazia não
 
 Espere a confirmação de sincronização, confira os arquivos no acervo e exporte um backup JSON. Não desative nem apague o Firebase antes de verificar o resultado e a recuperação pelo Drive em outro navegador.
 
-A migração Cloudinary → Drive continua em **Mais** e preserva as referências antigas; ela não exclui os originais automaticamente.
+A migração Cloudinary → Drive continua em **Ferramentas** e preserva as referências antigas; ela não exclui os originais automaticamente.
 
 ## Estrutura
 

@@ -64,6 +64,33 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(document.body.dataset.section, "mural");
   document.getElementById("navFiles").click();
   assert.equal(document.body.dataset.section, "files", errors.join("\n"));
+  document.querySelector('.library-scope-tab[data-filter="image"]').click();
+  assert.equal(
+    JSON.parse(w.localStorage.getItem("vault_navigation_v1")).contentScope,
+    "image",
+  );
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+    }),
+  );
+  assert.equal(document.activeElement, document.getElementById("searchInput"));
+  document.body.dispatchEvent(
+    new w.KeyboardEvent("keydown", {
+      key: "N",
+      code: "KeyN",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+    }),
+  );
+  assert.equal(
+    document.getElementById("folderModal").classList.contains("active"),
+    true,
+  );
+  document.getElementById("cancelFolder").click();
   document.getElementById("searchInput").value = "sem resultado";
   document.getElementById("searchInput").dispatchEvent(new w.Event("input"));
   await new Promise((r) => setTimeout(r, 220));

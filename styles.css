@@ -7854,6 +7854,306 @@ button:disabled {
   display: block;
   margin: 12px 0;
 }
+
+/* Desktop library navigation */
+.vault-reimagined .search-shortcut {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text3);
+  font: 600 10px/1.3 var(--font-mono);
+  white-space: nowrap;
+}
+
+.vault-reimagined .library-scope-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #ded7ca;
+  border-radius: 12px;
+  background: rgba(255, 253, 248, 0.72);
+}
+
+.vault-reimagined .library-scope-tab.chip {
+  min-height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text2);
+  font: 600 12px/1 var(--font-body);
+  letter-spacing: 0;
+}
+
+.vault-reimagined .library-scope-tab.chip:hover {
+  background: #f1ece3;
+  color: var(--text);
+}
+
+.vault-reimagined .library-scope-tab.chip.active {
+  background: #dfece2;
+  color: #245f47;
+  box-shadow: none;
+}
+
+.vault-reimagined .smart-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 14px 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vault-reimagined .smart-filter-row .chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text2);
+  font: 600 11px/1 var(--font-body);
+  letter-spacing: 0;
+}
+
+.vault-reimagined .smart-filter-row .chip:hover,
+.vault-reimagined .smart-filter-row .chip.active {
+  border-color: #a8c2ae;
+  background: #e8f1e8;
+  color: #245f47;
+}
+
+.vault-reimagined .tools-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.vault-reimagined .tools-status .sync-status {
+  max-width: none;
+}
+
+.vault-reimagined .tools-status .connection-status {
+  justify-self: end;
+}
+
+.vault-reimagined .tools-status #updateAppBtn {
+  grid-column: 1 / -1;
+}
+
+.vault-reimagined .settings-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.vault-reimagined .settings-shortcuts :is(.utility-btn, .theme-toggle) {
+  display: flex;
+  width: auto;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text2);
+  font: 600 11px/1.2 var(--font-body);
+  text-align: left;
+}
+
+.vault-reimagined .privacy-settings {
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 2px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vault-reimagined .privacy-settings .sort-select {
+  width: auto;
+  margin: 0;
+}
+
+.vault-reimagined .sort-cluster,
+.vault-reimagined .tools-panel .account-cluster {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.vault-reimagined .sort-cluster .sort-select {
+  height: 38px;
+  min-height: 38px;
+}
+
+.vault-reimagined .tools-panel {
+  width: min(720px, calc(100vw - 40px));
+}
+
+.vault-reimagined[data-theme="dark"] .library-scope-tabs,
+.vault-reimagined[data-theme="dark"] .library-scope-tab.chip,
+.vault-reimagined[data-theme="dark"] .smart-filter-row .chip,
+.vault-reimagined[data-theme="dark"] .tools-status,
+.vault-reimagined[data-theme="dark"]
+  .settings-shortcuts
+  :is(.utility-btn, .theme-toggle),
+.vault-reimagined[data-theme="dark"] .search-shortcut {
+  border-color: #48584f;
+  background: #202d27;
+  color: #bac8bf;
+}
+
+.vault-reimagined[data-theme="dark"] .library-scope-tab.chip:hover,
+.vault-reimagined[data-theme="dark"] .smart-filter-row .chip:hover {
+  background: #2a3931;
+  color: #f2f1eb;
+}
+
+.vault-reimagined[data-theme="dark"] .library-scope-tab.chip.active,
+.vault-reimagined[data-theme="dark"] .smart-filter-row .chip.active {
+  border-color: #527260;
+  background: #28463a;
+  color: #b8e6c6;
+}
+
+@media (min-width: 761px) {
+  .vault-reimagined .app-frame {
+    grid-template-columns: 276px minmax(0, 1fr);
+  }
+
+  .vault-reimagined .sidebar-header {
+    min-height: 76px;
+    padding: 16px 18px 12px;
+  }
+
+  .vault-reimagined .app-navigation {
+    margin-bottom: 8px;
+  }
+
+  .vault-reimagined .app-nav-item {
+    min-height: 42px;
+  }
+
+  .vault-reimagined .sidebar-scroll {
+    overflow: hidden;
+  }
+
+  .vault-reimagined .sidebar-library-section {
+    flex: 0 0 auto;
+    padding-bottom: 10px;
+  }
+
+  .vault-reimagined .sidebar-collections {
+    flex: 1 1 auto;
+    min-height: 150px;
+    margin-top: 4px;
+    overflow-y: auto;
+    scrollbar-color: rgba(241, 244, 234, 0.2) transparent;
+  }
+
+  .vault-reimagined .sidebar-footer {
+    padding-top: 12px;
+  }
+
+  .vault-reimagined .sidebar-storage {
+    padding: 0 21px 16px;
+  }
+
+  .vault-reimagined .workspace-masthead {
+    grid-template-columns: minmax(180px, 0.66fr) minmax(320px, 1.34fr) auto;
+    gap: 18px;
+    padding: 14px 30px 10px;
+  }
+
+  .vault-reimagined .topbar-kicker {
+    margin-bottom: 2px;
+  }
+
+  .vault-reimagined .breadcrumb {
+    font-size: clamp(23px, 2vw, 29px);
+  }
+
+  .vault-reimagined .global-search,
+  .vault-reimagined .search-input {
+    height: 42px;
+    min-height: 42px;
+  }
+
+  .vault-reimagined .masthead-actions {
+    flex-wrap: nowrap;
+  }
+
+  .vault-reimagined .masthead-actions > #toolsPanelToggle {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border: 1px solid var(--border2);
+    background: var(--bg2);
+    white-space: nowrap;
+  }
+
+  .vault-reimagined .workspace-toolbar {
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 0 30px 12px;
+  }
+
+  .vault-reimagined .topbar-panel {
+    right: 30px;
+  }
+}
+
+@media (max-width: 760px) {
+  .vault-reimagined .search-shortcut {
+    display: none;
+  }
+
+  .vault-reimagined .masthead-actions > #toolsPanelToggle {
+    grid-column: 1 / 3;
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid var(--border2);
+    background: var(--bg2);
+  }
+
+  .vault-reimagined .library-scope-tabs {
+    grid-column: 1 / -1;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .vault-reimagined .library-scope-tab.chip {
+    flex: 1 0 auto;
+  }
+
+  .vault-reimagined .settings-shortcuts,
+  .vault-reimagined .tools-status {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-reimagined .tools-status .connection-status {
+    display: inline-flex;
+    justify-self: start;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

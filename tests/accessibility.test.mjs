@@ -11,8 +11,13 @@ test("HTML não repete IDs e todos os rótulos apontam para controles existentes
   for (const label of document.querySelectorAll("label[for]"))
     assert.ok(document.getElementById(label.htmlFor), label.outerHTML);
   assert.ok(document.querySelector("a.skip-link"));
-  for (const name of ["navHome", "navFiles", "navPhotos", "navMural"])
+  for (const name of ["navHome", "navFiles", "navMural"])
     assert.equal(document.getElementById(name).tagName, "BUTTON");
+  assert.equal(document.getElementById("navPhotos"), null);
+  for (const scope of ["all", "image", "video", "document"])
+    assert.ok(
+      document.querySelector(`.library-scope-tab[data-filter="${scope}"]`),
+    );
 });
 test("axe: estrutura estática WCAG A/AA (contraste exige navegador real)", async () => {
   const dom = new JSDOM(await fs.readFile("index.html", "utf8"), {

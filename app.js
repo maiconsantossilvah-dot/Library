@@ -55,6 +55,40 @@ let accountFilterValue = "all";
 let accountReviewQueue = [];
 const driveAccountRuntime = new Map();
 const ROOT_ID = "root";
+const NAV_MEMORY_KEY = "vault_navigation_v1";
+const NAV_VIEW_MODES = new Set([
+  "grid",
+  "list",
+  "gallery",
+  "folders",
+  "timeline",
+]);
+const NAV_CONTENT_SCOPES = new Set([
+  "all",
+  "media",
+  "image",
+  "video",
+  "document",
+  "duplicates",
+  "screenshots",
+  "trash",
+  "recent",
+  "untagged",
+  "largeVideos",
+  "important",
+  "favorites",
+]);
+
+function loadNavigationMemory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(NAV_MEMORY_KEY) || "null");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+const savedNavigation = loadNavigationMemory();
 let currentSearch = "";
 let currentSort = "newest";
 let thumbQuality = localStorage.getItem("vault_thumb_quality") || "medium";
@@ -82,10 +116,18 @@ let dashboardRenderTimer = null;
 let searchRenderTimer = null;
 const navState = {
   section: "home",
-  folderId: ROOT_ID,
-  viewMode: "grid",
-  contentScope: "all",
-  expandedFolders: new Set([ROOT_ID]),
+  folderId:
+    typeof savedNavigation.folderId === "string" &&
+    savedNavigation.folderId.trim()
+      ? savedNavigation.folderId
+      : ROOT_ID,
+  viewMode: NAV_VIEW_MODES.has(savedNavigation.viewMode)
+    ? savedNavigation.viewMode
+    : "grid",
+  contentScope: NAV_CONTENT_SCOPES.has(savedNavigation.contentScope)
+    ? savedNavigation.contentScope
+    : "all",
+  expandedFolders: new Set([ROOT_ID, savedNavigation.folderId].filter(Boolean)),
 };
 const VIEW_BUTTONS = {
   grid: "viewGrid",
@@ -256,6 +298,21 @@ const connectionStatus = $("connectionStatus");
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
 const THEME_KEY = "vault_theme";
+
+function persistNavigationMemory() {
+  try {
+    localStorage.setItem(
+      NAV_MEMORY_KEY,
+      JSON.stringify({
+        folderId: navState.folderId,
+        viewMode: navState.viewMode,
+        contentScope: navState.contentScope,
+      }),
+    );
+  } catch {
+    // A navegação continua funcionando quando o armazenamento está bloqueado.
+  }
+}
 
 function preferredTheme() {
   const saved = localStorage.getItem(THEME_KEY);
@@ -593,8 +650,7 @@ async function initApp(cfg) {
     refreshSyncStatus();
 
     // Reset state
-    navState.folderId = ROOT_ID;
-    navState.expandedFolders = new Set([ROOT_ID]);
+    navState.expandedFolders = new Set([ROOT_ID, navState.folderId]);
     selectedIds.clear();
     exitSelectMode();
 
@@ -1366,6 +1422,7 @@ function ensureCurrentFolderExists() {
       !matchesAccountView(getFolder(navState.folderId)))
   ) {
     navState.folderId = ROOT_ID;
+    persistNavigationMemory();
   }
 }
 
@@ -1571,11 +1628,6 @@ function syncSectionUI() {
   );
   navHome?.classList.toggle("active", isHome);
   navFiles?.classList.toggle("active", navState.section === "files");
-  $("navPhotos")?.classList.toggle("active", navState.section === "photos");
-  $("navPhotos")?.setAttribute(
-    "aria-current",
-    navState.section === "photos" ? "page" : "false",
-  );
   navHome?.setAttribute("aria-current", isHome ? "page" : "false");
   navFiles?.setAttribute(
     "aria-current",
@@ -1636,6 +1688,7 @@ function openLibraryView(options = {}) {
   renderBreadcrumb();
   renderFolderList();
   renderGrid();
+  persistNavigationMemory();
 }
 
 function setCurrentFolder(folderId) {
@@ -1652,6 +1705,7 @@ function setCurrentFolder(folderId) {
   sidebar.classList.remove("mobile-open");
   selectedIds.clear();
   updateBulkBar();
+  persistNavigationMemory();
 }
 
 function navigateFolder(folderId) {
@@ -1669,10 +1723,10 @@ function renderBreadcrumb() {
   }
   const path = syncLegacyFolderPath();
   if (navState.folderId === ROOT_ID) {
-    breadcrumb.innerHTML = `<span>Todos os Arquivos</span>`;
+    breadcrumb.innerHTML = `<span>Biblioteca</span>`;
     return;
   }
-  let html = `<button type="button" class="bc-link" data-folder="root">Todos os Arquivos</button>`;
+  let html = `<button type="button" class="bc-link" data-folder="root">Biblioteca</button>`;
   path.forEach((seg, i) => {
     html += `<span class="bc-sep"> > </span>`;
     if (i < path.length - 1) {
@@ -1765,7 +1819,7 @@ function updateLibraryWorkspaceHeader() {
     duplicates: "Duplicados",
     important: "Importantes",
     screenshots: "Capturas",
-    image: "Imagens",
+    image: "Fotos",
     video: "Vídeos",
     document: "Documentos",
     untagged: "Sem tags",
@@ -4664,23 +4718,48 @@ lightbox.onclick = (e) => {
   if (e.target === lightbox) closeLightbox();
 };
 document.onkeydown = (e) => {
+  const primaryModifier = e.ctrlKey || e.metaKey;
+  const blockingOverlay = document.querySelector(
+    ".modal-overlay.active,.lightbox.active,.manga-reader.active",
+  );
+  if (primaryModifier && !e.altKey && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    if (blockingOverlay || configModal.style.display === "flex") return;
+    setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+    setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+    searchInput.focus();
+    searchInput.select();
+    return;
+  }
+  if (primaryModifier && !e.altKey && e.key.toLowerCase() === "u") {
+    e.preventDefault();
+    if (!blockingOverlay && configModal.style.display !== "flex")
+      fileInput.click();
+    return;
+  }
+  if (primaryModifier && (e.shiftKey || e.altKey) && e.code === "KeyN") {
+    if (blockingOverlay || configModal.style.display === "flex") return;
+    e.preventDefault();
+    openFolderCreateDialog(navState.folderId);
+    return;
+  }
+  if (
+    e.altKey &&
+    !primaryModifier &&
+    !e.shiftKey &&
+    e.key === "ArrowLeft" &&
+    navState.section === "files"
+  ) {
+    e.preventDefault();
+    if (navState.folderId === ROOT_ID) openHomeSection();
+    else dispatchNavigation("up");
+    return;
+  }
   if (
     e.defaultPrevented ||
     e.target.closest("input, textarea, select, [contenteditable=true]")
   )
     return;
-  if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === "KeyN") {
-    if (
-      document.querySelector(
-        ".modal-overlay.active,.lightbox.active,.manga-reader.active",
-      ) ||
-      configModal.style.display === "flex"
-    )
-      return;
-    e.preventDefault();
-    openFolderCreateDialog(navState.folderId);
-    return;
-  }
   if (mangaReader.classList.contains("active")) {
     if (e.key === "Escape") {
       closeMangaReader();
@@ -4742,10 +4821,10 @@ const privacy = installPrivacy({
     });
   },
 });
-createSubfolderBtn.title = "Criar subpasta (Ctrl+Alt+N)";
+createSubfolderBtn.title = "Criar subpasta (Ctrl+Shift+N)";
 createSubfolderBtn.setAttribute(
   "aria-keyshortcuts",
-  "Control+Alt+N Meta+Alt+N",
+  "Control+Shift+N Meta+Shift+N",
 );
 
 // ??? Manga reader ?????????????????????????????????????????
@@ -5401,7 +5480,7 @@ function setViewButtonState(mode) {
 function setViewMode(mode) {
   if (!VIEW_BUTTONS[mode]) return;
   if (mangaReader.classList.contains("active")) closeMangaReader();
-  if (navState.section !== "photos") openFilesSection({ render: false });
+  if (navState.section !== "files") openFilesSection({ render: false });
   navState.viewMode = mode;
   visibleLimit = PAGE_SIZE;
   if (isSelectMode) {
@@ -5412,6 +5491,7 @@ function setViewMode(mode) {
   }
   setViewButtonState(mode);
   renderGrid();
+  persistNavigationMemory();
 }
 
 function updateViewA11y() {
@@ -5469,6 +5549,7 @@ function setContentFilter(filterKey) {
   setViewButtonState(navState.viewMode);
   updateBulkBar();
   renderGrid();
+  persistNavigationMemory();
 }
 
 $("viewGrid").onclick = () => setViewMode("grid");
@@ -5531,31 +5612,13 @@ document.querySelectorAll(".chip").forEach((chip) => {
 });
 
 navHome?.addEventListener("click", openHomeSection);
-navFiles?.addEventListener("click", () =>
-  openLibraryView({
-    folderId: ROOT_ID,
-    contentScope: "all",
-    viewMode: "grid",
-    resetAdvancedFilters: true,
-  }),
-);
-$("navPhotos").onclick = () => {
-  openLibraryView({
-    folderId: ROOT_ID,
-    contentScope: "media",
-    viewMode: "gallery",
-    resetAdvancedFilters: true,
-  });
-  navState.section = "photos";
-  syncSectionUI();
-  renderBreadcrumb();
-  renderGrid();
-};
+navFiles?.addEventListener("click", () => openLibraryView());
 accountViewSelect?.addEventListener("change", () => {
   activeAccountView = accountViewSelect.value;
   localStorage.setItem("vault_drive_account_view", activeAccountView);
   navState.folderId = ROOT_ID;
   navState.expandedFolders = new Set([ROOT_ID]);
+  persistNavigationMemory();
   selectedIds.clear();
   rebuildFolderIndexes();
   rebuildFileIndexes();
