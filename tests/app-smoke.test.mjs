@@ -240,7 +240,13 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.getElementById("closeTagManagerFooter").click();
   const card = document.querySelector(".file-name");
   assert.ok(card);
+  document.getElementById("lightboxInner").scrollTop = 80;
+  document.getElementById("lightboxInner").scrollLeft = 40;
+  document.getElementById("lightboxInfo").scrollTop = 120;
   card.click();
+  assert.equal(document.getElementById("lightboxInner").scrollTop, 0);
+  assert.equal(document.getElementById("lightboxInner").scrollLeft, 0);
+  assert.equal(document.getElementById("lightboxInfo").scrollTop, 0);
   assert.equal(
     typeof document.getElementById("lbDownloadBtn").onclick,
     "function",

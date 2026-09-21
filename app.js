@@ -5301,6 +5301,9 @@ function openLightbox(file) {
   lightbox.classList.add("active");
   lightboxZoom = 1;
   setLightboxZoom(1);
+  lightboxInner.scrollTop = 0;
+  lightboxInner.scrollLeft = 0;
+  lightboxInfo.scrollTop = 0;
 }
 
 function setLightboxZoom(value) {
