@@ -6753,7 +6753,11 @@ body.vault-reimagined[data-theme="dark"] {
   background: #304038;
   color: #fff;
 }
-.vault-reimagined[data-theme="dark"] .tag-chip,
+.vault-reimagined[data-theme="dark"] .tag-chip {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+}
 .vault-reimagined[data-theme="dark"] .auto-badge {
   border: 1px solid #587263;
   background: #294036;
@@ -8044,25 +8048,80 @@ button.tag-chip:hover {
 }
 
 .vault-reimagined .tag-color-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) minmax(150px, 1fr);
+  align-items: end;
+  gap: 12px;
   margin-top: 11px;
 }
 
-.vault-reimagined .tag-color-swatch {
-  width: 30px;
-  height: 30px;
-  border: 3px solid transparent;
-  border-radius: 7px;
-  background: var(--swatch);
-  box-shadow: inset 0 0 0 1px rgba(23, 43, 77, 0.12);
+.vault-reimagined .tag-color-wheel,
+.vault-reimagined .tag-hex-field,
+.vault-reimagined .tag-color-preview-wrap {
+  display: grid;
+  gap: 6px;
+  color: var(--text3);
+  font: 600 10px/1.2 var(--font-body);
 }
 
-.vault-reimagined .tag-color-swatch.active {
-  border-color: var(--bg2);
-  outline: 2px solid var(--text);
-  outline-offset: 1px;
+.vault-reimagined .tag-color-wheel {
+  justify-items: center;
+}
+
+.vault-reimagined #tagColorPicker {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid var(--border2);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vault-reimagined #tagColorPicker::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.vault-reimagined #tagColorPicker::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.vault-reimagined #tagColorPicker::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.vault-reimagined .tag-hex-input {
+  height: 48px;
+  min-height: 48px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vault-reimagined .tag-hex-input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.12);
+}
+
+.vault-reimagined .tag-color-preview {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  overflow: hidden;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+  font: 700 11px/1.2 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vault-reimagined .tag-editor-help {

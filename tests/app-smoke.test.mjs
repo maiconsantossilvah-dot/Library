@@ -154,7 +154,22 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   const tagNameInput = document.getElementById("tagNameInput");
   tagNameInput.value = "Trabalho";
   tagNameInput.dispatchEvent(new w.Event("input", { bubbles: true }));
-  document.querySelector('[data-tag-color="#f87168"]').click();
+  const tagColorPicker = document.getElementById("tagColorPicker");
+  const tagHexInput = document.getElementById("tagHexInput");
+  tagColorPicker.value = "#123456";
+  tagColorPicker.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert.equal(tagHexInput.value, "#123456");
+  tagHexInput.value = "#123";
+  tagHexInput.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert.equal(tagHexInput.getAttribute("aria-invalid"), "true");
+  assert.equal(document.getElementById("createTagBtn").disabled, true);
+  tagHexInput.value = "#12AB34";
+  tagHexInput.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert.equal(tagColorPicker.value, "#12ab34");
+  assert.match(
+    document.getElementById("tagColorPreview").getAttribute("style"),
+    /#12ab34/,
+  );
   document.getElementById("createTagBtn").click();
   document.getElementById("saveTags").click();
   await new Promise((r) => setTimeout(r, 60));
@@ -165,7 +180,7 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     savedImage.tags.map(({ name, color }) => ({ name, color })),
     [
       { name: "Viagem", color: "#579dff" },
-      { name: "Trabalho", color: "#f87168" },
+      { name: "Trabalho", color: "#12ab34" },
     ],
   );
   const card = document.querySelector(".file-name");

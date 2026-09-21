@@ -1220,10 +1220,43 @@
             id="tagColorOptions"
             role="group"
             aria-label="Cor da nova etiqueta"
-          ></div>
+          >
+            <label class="tag-color-wheel" for="tagColorPicker">
+              <input
+                id="tagColorPicker"
+                type="color"
+                value="#4bce97"
+                aria-label="Abrir seletor livre de cores"
+              />
+              <span>Cor livre</span>
+            </label>
+            <label class="tag-hex-field" for="tagHexInput">
+              <span>Hexadecimal</span>
+              <input
+                class="modal-input tag-hex-input"
+                id="tagHexInput"
+                type="text"
+                value="#4BCE97"
+                maxlength="7"
+                pattern="#[0-9A-Fa-f]{6}"
+                inputmode="text"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="tagColorHelp"
+              />
+            </label>
+            <div class="tag-color-preview-wrap" aria-live="polite">
+              <span>Prévia</span>
+              <span class="tag-color-preview" id="tagColorPreview"
+                >Nova etiqueta</span
+              >
+            </div>
+          </div>
           <p class="tag-editor-help">
-            Escolha uma cor e crie uma etiqueta nova, ou selecione uma existente
-            abaixo.
+            <span id="tagColorHelp"
+              >Escolha qualquer cor no círculo ou informe um código #RRGGBB.</span
+            >
+            Para reutilizar uma etiqueta, selecione uma existente abaixo.
           </p>
           <p
             class="form-error tag-editor-error"

@@ -78,18 +78,7 @@ const NAV_CONTENT_SCOPES = new Set([
   "important",
   "favorites",
 ]);
-const TAG_COLORS = [
-  "#4bce97",
-  "#94c748",
-  "#f5cd47",
-  "#fea362",
-  "#f87168",
-  "#e774bb",
-  "#9f8fef",
-  "#579dff",
-  "#6cc3e0",
-  "#8590a2",
-];
+const DEFAULT_TAG_COLOR = "#4bce97";
 
 function loadNavigationMemory() {
   try {
@@ -173,7 +162,7 @@ let bulkMoveMode = false;
 let fileToDescribe = null;
 let tagEditorResolve = null;
 let tagEditorSelected = [];
-let tagEditorColor = TAG_COLORS[0];
+let tagEditorColor = DEFAULT_TAG_COLOR;
 let folderToCover = null;
 let videoToCover = null;
 let folderForActions = null;
@@ -286,6 +275,9 @@ const tagModalTitle = $("tagModalTitle");
 const tagModalContext = $("tagModalContext");
 const tagNameInput = $("tagNameInput");
 const tagColorOptions = $("tagColorOptions");
+const tagColorPicker = $("tagColorPicker");
+const tagHexInput = $("tagHexInput");
+const tagColorPreview = $("tagColorPreview");
 const tagSelectedList = $("tagSelectedList");
 const tagSelectedCount = $("tagSelectedCount");
 const tagExistingList = $("tagExistingList");
@@ -4389,7 +4381,7 @@ function openTagPicker({ title = "Etiquetas", context = "", selected = [] }) {
     if (tagEditorResolve) tagEditorResolve(null);
     tagEditorResolve = resolve;
     tagEditorSelected = normalizeTagEntries(selected);
-    tagEditorColor = TAG_COLORS[0];
+    tagEditorColor = DEFAULT_TAG_COLOR;
     tagModalTitle.textContent = title;
     tagModalContext.textContent = context;
     tagNameInput.value = "";
@@ -4443,17 +4435,6 @@ function renderTagEditor() {
     };
   });
 
-  tagColorOptions.innerHTML = TAG_COLORS.map(
-    (color, index) =>
-      `<button class="tag-color-swatch${color === tagEditorColor ? " active" : ""}" type="button" data-tag-color="${color}" style="--swatch:${color}" aria-label="Cor ${index + 1}" aria-pressed="${color === tagEditorColor}"></button>`,
-  ).join("");
-  tagColorOptions.querySelectorAll("[data-tag-color]").forEach((button) => {
-    button.onclick = () => {
-      tagEditorColor = button.dataset.tagColor;
-      renderTagEditor();
-    };
-  });
-
   tagExistingCount.textContent = catalog.length
     ? `${catalog.length} no acervo`
     : "";
@@ -4484,6 +4465,20 @@ function renderTagEditor() {
       ? "Adicionar etiqueta"
       : "Criar etiqueta";
   tagColorOptions.hidden = !!exact;
+  syncTagColorControls(cleanName);
+}
+
+function syncTagColorControls(name = cleanTagName(tagNameInput.value)) {
+  const color = isTagColor(tagEditorColor)
+    ? tagEditorColor.toLowerCase()
+    : DEFAULT_TAG_COLOR;
+  tagEditorColor = color;
+  tagColorPicker.value = color;
+  tagHexInput.value = color.toUpperCase();
+  tagHexInput.setCustomValidity("");
+  tagHexInput.removeAttribute("aria-invalid");
+  tagColorPreview.textContent = name || "Nova etiqueta";
+  tagColorPreview.setAttribute("style", tagInlineStyle({ name, color }));
 }
 
 function toggleTagEditorSelection(key) {
@@ -6043,6 +6038,28 @@ tagNameInput.onkeydown = (event) => {
     addTagFromInput();
   }
 };
+tagColorPicker.oninput = () => {
+  tagEditorColor = tagColorPicker.value.toLowerCase();
+  renderTagEditor();
+};
+tagHexInput.oninput = () => {
+  const digits = tagHexInput.value
+    .replace(/^#/, "")
+    .replace(/[^0-9a-f]/gi, "")
+    .slice(0, 6)
+    .toUpperCase();
+  const draft = `#${digits}`;
+  tagHexInput.value = draft;
+  if (isTagColor(draft)) {
+    tagEditorColor = draft.toLowerCase();
+    renderTagEditor();
+  } else {
+    tagHexInput.setCustomValidity("Informe seis dígitos hexadecimais.");
+    tagHexInput.setAttribute("aria-invalid", "true");
+    $("createTagBtn").disabled = true;
+  }
+};
+tagHexInput.onblur = () => renderTagEditor();
 $("cancelDescription").onclick = closeDescriptionModal;
 $("saveDescription").onclick = saveFileDescription;
 descriptionModal.onclick = (e) => {
@@ -6957,7 +6974,38 @@ function defaultTagColor(name) {
   const key = tagKey(name);
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
-  return TAG_COLORS[hash % TAG_COLORS.length];
+  const hue = hash % 360;
+  const saturation = 58 + (hash % 15);
+  const lightness = 42 + ((hash >>> 8) % 12);
+  return hslToHex(hue, saturation, lightness);
+}
+
+function hslToHex(hue, saturation, lightness) {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const segment = (((hue % 360) + 360) % 360) / 60;
+  const x = chroma * (1 - Math.abs((segment % 2) - 1));
+  const [r1, g1, b1] =
+    segment < 1
+      ? [chroma, x, 0]
+      : segment < 2
+        ? [x, chroma, 0]
+        : segment < 3
+          ? [0, chroma, x]
+          : segment < 4
+            ? [0, x, chroma]
+            : segment < 5
+              ? [x, 0, chroma]
+              : [chroma, 0, x];
+  const offset = l - chroma / 2;
+  return `#${[r1, g1, b1]
+    .map((channel) =>
+      Math.round((channel + offset) * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
 }
 
 function normalizeTagEntries(value) {
