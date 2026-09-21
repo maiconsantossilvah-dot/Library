@@ -245,6 +245,40 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     typeof document.getElementById("lbDownloadBtn").onclick,
     "function",
   );
+  assert.equal(
+    document.getElementById("lightboxTitle").textContent,
+    "Imagem vertical de teste com nome completo",
+  );
+  assert.equal(document.getElementById("lightboxType").textContent, "Foto");
+  assert.equal(
+    document.getElementById("lightboxPosition").textContent,
+    "1 de 1",
+  );
+  assert.equal(document.querySelectorAll(".lightbox-filmstrip-item").length, 1);
+  assert.equal(
+    document
+      .querySelector(".lightbox-filmstrip-item")
+      .getAttribute("aria-current"),
+    "true",
+  );
+  assert.equal(document.getElementById("lbPrevBtn").disabled, true);
+  assert.equal(document.getElementById("lbNextBtn").disabled, true);
+  assert.match(document.getElementById("lightboxInfo").textContent, /Detalhes/);
+  assert.match(
+    document.getElementById("lightboxInfo").textContent,
+    /720 × 1280/,
+  );
+  document.getElementById("lightboxInfoToggle").click();
+  assert.equal(
+    document.getElementById("lightbox").classList.contains("info-hidden"),
+    true,
+  );
+  assert.equal(w.localStorage.getItem("vault_viewer_details"), "hidden");
+  document.getElementById("lightboxInfoToggle").click();
+  assert.equal(
+    document.getElementById("lightboxInfoToggle").getAttribute("aria-expanded"),
+    "true",
+  );
   document.getElementById("lightboxClose").click();
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),

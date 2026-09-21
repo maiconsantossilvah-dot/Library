@@ -996,25 +996,86 @@
     </div>
 
     <!-- MODAL: Lightbox -->
-    <div class="lightbox" id="lightbox">
-      <button
-        class="lightbox-close viewer-hide"
-        type="button"
-        data-privacy-hide
-        title="Ocultar conteudo (Ctrl+Shift+H)"
-        aria-label="Ocultar conteudo"
-      >
-        <span data-icon="PanelLeftClose"></span>
-      </button>
-      <button
-        class="lightbox-close"
-        id="lightboxClose"
-        aria-label="Fechar visualizador"
-      >
-        <span data-icon="X"></span>
-      </button>
-      <div class="lightbox-inner" id="lightboxInner"></div>
-      <div class="lightbox-info" id="lightboxInfo"></div>
+    <div
+      class="lightbox"
+      id="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lightboxTitle"
+    >
+      <header class="lightbox-topbar">
+        <div class="lightbox-heading">
+          <span class="lightbox-type" id="lightboxType">Arquivo</span>
+          <div class="lightbox-heading-copy">
+            <strong id="lightboxTitle">Visualizador</strong>
+            <span id="lightboxPosition"></span>
+          </div>
+        </div>
+        <div class="lightbox-toolbar" aria-label="Controles do visualizador">
+          <button
+            class="lightbox-toolbar-btn viewer-hide"
+            type="button"
+            data-privacy-hide
+            title="Ocultar conteudo (Ctrl+Shift+H)"
+            aria-label="Ocultar conteudo"
+          >
+            <span data-icon="PanelLeftClose"></span>
+          </button>
+          <button
+            class="lightbox-toolbar-btn"
+            id="lightboxInfoToggle"
+            type="button"
+            aria-controls="lightboxInfo"
+            aria-expanded="true"
+            title="Ocultar detalhes"
+          >
+            <span data-icon="SlidersHorizontal"></span>
+          </button>
+          <button
+            class="lightbox-toolbar-btn lightbox-close"
+            id="lightboxClose"
+            type="button"
+            aria-label="Fechar visualizador"
+            title="Fechar (Esc)"
+          >
+            <span data-icon="X"></span>
+          </button>
+        </div>
+      </header>
+      <div class="lightbox-workspace">
+        <button
+          class="lightbox-side-nav"
+          id="lbPrevBtn"
+          type="button"
+          aria-label="Arquivo anterior"
+          title="Anterior (seta para esquerda)"
+        >
+          <span data-icon="ChevronLeft"></span>
+        </button>
+        <div class="lightbox-stage">
+          <div class="lightbox-inner" id="lightboxInner"></div>
+        </div>
+        <button
+          class="lightbox-side-nav"
+          id="lbNextBtn"
+          type="button"
+          aria-label="Próximo arquivo"
+          title="Próximo (seta para direita)"
+        >
+          <span data-icon="ChevronRight"></span>
+        </button>
+        <aside
+          class="lightbox-info"
+          id="lightboxInfo"
+          aria-label="Detalhes do arquivo"
+        ></aside>
+      </div>
+      <div
+        class="lightbox-filmstrip"
+        id="lightboxFilmstrip"
+        role="region"
+        aria-label="Arquivos desta visualização"
+      ></div>
     </div>
 
     <!-- MODAL: Configuração e recuperação do acervo -->

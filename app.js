@@ -176,6 +176,8 @@ let lightboxIndex = -1;
 let lightboxZoom = 1;
 let lightboxGeneration = 0;
 let lightboxVideoUrl = null;
+let lightboxInfoVisible =
+  localStorage.getItem("vault_viewer_details") !== "hidden";
 let mangaState = {
   pages: [],
   index: 0,
@@ -202,6 +204,13 @@ const dropOverlay = $("dropOverlay");
 const lightbox = $("lightbox");
 const lightboxInner = $("lightboxInner");
 const lightboxInfo = $("lightboxInfo");
+const lightboxTitle = $("lightboxTitle");
+const lightboxType = $("lightboxType");
+const lightboxPosition = $("lightboxPosition");
+const lightboxFilmstrip = $("lightboxFilmstrip");
+const lightboxInfoToggle = $("lightboxInfoToggle");
+const lightboxPrev = $("lbPrevBtn");
+const lightboxNext = $("lbNextBtn");
 const folderModal = $("folderModal");
 const folderNameInput = $("folderNameInput");
 const folderAccountField = $("folderAccountField");
@@ -4374,11 +4383,11 @@ async function renameFile(file) {
     value: file.name || "",
     required: true,
   });
-  if (name === null) return;
+  if (name === null) return false;
   const clean = name.trim();
   if (!clean) {
     showToast("Nome vazio", "error");
-    return;
+    return false;
   }
   try {
     if (isGoogleDriveRecord(file)) {
@@ -4389,9 +4398,12 @@ async function renameFile(file) {
     }
     await updateDoc(doc(db, "vault_files", file.id), { name: clean });
     addHistory(`Renomeado: ${file.name} -> ${clean}`);
+    file.name = clean;
     showToast("Arquivo renomeado", "success");
+    return true;
   } catch (e) {
     showToast("Erro: " + e.message, "error");
+    return false;
   }
 }
 
@@ -4543,15 +4555,19 @@ async function editTags(file) {
     context: file.name || "Arquivo",
     selected: file.tags,
   });
-  if (tags === null) return;
+  if (tags === null) return false;
   try {
+    const normalizedTags = normalizeTagEntries(tags);
     await updateDoc(doc(db, "vault_files", file.id), {
-      tags: normalizeTagEntries(tags),
+      tags: normalizedTags,
     });
+    file.tags = normalizedTags;
     addHistory(`Etiquetas: ${file.name}`);
     showToast("Etiquetas atualizadas", "success");
+    return true;
   } catch (e) {
     showToast("Erro: " + e.message, "error");
+    return false;
   }
 }
 
@@ -4820,12 +4836,20 @@ function closeDescriptionModal() {
 
 async function saveFileDescription() {
   if (!fileToDescribe) return;
+  const describedFile = fileToDescribe;
   const description = descriptionInput.value.trim();
   try {
-    await updateDoc(doc(db, "vault_files", fileToDescribe.id), { description });
-    addHistory(`Descricao: ${fileToDescribe.name || "arquivo"}`);
+    await updateDoc(doc(db, "vault_files", describedFile.id), { description });
+    describedFile.description = description;
+    addHistory(`Descricao: ${describedFile.name || "arquivo"}`);
     showToast("Descricao salva", "success");
     closeDescriptionModal();
+    const activeFile = lightboxFiles[lightboxIndex];
+    if (
+      lightbox.classList.contains("active") &&
+      activeFile?.id === describedFile.id
+    )
+      openLightbox(fileById.get(describedFile.id) || describedFile);
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -4996,10 +5020,91 @@ async function deleteFolderRecursive(folderId) {
 }
 
 // ??? Lightbox ?????????????????????????????????????????????
+function lightboxFileTypeLabel(file) {
+  return (
+    { image: "Foto", video: "Vídeo", document: "Documento" }[file?.fileType] ||
+    "Arquivo"
+  );
+}
+
+function setLightboxInfoVisible(visible, persist = true) {
+  lightboxInfoVisible = !!visible;
+  lightbox.classList.toggle("info-hidden", !lightboxInfoVisible);
+  lightboxInfoToggle.setAttribute("aria-expanded", String(lightboxInfoVisible));
+  lightboxInfoToggle.title = lightboxInfoVisible
+    ? "Ocultar detalhes"
+    : "Mostrar detalhes";
+  lightboxInfoToggle.setAttribute(
+    "aria-label",
+    lightboxInfoVisible ? "Ocultar detalhes" : "Mostrar detalhes",
+  );
+  if (persist)
+    localStorage.setItem(
+      "vault_viewer_details",
+      lightboxInfoVisible ? "visible" : "hidden",
+    );
+}
+
+function renderLightboxFilmstrip(file) {
+  if (!lightboxFiles.length) {
+    lightboxFilmstrip.innerHTML = "";
+    return;
+  }
+  const visibleItems = 13;
+  const half = Math.floor(visibleItems / 2);
+  const start = Math.max(
+    0,
+    Math.min(
+      Math.max(0, lightboxFiles.length - visibleItems),
+      lightboxIndex - half,
+    ),
+  );
+  const windowFiles = lightboxFiles.slice(start, start + visibleItems);
+  lightboxFilmstrip.classList.toggle("single-item", lightboxFiles.length === 1);
+  lightboxFilmstrip.innerHTML = windowFiles
+    .map((item, offset) => {
+      const thumb = mediaThumbUrl(item, 180, 120);
+      const isMedia = item.fileType === "image" || item.fileType === "video";
+      const placeholderIcon =
+        item.fileType === "video" ? icon("Film") : icon("Image");
+      const preview = isMedia
+        ? thumb
+          ? `<img src="${esc(thumb)}" ${isGoogleDriveRecord(item) ? `data-drive-file-id="${esc(item.id)}"` : ""} alt="" loading="lazy" />`
+          : `<span class="lightbox-filmstrip-icon" ${isGoogleDriveRecord(item) ? `data-drive-thumb-id="${esc(item.id)}"` : ""}>${placeholderIcon}</span>`
+        : `<span class="lightbox-filmstrip-icon lightbox-filmstrip-doc">${docIcon(item.name)}</span>`;
+      const position = start + offset + 1;
+      return `<button class="lightbox-filmstrip-item${item.id === file.id ? " active" : ""}" type="button" data-lightbox-file-id="${esc(item.id)}" aria-label="Abrir ${esc(item.name)} (${position} de ${lightboxFiles.length})" ${item.id === file.id ? 'aria-current="true"' : ""}>
+        <span class="lightbox-filmstrip-thumb">${preview}${item.fileType === "video" ? `<span class="lightbox-filmstrip-play">${icon("Play")}</span>` : ""}</span>
+        <span class="lightbox-filmstrip-name">${esc(item.name)}</span>
+      </button>`;
+    })
+    .join("");
+  lightboxFilmstrip
+    .querySelectorAll("[data-lightbox-file-id]")
+    .forEach((button) => {
+      button.onclick = () => {
+        const nextFile =
+          lightboxFiles.find(
+            (item) => item.id === button.dataset.lightboxFileId,
+          ) || fileById.get(button.dataset.lightboxFileId);
+        if (nextFile) openLightbox(nextFile);
+      };
+    });
+  hydrateDriveThumbnails(lightboxFilmstrip);
+}
+
 function openLightbox(file) {
   closeLightbox();
   const generation = ++lightboxGeneration;
-  lightboxIndex = lightboxFiles.findIndex((f) => f.id === file.id);
+  lightboxIndex = lightboxFiles.findIndex((item) => item.id === file.id);
+  if (lightboxIndex < 0) {
+    lightboxFiles = [file];
+    lightboxIndex = 0;
+  }
+
+  lightboxTitle.textContent = file.name || "Arquivo sem nome";
+  lightboxType.textContent = lightboxFileTypeLabel(file);
+  lightboxPosition.textContent = `${lightboxIndex + 1} de ${lightboxFiles.length}`;
   lightboxInner.innerHTML = "";
   if (file.fileType === "image") {
     const img = document.createElement("img");
@@ -5010,7 +5115,7 @@ function openLightbox(file) {
       img.src = mediaThumbUrl(file, 1600, 1200) || "";
       storedObjectUrl(file)
         .then((url) => {
-          img.src = url;
+          if (generation === lightboxGeneration) img.src = url;
         })
         .catch((error) => {
           if (generation === lightboxGeneration)
@@ -5054,6 +5159,7 @@ function openLightbox(file) {
     lightboxInner.appendChild(vid);
     if (isGoogleDriveRecord(file)) {
       const status = document.createElement("span");
+      status.className = "lightbox-loading-status";
       status.textContent = "Carregando video original...";
       status.setAttribute("role", "status");
       lightboxInner.append(status);
@@ -5075,57 +5181,92 @@ function openLightbox(file) {
     renderDocumentPreview(file, generation);
   }
 
-  const folderName = file.folderId
-    ? folders.find((f) => f.id === file.folderId)?.name || "Pasta"
-    : "Raiz";
-
+  const folderName = getFolderPathLabel(file.folderId) || "Raiz";
+  const fileDate = file.eventDate
+    ? formatCardDate(file.eventDate)
+    : formatDateValue(file.createdAt);
+  const dimensions =
+    file.width && file.height ? `${file.width} × ${file.height} px` : "";
+  const provider = isGoogleDriveRecord(file)
+    ? "Google Drive"
+    : file.provider || "Armazenamento legado";
+  const priority =
+    { important: "Importante", critical: "Muito importante" }[file.priority] ||
+    "Normal";
   const favLabel = file.favorite ? "Favoritado" : "Favoritar";
   const imageActions =
     file.fileType === "image"
-      ? `<button class="lb-action-btn" id="lbMangaBtn" type="button">Ler pasta</button>`
+      ? `<button class="lb-action-btn" id="lbZoomOut" type="button">${icon("ZoomOut")}<span>Diminuir</span></button>
+         <button class="lb-action-btn" id="lbZoomIn" type="button">${icon("ZoomIn")}<span>Aumentar</span></button>
+         <button class="lb-action-btn" id="lbMangaBtn" type="button">${icon("BookOpen")}<span>Ler pasta</span></button>`
       : "";
   const videoActions =
     file.fileType === "video"
-      ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">Velocidade</button>
-       <button class="lb-action-btn" id="lbCoverBtn" type="button">Usar frame</button>
-       <button class="lb-action-btn" id="lbChooseCoverBtn" type="button">Escolher capa</button>`
+      ? `<button class="lb-action-btn" id="lbSpeedBtn" type="button">${icon("Play")}<span>Velocidade</span></button>
+         <button class="lb-action-btn" id="lbCoverBtn" type="button">${icon("ScanLine")}<span>Usar frame</span></button>
+         <button class="lb-action-btn" id="lbChooseCoverBtn" type="button">${icon("Images")}<span>Escolher capa</span></button>`
       : "";
 
   lightboxInfo.innerHTML = `
-    <div class="lb-meta">
-      <strong>${esc(file.name)}</strong>
-      <span>${fmtSize(file.size)}</span>
-      <span>${esc(folderName)}</span>
-    </div>
-    <div class="lb-actions">
-      <button class="lb-nav-btn" id="lbPrevBtn" type="button">Anterior</button>
-      <button class="lb-nav-btn" id="lbNextBtn" type="button">Proximo</button>
-      <button class="lb-action-btn" id="lbZoomOut" type="button" aria-label="Diminuir zoom">${icon("ZoomOut")}</button>
-      <button class="lb-action-btn" id="lbZoomIn" type="button" aria-label="Aumentar zoom">${icon("ZoomIn")}</button>
-      <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${favLabel}</button>
-      <button class="lb-action-btn" id="lbMoveBtn" type="button">Mover</button>
-      <button class="lb-action-btn" id="lbRenameBtn" type="button">Renomear</button>
-      <button class="lb-action-btn" id="lbTagsBtn" type="button">Etiquetas</button>
-      <button class="lb-action-btn" id="lbShareBtn" type="button">Copiar link</button>
-      ${imageActions}
-      ${videoActions}
-      <button class="lb-action-btn lb-link" id="lbDownloadBtn" type="button">Baixar</button>
-    </div>${file.fileType === "video" ? '<div class="video-scenes" id="videoScenes" aria-label="Cenas salvas"></div>' : ""}`;
+    <section class="lb-panel-section lb-summary-section">
+      <div class="lb-section-heading">
+        <div><span class="lb-eyebrow">Arquivo</span><h2>Detalhes</h2></div>
+        <span class="account-badge">${esc(accountBadge(file))}</span>
+      </div>
+      <dl class="lb-detail-list">
+        <div><dt>Tipo</dt><dd>${esc(lightboxFileTypeLabel(file))}</dd></div>
+        <div><dt>Tamanho</dt><dd>${esc(fmtSize(file.size))}</dd></div>
+        ${dimensions ? `<div><dt>Resolução</dt><dd>${esc(dimensions)}</dd></div>` : ""}
+        <div><dt>Data</dt><dd>${esc(fileDate)}</dd></div>
+        <div><dt>Pasta</dt><dd title="${esc(folderName)}">${esc(folderName)}</dd></div>
+        <div><dt>Origem</dt><dd>${esc(provider)}</dd></div>
+        <div><dt>Prioridade</dt><dd>${esc(priority)}</dd></div>
+      </dl>
+    </section>
+    <section class="lb-panel-section">
+      <div class="lb-section-heading"><div><span class="lb-eyebrow">Organização</span><h2>Etiquetas</h2></div></div>
+      <div class="lb-tag-list">${renderTagPills(file.tags, { emptyText: "Nenhuma etiqueta" })}</div>
+    </section>
+    <section class="lb-panel-section">
+      <div class="lb-section-heading"><div><span class="lb-eyebrow">Contexto</span><h2>Descrição</h2></div></div>
+      <p class="lb-description${file.description ? "" : " is-empty"}">${esc(file.description || "Nenhuma descrição adicionada.")}</p>
+    </section>
+    <section class="lb-panel-section">
+      <div class="lb-section-heading"><div><span class="lb-eyebrow">Atalhos</span><h2>Ações</h2></div></div>
+      <div class="lb-actions">
+        ${imageActions}
+        ${videoActions}
+        <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${icon("Star")}<span>${favLabel}</span></button>
+        <button class="lb-action-btn" id="lbDescriptionBtn" type="button">${icon("FileText")}<span>Descrição</span></button>
+        <button class="lb-action-btn" id="lbTagsBtn" type="button">${icon("Tags")}<span>Etiquetas</span></button>
+        <button class="lb-action-btn" id="lbMoveBtn" type="button">${icon("FolderOpen")}<span>Mover</span></button>
+        <button class="lb-action-btn" id="lbRenameBtn" type="button">${icon("FileText")}<span>Renomear</span></button>
+        <button class="lb-action-btn" id="lbShareBtn" type="button">${icon("Copy")}<span>Copiar link</span></button>
+        <button class="lb-action-btn lb-link lb-download-btn" id="lbDownloadBtn" type="button">${icon("Download")}<span>Baixar arquivo</span></button>
+      </div>
+    </section>
+    ${file.fileType === "video" ? '<section class="lb-panel-section"><div class="lb-section-heading"><div><span class="lb-eyebrow">Vídeo</span><h2>Cenas salvas</h2></div></div><div class="video-scenes" id="videoScenes" aria-label="Cenas salvas"></div></section>' : ""}`;
 
   $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
-  $("lbZoomIn").hidden = $("lbZoomOut").hidden = file.fileType !== "image";
   $("lbFavBtn").onclick = async () => {
     await toggleFavorite(file);
-    const updated = fileById.get(file.id);
-    if (updated && lightbox.classList.contains("active")) openLightbox(updated);
+    const updated = fileById.get(file.id) || file;
+    if (lightbox.classList.contains("active")) openLightbox(updated);
   };
-  $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
-  $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
   $("lbMoveBtn").onclick = () => openMoveModal(file);
-  $("lbRenameBtn").onclick = () => renameFile(file);
-  $("lbTagsBtn").onclick = () => editTags(file);
+  $("lbRenameBtn").onclick = async () => {
+    if ((await renameFile(file)) && lightbox.classList.contains("active"))
+      openLightbox(fileById.get(file.id) || file);
+  };
+  $("lbTagsBtn").onclick = async () => {
+    if ((await editTags(file)) && lightbox.classList.contains("active"))
+      openLightbox(fileById.get(file.id) || file);
+  };
+  $("lbDescriptionBtn").onclick = () => openDescriptionModal(file);
   $("lbShareBtn").onclick = () => shareFile(file);
   if (file.fileType === "image") {
+    $("lbZoomIn").onclick = () => setLightboxZoom(lightboxZoom + 0.25);
+    $("lbZoomOut").onclick = () => setLightboxZoom(lightboxZoom - 0.25);
     $("lbMangaBtn").onclick = () => {
       closeLightbox();
       openMangaReader(file);
@@ -5149,12 +5290,14 @@ function openLightbox(file) {
       toast: showToast,
     });
   }
-  $("lbPrevBtn").onclick = () => navigateLightbox(-1);
-  $("lbNextBtn").onclick = () => navigateLightbox(1);
-  $("lbPrevBtn").disabled = lightboxIndex <= 0;
-  $("lbNextBtn").disabled =
-    lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
 
+  lightboxPrev.onclick = () => navigateLightbox(-1);
+  lightboxNext.onclick = () => navigateLightbox(1);
+  lightboxPrev.disabled = lightboxIndex <= 0;
+  lightboxNext.disabled =
+    lightboxIndex < 0 || lightboxIndex >= lightboxFiles.length - 1;
+  renderLightboxFilmstrip(file);
+  setLightboxInfoVisible(lightboxInfoVisible, false);
   lightbox.classList.add("active");
   lightboxZoom = 1;
   setLightboxZoom(1);
@@ -5252,6 +5395,7 @@ function showMissingLightbox(file, detail = "") {
   };
 }
 
+lightboxInfoToggle.onclick = () => setLightboxInfoVisible(!lightboxInfoVisible);
 $("lightboxClose").onclick = closeLightbox;
 lightbox.onclick = (e) => {
   if (e.target === lightbox) closeLightbox();
@@ -5349,6 +5493,10 @@ function closeLightbox() {
   });
   lightboxInner.innerHTML = "";
   lightboxInfo.innerHTML = "";
+  lightboxFilmstrip.innerHTML = "";
+  lightboxTitle.textContent = "Visualizador";
+  lightboxType.textContent = "Arquivo";
+  lightboxPosition.textContent = "";
   if (lightboxVideoUrl) URL.revokeObjectURL(lightboxVideoUrl);
   lightboxVideoUrl = null;
 }
