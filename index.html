@@ -668,6 +668,15 @@
               </button>
               <button
                 class="utility-btn"
+                id="tagManagerBtn"
+                type="button"
+                title="Renomear, recolorir, mesclar ou excluir etiquetas"
+                aria-haspopup="dialog"
+              >
+                Central de etiquetas
+              </button>
+              <button
+                class="utility-btn"
                 id="migrateCloudinaryBtn"
                 type="button"
                 title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
@@ -1223,6 +1232,7 @@
           >
             <label class="tag-color-wheel" for="tagColorPicker">
               <input
+                class="tag-free-color-input"
                 id="tagColorPicker"
                 type="color"
                 value="#4bce97"
@@ -1254,7 +1264,8 @@
           </div>
           <p class="tag-editor-help">
             <span id="tagColorHelp"
-              >Escolha qualquer cor no círculo ou informe um código #RRGGBB.</span
+              >Escolha qualquer cor no círculo ou informe um código
+              #RRGGBB.</span
             >
             Para reutilizar uma etiqueta, selecione uma existente abaixo.
           </p>
@@ -1282,6 +1293,174 @@
           </button>
           <button class="modal-btn confirm" id="saveTags" type="button">
             Salvar etiquetas
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- MODAL: Central de etiquetas -->
+    <div
+      class="modal-overlay"
+      id="tagManagerModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tagManagerTitle"
+    >
+      <div class="modal tag-manager-modal">
+        <header class="tag-modal-header">
+          <div>
+            <p class="modal-kicker">Organização global</p>
+            <h2 class="modal-title" id="tagManagerTitle">
+              Central de etiquetas
+            </h2>
+            <p class="tag-modal-context">
+              Alterações são aplicadas a todos os arquivos que usam a etiqueta.
+            </p>
+          </div>
+          <button
+            class="modal-icon-btn cancel"
+            id="closeTagManager"
+            type="button"
+            aria-label="Fechar central de etiquetas"
+          >
+            <span data-icon="X"></span>
+          </button>
+        </header>
+
+        <div class="tag-manager-toolbar">
+          <div class="tag-manager-summary">
+            <strong id="tagManagerStats">0 etiquetas</strong>
+            <span>Novas etiquetas são criadas ao etiquetar um arquivo.</span>
+          </div>
+          <label class="sr-only" for="tagManagerSearch">Buscar etiqueta</label>
+          <input
+            class="modal-input"
+            id="tagManagerSearch"
+            type="search"
+            placeholder="Buscar etiqueta..."
+            autocomplete="off"
+          />
+          <label class="sr-only" for="tagManagerSort">Ordenar etiquetas</label>
+          <select class="sort-select" id="tagManagerSort">
+            <option value="usage">Mais usadas</option>
+            <option value="name">Nome</option>
+          </select>
+        </div>
+
+        <div class="tag-manager-layout">
+          <div
+            class="tag-manager-list"
+            id="tagManagerList"
+            role="group"
+            aria-label="Etiquetas do acervo"
+          ></div>
+
+          <aside class="tag-manager-editor" id="tagManagerEditor" hidden>
+            <div class="tag-manager-editor-heading">
+              <div>
+                <span class="modal-kicker">Editar etiqueta</span>
+                <strong id="tagManagerEditingName"></strong>
+              </div>
+              <span id="tagManagerEditingUsage"></span>
+            </div>
+
+            <label class="field-label" for="tagManagerNameInput">Nome</label>
+            <input
+              class="modal-input"
+              id="tagManagerNameInput"
+              type="text"
+              maxlength="32"
+              autocomplete="off"
+            />
+
+            <div class="tag-color-options tag-manager-color-options">
+              <label class="tag-color-wheel" for="tagManagerColorPicker">
+                <input
+                  class="tag-free-color-input"
+                  id="tagManagerColorPicker"
+                  type="color"
+                  value="#4bce97"
+                  aria-label="Escolher nova cor da etiqueta"
+                />
+                <span>Cor livre</span>
+              </label>
+              <label class="tag-hex-field" for="tagManagerHexInput">
+                <span>Hexadecimal</span>
+                <input
+                  class="modal-input tag-hex-input"
+                  id="tagManagerHexInput"
+                  type="text"
+                  value="#4BCE97"
+                  maxlength="7"
+                  pattern="#[0-9A-Fa-f]{6}"
+                  inputmode="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="tag-color-preview-wrap" aria-live="polite">
+                <span>Prévia</span>
+                <span class="tag-color-preview" id="tagManagerColorPreview"
+                  >Etiqueta</span
+                >
+              </div>
+            </div>
+            <p
+              class="form-error tag-manager-error"
+              id="tagManagerError"
+              role="alert"
+            ></p>
+            <button
+              class="modal-btn confirm tag-manager-save"
+              id="saveManagedTag"
+              type="button"
+            >
+              Salvar nome e cor
+            </button>
+
+            <section class="tag-manager-merge-section">
+              <label class="field-label" for="tagManagerMergeTarget"
+                >Mesclar esta etiqueta em</label
+              >
+              <div class="tag-manager-merge-row">
+                <select class="sort-select" id="tagManagerMergeTarget"></select>
+                <button class="modal-btn" id="mergeManagedTag" type="button">
+                  Mesclar
+                </button>
+              </div>
+              <p>
+                Os arquivos passam a usar a etiqueta de destino e esta etiqueta
+                desaparece.
+              </p>
+            </section>
+
+            <button
+              class="modal-btn danger tag-manager-delete"
+              id="deleteManagedTag"
+              type="button"
+            >
+              Excluir etiqueta de todos os arquivos
+            </button>
+          </aside>
+
+          <div class="tag-manager-placeholder" id="tagManagerPlaceholder">
+            <span data-icon="Tags"></span>
+            <strong>Selecione uma etiqueta</strong>
+            <p>Escolha uma etiqueta à esquerda para administrar.</p>
+          </div>
+        </div>
+
+        <div
+          class="tag-manager-status"
+          id="tagManagerStatus"
+          role="status"
+        ></div>
+        <div class="modal-actions">
+          <button
+            class="modal-btn cancel"
+            id="closeTagManagerFooter"
+            type="button"
+          >
+            Fechar
           </button>
         </div>
       </div>

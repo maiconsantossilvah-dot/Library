@@ -163,6 +163,9 @@ let fileToDescribe = null;
 let tagEditorResolve = null;
 let tagEditorSelected = [];
 let tagEditorColor = DEFAULT_TAG_COLOR;
+let tagManagerSelectedKey = "";
+let tagManagerDraftColor = DEFAULT_TAG_COLOR;
+let tagManagerBusy = false;
 let folderToCover = null;
 let videoToCover = null;
 let folderForActions = null;
@@ -283,6 +286,22 @@ const tagSelectedCount = $("tagSelectedCount");
 const tagExistingList = $("tagExistingList");
 const tagExistingCount = $("tagExistingCount");
 const tagEditorError = $("tagEditorError");
+const tagManagerModal = $("tagManagerModal");
+const tagManagerSearch = $("tagManagerSearch");
+const tagManagerSort = $("tagManagerSort");
+const tagManagerStats = $("tagManagerStats");
+const tagManagerList = $("tagManagerList");
+const tagManagerEditor = $("tagManagerEditor");
+const tagManagerPlaceholder = $("tagManagerPlaceholder");
+const tagManagerEditingName = $("tagManagerEditingName");
+const tagManagerEditingUsage = $("tagManagerEditingUsage");
+const tagManagerNameInput = $("tagManagerNameInput");
+const tagManagerColorPicker = $("tagManagerColorPicker");
+const tagManagerHexInput = $("tagManagerHexInput");
+const tagManagerColorPreview = $("tagManagerColorPreview");
+const tagManagerMergeTarget = $("tagManagerMergeTarget");
+const tagManagerError = $("tagManagerError");
+const tagManagerStatus = $("tagManagerStatus");
 const formModal = $("formModal");
 const formModalTitle = $("formModalTitle");
 const formModalBody = $("formModalBody");
@@ -4536,6 +4555,256 @@ async function editTags(file) {
   }
 }
 
+function openTagManager() {
+  tagManagerSelectedKey = "";
+  tagManagerSearch.value = "";
+  tagManagerSort.value = "usage";
+  tagManagerStatus.textContent = "";
+  setTagManagerError("");
+  clearTagManagerEditor();
+  renderTagManagerList();
+  setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+  tagManagerModal.classList.add("active");
+  setTimeout(() => tagManagerSearch.focus(), 0);
+}
+
+function closeTagManager() {
+  if (tagManagerBusy) return;
+  tagManagerModal.classList.remove("active");
+  tagManagerSelectedKey = "";
+}
+
+function setTagManagerError(message) {
+  tagManagerError.textContent = message || "";
+}
+
+function getManagedTagCatalog() {
+  return getTagCatalog({ includeTrash: true });
+}
+
+function renderTagManagerList() {
+  const catalog = getManagedTagCatalog();
+  const taggedFiles = files.filter(
+    (file) => normalizeTagEntries(file.tags).length > 0,
+  ).length;
+  const query = tagKey(tagManagerSearch.value);
+  const visible = catalog
+    .filter((tag) => !query || tag.key.includes(query))
+    .sort((a, b) =>
+      tagManagerSort.value === "name"
+        ? a.name.localeCompare(b.name, "pt-BR")
+        : b.count - a.count || a.name.localeCompare(b.name, "pt-BR"),
+    );
+
+  tagManagerStats.textContent = `${catalog.length} etiqueta${catalog.length === 1 ? "" : "s"} · ${taggedFiles} arquivo${taggedFiles === 1 ? "" : "s"}`;
+  tagManagerList.innerHTML = visible.length
+    ? visible
+        .map(
+          (tag) => `<button class="tag-manager-item${tag.key === tagManagerSelectedKey ? " active" : ""}" type="button" data-manage-tag="${esc(tag.key)}" aria-pressed="${tag.key === tagManagerSelectedKey}" style="${tagInlineStyle(tag)}">
+            <span class="tag-manager-color" aria-hidden="true"></span>
+            <span class="tag-manager-item-copy"><strong>${esc(tag.name)}</strong><small>${esc(tag.color.toUpperCase())}</small></span>
+            <span class="tag-manager-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+          </button>`,
+        )
+        .join("")
+    : `<div class="tag-manager-empty"><strong>${catalog.length ? "Nenhuma etiqueta encontrada" : "Ainda não há etiquetas"}</strong><span>${catalog.length ? "Tente outro termo de busca." : "Crie uma etiqueta ao editar um arquivo."}</span></div>`;
+  tagManagerList.querySelectorAll("[data-manage-tag]").forEach((button) => {
+    button.onclick = () => selectManagedTag(button.dataset.manageTag);
+  });
+}
+
+function clearTagManagerEditor() {
+  tagManagerEditor.hidden = true;
+  tagManagerPlaceholder.hidden = false;
+}
+
+function selectManagedTag(key) {
+  const tag = getManagedTagCatalog().find((item) => item.key === tagKey(key));
+  if (!tag) {
+    tagManagerSelectedKey = "";
+    clearTagManagerEditor();
+    renderTagManagerList();
+    return;
+  }
+  tagManagerSelectedKey = tag.key;
+  tagManagerDraftColor = tag.color;
+  tagManagerEditor.hidden = false;
+  tagManagerPlaceholder.hidden = true;
+  tagManagerEditingName.textContent = tag.name;
+  tagManagerEditingUsage.textContent = `${tag.count} arquivo${tag.count === 1 ? "" : "s"}`;
+  tagManagerNameInput.value = tag.name;
+  tagManagerColorPicker.value = tag.color;
+  tagManagerHexInput.value = tag.color.toUpperCase();
+  tagManagerHexInput.setCustomValidity("");
+  tagManagerHexInput.removeAttribute("aria-invalid");
+  setTagManagerError("");
+
+  const alternatives = getManagedTagCatalog().filter(
+    (item) => item.key !== tag.key,
+  );
+  tagManagerMergeTarget.innerHTML = alternatives.length
+    ? alternatives
+        .map(
+          (item) =>
+            `<option value="${esc(item.key)}">${esc(item.name)} · ${item.count}</option>`,
+        )
+        .join("")
+    : `<option value="">Nenhuma outra etiqueta</option>`;
+  $("mergeManagedTag").disabled = alternatives.length === 0;
+  syncManagedTagPreview();
+  renderTagManagerList();
+}
+
+function syncManagedTagPreview() {
+  const name = cleanTagName(tagManagerNameInput.value);
+  const color = isTagColor(tagManagerDraftColor)
+    ? tagManagerDraftColor
+    : DEFAULT_TAG_COLOR;
+  tagManagerColorPreview.textContent = name || "Etiqueta";
+  tagManagerColorPreview.setAttribute(
+    "style",
+    tagInlineStyle({ name, color }),
+  );
+  $("saveManagedTag").disabled = !name || !isTagColor(color) || tagManagerBusy;
+}
+
+function setTagManagerBusy(busy, message = "") {
+  tagManagerBusy = busy;
+  tagManagerStatus.textContent = message;
+  tagManagerModal
+    .querySelectorAll("button, input, select")
+    .forEach((control) => (control.disabled = busy));
+  if (!busy) syncManagedTagPreview();
+}
+
+async function rewriteTagAcrossFiles(sourceKey, transform) {
+  const affected = files.filter((file) =>
+    normalizeTagEntries(file.tags).some((tag) => tag.key === sourceKey),
+  );
+  let updated = 0;
+  let failed = 0;
+  for (const file of affected) {
+    const current = normalizeTagEntries(file.tags);
+    const next = normalizeTagEntries(transform(current));
+    try {
+      await updateDoc(doc(db, "vault_files", file.id), { tags: next });
+      updated += 1;
+    } catch (error) {
+      console.warn("Nao foi possivel atualizar a etiqueta", file.name, error);
+      failed += 1;
+    }
+  }
+  return { updated, failed, total: affected.length };
+}
+
+function finishTagManagerOperation(result, message) {
+  renderTagSearchOptions();
+  renderGrid();
+  const feedback = result.failed
+    ? `${result.updated} atualizado(s) · ${result.failed} com erro`
+    : message;
+  tagManagerStatus.textContent = feedback;
+  showToast(feedback, result.failed ? "error" : "success");
+}
+
+async function saveManagedTag() {
+  const source = getManagedTagCatalog().find(
+    (tag) => tag.key === tagManagerSelectedKey,
+  );
+  if (!source) return;
+  const name = cleanTagName(tagManagerNameInput.value);
+  const color = tagManagerDraftColor.toLowerCase();
+  if (!name || !isTagColor(color)) {
+    setTagManagerError("Informe um nome e uma cor hexadecimal válida.");
+    return;
+  }
+  const nextKey = tagKey(name);
+  const conflict = getManagedTagCatalog().find(
+    (tag) => tag.key === nextKey && tag.key !== source.key,
+  );
+  if (conflict) {
+    setTagManagerError(
+      `A etiqueta “${conflict.name}” já existe. Use Mesclar para combiná-las.`,
+    );
+    return;
+  }
+  if (name === source.name && color === source.color) {
+    tagManagerStatus.textContent = "Nenhuma alteração para salvar.";
+    return;
+  }
+
+  setTagManagerError("");
+  setTagManagerBusy(true, `Atualizando ${source.count} arquivo(s)...`);
+  const replacement = { name, color };
+  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+    tags.map((tag) => (tag.key === source.key ? replacement : tag)),
+  );
+  if (activeSearchTags.delete(source.key)) activeSearchTags.add(nextKey);
+  tagManagerSelectedKey = nextKey;
+  addHistory(`Etiqueta atualizada: ${source.name} -> ${name}`);
+  setTagManagerBusy(false);
+  finishTagManagerOperation(result, "Etiqueta atualizada em todo o acervo");
+  const selectedExists = getManagedTagCatalog().some(
+    (tag) => tag.key === nextKey,
+  );
+  if (selectedExists) selectManagedTag(nextKey);
+  else clearTagManagerEditor();
+}
+
+async function mergeManagedTag() {
+  const catalog = getManagedTagCatalog();
+  const source = catalog.find((tag) => tag.key === tagManagerSelectedKey);
+  const target = catalog.find(
+    (tag) => tag.key === tagManagerMergeTarget.value,
+  );
+  if (!source || !target || source.key === target.key) return;
+  const confirmed = await openConfirmDialog({
+    title: "Mesclar etiquetas",
+    message: `Substituir “${source.name}” por “${target.name}” em ${source.count} arquivo(s)? A etiqueta “${source.name}” deixará de existir.`,
+    confirmText: "Mesclar",
+  });
+  if (!confirmed) return;
+
+  setTagManagerBusy(true, `Mesclando ${source.count} arquivo(s)...`);
+  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+    mergeTagEntries(
+      tags.map((tag) => (tag.key === source.key ? target : tag)),
+    ),
+  );
+  if (activeSearchTags.delete(source.key)) activeSearchTags.add(target.key);
+  tagManagerSelectedKey = target.key;
+  addHistory(`Etiquetas mescladas: ${source.name} -> ${target.name}`);
+  setTagManagerBusy(false);
+  finishTagManagerOperation(result, `“${source.name}” foi mesclada em “${target.name}”`);
+  selectManagedTag(target.key);
+}
+
+async function deleteManagedTag() {
+  const source = getManagedTagCatalog().find(
+    (tag) => tag.key === tagManagerSelectedKey,
+  );
+  if (!source) return;
+  const confirmed = await openConfirmDialog({
+    title: "Excluir etiqueta",
+    message: `Remover “${source.name}” de ${source.count} arquivo(s)? Os arquivos não serão excluídos.`,
+    confirmText: "Excluir etiqueta",
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  setTagManagerBusy(true, `Removendo de ${source.count} arquivo(s)...`);
+  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+    tags.filter((tag) => tag.key !== source.key),
+  );
+  activeSearchTags.delete(source.key);
+  tagManagerSelectedKey = "";
+  addHistory(`Etiqueta excluida: ${source.name}`);
+  setTagManagerBusy(false);
+  finishTagManagerOperation(result, `Etiqueta “${source.name}” removida`);
+  clearTagManagerEditor();
+  renderTagManagerList();
+}
+
 function openDescriptionModal(file) {
   fileToDescribe = file;
   descriptionFileName.textContent = file.name || "Arquivo";
@@ -6060,6 +6329,80 @@ tagHexInput.oninput = () => {
   }
 };
 tagHexInput.onblur = () => renderTagEditor();
+$("tagManagerBtn").onclick = openTagManager;
+$("closeTagManager").onclick = closeTagManager;
+$("closeTagManagerFooter").onclick = closeTagManager;
+tagManagerModal.onclick = (event) => {
+  if (event.target === tagManagerModal) closeTagManager();
+};
+tagManagerModal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeTagManager();
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    saveManagedTag();
+  }
+});
+tagManagerSearch.oninput = renderTagManagerList;
+tagManagerSort.onchange = renderTagManagerList;
+tagManagerNameInput.oninput = () => {
+  setTagManagerError("");
+  syncManagedTagPreview();
+};
+tagManagerColorPicker.oninput = () => {
+  tagManagerDraftColor = tagManagerColorPicker.value.toLowerCase();
+  tagManagerHexInput.value = tagManagerDraftColor.toUpperCase();
+  tagManagerHexInput.setCustomValidity("");
+  tagManagerHexInput.removeAttribute("aria-invalid");
+  setTagManagerError("");
+  syncManagedTagPreview();
+};
+tagManagerHexInput.oninput = () => {
+  const digits = tagManagerHexInput.value
+    .replace(/^#/, "")
+    .replace(/[^0-9a-f]/gi, "")
+    .slice(0, 6)
+    .toUpperCase();
+  const draft = `#${digits}`;
+  tagManagerHexInput.value = draft;
+  if (isTagColor(draft)) {
+    tagManagerDraftColor = draft.toLowerCase();
+    tagManagerColorPicker.value = tagManagerDraftColor;
+    tagManagerHexInput.setCustomValidity("");
+    tagManagerHexInput.removeAttribute("aria-invalid");
+    setTagManagerError("");
+    syncManagedTagPreview();
+  } else {
+    tagManagerHexInput.setCustomValidity(
+      "Informe seis dígitos hexadecimais.",
+    );
+    tagManagerHexInput.setAttribute("aria-invalid", "true");
+    $("saveManagedTag").disabled = true;
+  }
+};
+tagManagerHexInput.onblur = () => {
+  tagManagerHexInput.value = tagManagerDraftColor.toUpperCase();
+  tagManagerHexInput.setCustomValidity("");
+  tagManagerHexInput.removeAttribute("aria-invalid");
+  syncManagedTagPreview();
+};
+$("saveManagedTag").onclick = () => {
+  saveManagedTag().catch((error) => {
+    setTagManagerBusy(false);
+    setTagManagerError(error.message);
+  });
+};
+$("mergeManagedTag").onclick = () => {
+  mergeManagedTag().catch((error) => {
+    setTagManagerBusy(false);
+    setTagManagerError(error.message);
+  });
+};
+$("deleteManagedTag").onclick = () => {
+  deleteManagedTag().catch((error) => {
+    setTagManagerBusy(false);
+    setTagManagerError(error.message);
+  });
+};
 $("cancelDescription").onclick = closeDescriptionModal;
 $("saveDescription").onclick = saveFileDescription;
 descriptionModal.onclick = (e) => {
@@ -7050,34 +7393,36 @@ function mergeTagEntries(...values) {
   return merged.slice(0, 12);
 }
 
-function getTagCatalog() {
+function getTagCatalog({ includeTrash = false } = {}) {
   const catalog = new Map();
-  files.filter(isActiveFile).forEach((file) => {
-    const explicitColors = new Set(
-      (Array.isArray(file.tags) ? file.tags : [])
-        .filter(
-          (tag) => tag && typeof tag === "object" && isTagColor(tag.color),
-        )
-        .map((tag) => tagKey(tag.name)),
-    );
-    const seenInFile = new Set();
-    normalizeTagEntries(file.tags).forEach((tag) => {
-      if (seenInFile.has(tag.key)) return;
-      seenInFile.add(tag.key);
-      const current = catalog.get(tag.key);
-      const explicit = explicitColors.has(tag.key);
-      if (!current) {
-        catalog.set(tag.key, { ...tag, count: 1, explicit });
-      } else {
-        current.count += 1;
-        if (explicit && !current.explicit) {
-          current.name = tag.name;
-          current.color = tag.color;
-          current.explicit = true;
+  files
+    .filter((file) => includeTrash || isActiveFile(file))
+    .forEach((file) => {
+      const explicitColors = new Set(
+        (Array.isArray(file.tags) ? file.tags : [])
+          .filter(
+            (tag) => tag && typeof tag === "object" && isTagColor(tag.color),
+          )
+          .map((tag) => tagKey(tag.name)),
+      );
+      const seenInFile = new Set();
+      normalizeTagEntries(file.tags).forEach((tag) => {
+        if (seenInFile.has(tag.key)) return;
+        seenInFile.add(tag.key);
+        const current = catalog.get(tag.key);
+        const explicit = explicitColors.has(tag.key);
+        if (!current) {
+          catalog.set(tag.key, { ...tag, count: 1, explicit });
+        } else {
+          current.count += 1;
+          if (explicit && !current.explicit) {
+            current.name = tag.name;
+            current.color = tag.color;
+            current.explicit = true;
+          }
         }
-      }
+      });
     });
-  });
   return [...catalog.values()].sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"),
   );

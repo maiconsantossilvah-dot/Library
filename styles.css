@@ -8068,7 +8068,7 @@ button.tag-chip:hover {
   justify-items: center;
 }
 
-.vault-reimagined #tagColorPicker {
+.vault-reimagined .tag-free-color-input {
   width: 48px;
   min-width: 48px;
   height: 48px;
@@ -8081,16 +8081,16 @@ button.tag-chip:hover {
   cursor: pointer;
 }
 
-.vault-reimagined #tagColorPicker::-webkit-color-swatch-wrapper {
+.vault-reimagined .tag-free-color-input::-webkit-color-swatch-wrapper {
   padding: 3px;
 }
 
-.vault-reimagined #tagColorPicker::-webkit-color-swatch {
+.vault-reimagined .tag-free-color-input::-webkit-color-swatch {
   border: 0;
   border-radius: 50%;
 }
 
-.vault-reimagined #tagColorPicker::-moz-color-swatch {
+.vault-reimagined .tag-free-color-input::-moz-color-swatch {
   border: 0;
   border-radius: 50%;
 }
@@ -8138,6 +8138,264 @@ button.tag-chip:hover {
   gap: 5px;
   margin-top: 10px;
   overflow-y: auto;
+}
+
+.vault-reimagined .tag-manager-modal {
+  display: grid;
+  width: min(920px, 95vw);
+  max-height: min(820px, 92vh);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+.vault-reimagined .tag-manager-toolbar {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(190px, 0.8fr) 150px;
+  align-items: end;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.vault-reimagined .tag-manager-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.vault-reimagined .tag-manager-summary strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.vault-reimagined .tag-manager-summary span,
+.vault-reimagined .tag-manager-editor-heading span,
+.vault-reimagined .tag-manager-merge-section p,
+.vault-reimagined .tag-manager-status {
+  color: var(--text3);
+  font-size: 10px;
+}
+
+.vault-reimagined .tag-manager-toolbar :is(.modal-input, .sort-select) {
+  min-height: 40px;
+  margin: 0;
+}
+
+.vault-reimagined .tag-manager-layout {
+  display: grid;
+  min-height: 360px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(330px, 1.1fr);
+  gap: 16px;
+  padding: 16px 0;
+  overflow: hidden;
+}
+
+.vault-reimagined .tag-manager-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vault-reimagined .tag-manager-item {
+  display: grid;
+  width: 100%;
+  min-height: 54px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text2);
+  text-align: left;
+}
+
+.vault-reimagined .tag-manager-item:hover,
+.vault-reimagined .tag-manager-item.active {
+  border-color: var(--border2);
+  background: var(--bg3);
+}
+
+.vault-reimagined .tag-manager-item.active {
+  box-shadow: inset 3px 0 0 var(--tag-bg, var(--accent2));
+}
+
+.vault-reimagined .tag-manager-color {
+  width: 16px;
+  height: 32px;
+  border-radius: 5px;
+  background: var(--tag-bg);
+}
+
+.vault-reimagined .tag-manager-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.vault-reimagined .tag-manager-item-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-reimagined .tag-manager-item-copy small,
+.vault-reimagined .tag-manager-usage {
+  color: var(--text3);
+  font: 600 9px/1.2 var(--font-mono);
+  white-space: nowrap;
+}
+
+.vault-reimagined .tag-manager-editor,
+.vault-reimagined .tag-manager-placeholder {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.vault-reimagined .tag-manager-editor {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
+.vault-reimagined .tag-manager-editor[hidden] {
+  display: none;
+}
+
+.vault-reimagined .tag-manager-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 3px;
+}
+
+.vault-reimagined .tag-manager-editor-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.vault-reimagined .tag-manager-editor-heading strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.vault-reimagined .tag-manager-color-options {
+  grid-template-columns: auto minmax(130px, 0.8fr) minmax(140px, 1fr);
+  margin: 2px 0;
+}
+
+.vault-reimagined .tag-manager-save {
+  width: 100%;
+}
+
+.vault-reimagined .tag-manager-merge-section {
+  display: grid;
+  gap: 7px;
+  margin-top: 5px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.vault-reimagined .tag-manager-merge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.vault-reimagined .tag-manager-merge-row .sort-select {
+  width: 100%;
+  margin: 0;
+}
+
+.vault-reimagined .modal-btn.tag-manager-delete {
+  margin-top: 7px;
+  border-color: rgba(255, 59, 48, 0.35);
+  background: rgba(255, 59, 48, 0.08);
+  color: var(--danger);
+}
+
+.vault-reimagined .tag-manager-placeholder {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  color: var(--text3);
+  text-align: center;
+}
+
+.vault-reimagined .tag-manager-placeholder[hidden] {
+  display: none;
+}
+
+.vault-reimagined .tag-manager-placeholder .lucide {
+  width: 34px;
+  height: 34px;
+}
+
+.vault-reimagined .tag-manager-placeholder strong,
+.vault-reimagined .tag-manager-empty strong {
+  color: var(--text);
+}
+
+.vault-reimagined .tag-manager-placeholder p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.vault-reimagined .tag-manager-empty {
+  display: grid;
+  gap: 4px;
+  padding: 28px 14px;
+  color: var(--text3);
+  font-size: 11px;
+  text-align: center;
+}
+
+.vault-reimagined .tag-manager-error {
+  min-height: 16px;
+  margin: 0;
+}
+
+.vault-reimagined .tag-manager-status {
+  min-height: 18px;
+}
+
+@media (max-width: 760px) {
+  .vault-reimagined .tag-manager-modal {
+    max-height: 94vh;
+  }
+
+  .vault-reimagined .tag-manager-toolbar,
+  .vault-reimagined .tag-manager-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-reimagined .tag-manager-layout {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .vault-reimagined .tag-manager-list {
+    max-height: 230px;
+  }
+
+  .vault-reimagined .tag-manager-color-options {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .vault-reimagined .tag-manager-color-options .tag-color-preview-wrap {
+    grid-column: 1 / -1;
+  }
 }
 
 .vault-reimagined .dialog-tag-field {

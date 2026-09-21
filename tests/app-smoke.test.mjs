@@ -183,6 +183,61 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
       { name: "Trabalho", color: "#12ab34" },
     ],
   );
+  document.getElementById("tagManagerBtn").click();
+  assert.equal(
+    document.getElementById("tagManagerModal").classList.contains("active"),
+    true,
+  );
+  assert.match(
+    document.getElementById("tagManagerStats").textContent,
+    /2 etiquetas/,
+  );
+  document.querySelector('[data-manage-tag="trabalho"]').click();
+  const managedName = document.getElementById("tagManagerNameInput");
+  const managedColor = document.getElementById("tagManagerColorPicker");
+  managedName.value = "Projetos";
+  managedName.dispatchEvent(new w.Event("input", { bubbles: true }));
+  managedColor.value = "#654321";
+  managedColor.dispatchEvent(new w.Event("input", { bubbles: true }));
+  document.getElementById("saveManagedTag").click();
+  await new Promise((r) => setTimeout(r, 80));
+  const editedImage = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-image",
+  ).data;
+  assert.deepEqual(
+    editedImage.tags.map(({ name, color }) => ({ name, color })),
+    [
+      { name: "Viagem", color: "#579dff" },
+      { name: "Projetos", color: "#654321" },
+    ],
+  );
+  document.getElementById("tagManagerMergeTarget").value = "viagem";
+  document.getElementById("mergeManagedTag").click();
+  assert.equal(
+    document.getElementById("confirmModal").classList.contains("active"),
+    true,
+  );
+  document.getElementById("confirmModalConfirm").click();
+  await new Promise((r) => setTimeout(r, 80));
+  const mergedImage = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-image",
+  ).data;
+  assert.deepEqual(
+    mergedImage.tags.map(({ name, color }) => ({ name, color })),
+    [{ name: "Viagem", color: "#579dff" }],
+  );
+  document.getElementById("deleteManagedTag").click();
+  document.getElementById("confirmModalConfirm").click();
+  await new Promise((r) => setTimeout(r, 80));
+  const untaggedImage = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-image",
+  ).data;
+  assert.deepEqual(untaggedImage.tags, []);
+  assert.match(
+    document.getElementById("tagManagerList").textContent,
+    /Ainda não há etiquetas/,
+  );
+  document.getElementById("closeTagManagerFooter").click();
   const card = document.querySelector(".file-name");
   assert.ok(card);
   card.click();

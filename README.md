@@ -37,6 +37,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 - Em **Mais opções → Etiquetas**, selecione etiquetas existentes ou crie uma nova escolhendo sua cor. As etiquetas aparecem nos cartões como os rótulos do Trello.
 - O seletor mostra quantos arquivos usam cada etiqueta e permite remover ou combinar até 12 etiquetas por arquivo.
 - Na barra de busca, clique em **Etiquetas** e escolha uma ou mais opções para filtrar diretamente, sem digitar. Clicar em uma etiqueta no próprio cartão aplica o mesmo filtro.
+- Em **Ferramentas → Central de etiquetas**, pesquise e ordene o catálogo completo, altere nome e cor em todo o acervo, mescle etiquetas duplicadas ou remova uma etiqueta de todos os arquivos. Mesclar e excluir sempre pedem confirmação.
 - Etiquetas antigas em formato de texto continuam funcionando e recebem uma cor automaticamente; ao serem salvas novamente, nome e cor passam a fazer parte dos metadados sincronizados.
 
 ## Proteção dos metadados
