@@ -7867,6 +7867,306 @@ button:disabled {
   white-space: nowrap;
 }
 
+.vault-reimagined .global-search {
+  position: relative;
+  overflow: visible;
+}
+
+.vault-reimagined .search-tags-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text2);
+  font: 600 10px/1 var(--font-body);
+}
+
+.vault-reimagined .search-tags-toggle:hover,
+.vault-reimagined .search-tags-toggle.active {
+  background: #e4eee4;
+  color: #245f47;
+}
+
+.vault-reimagined .search-tags-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: #2f6f54;
+  color: #fff;
+  font-size: 9px;
+}
+
+.vault-reimagined .search-tags-panel {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 120;
+  width: min(390px, calc(100vw - 48px));
+  padding: 14px;
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  background: var(--bg2);
+  box-shadow: 0 18px 42px rgba(45, 55, 47, 0.18);
+}
+
+.vault-reimagined .search-tags-heading,
+.vault-reimagined .tag-section-heading,
+.vault-reimagined .tag-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vault-reimagined .search-tags-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.vault-reimagined .search-tags-heading strong,
+.vault-reimagined .tag-section-heading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.vault-reimagined .search-tags-heading span,
+.vault-reimagined .tag-section-heading span,
+.vault-reimagined .tag-editor-help,
+.vault-reimagined .tag-modal-context {
+  color: var(--text3);
+  font-size: 11px;
+}
+
+.vault-reimagined .search-tags-clear {
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent2);
+  font: 700 10px/1 var(--font-body);
+}
+
+.vault-reimagined .search-tags-clear:hover {
+  background: var(--bg3);
+}
+
+.vault-reimagined .search-tag-options {
+  display: grid;
+  max-height: 310px;
+  gap: 5px;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+.vault-reimagined .search-tag-option,
+.vault-reimagined .tag-existing-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text2);
+  text-align: left;
+}
+
+.vault-reimagined .search-tag-option:hover,
+.vault-reimagined .search-tag-option.active,
+.vault-reimagined .tag-existing-item:hover,
+.vault-reimagined .tag-existing-item.active {
+  border-color: var(--border);
+  background: var(--bg3);
+}
+
+.vault-reimagined .tag-color-label {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  overflow: hidden;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+  font: 700 11px/1.2 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-reimagined .search-tag-usage,
+.vault-reimagined .tag-existing-usage {
+  color: var(--text3);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.vault-reimagined .search-tag-check,
+.vault-reimagined .tag-existing-check {
+  color: var(--accent2);
+  font-weight: 800;
+  text-align: center;
+}
+
+.vault-reimagined .tag-empty-message,
+.vault-reimagined .tag-empty-inline {
+  color: var(--text3);
+  font-size: 11px;
+}
+
+.vault-reimagined .tag-chip {
+  display: inline-flex;
+  max-width: 140px;
+  min-height: 22px;
+  align-items: center;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+  font: 700 9px/1.15 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.tag-chip:hover {
+  filter: brightness(0.94);
+  transform: translateY(-1px);
+}
+
+.vault-reimagined .tag-modal {
+  width: min(680px, 94vw);
+}
+
+.vault-reimagined .tag-modal-header {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.vault-reimagined .tag-modal-header .modal-title {
+  margin: 2px 0 3px;
+}
+
+.vault-reimagined .tag-selected-section,
+.vault-reimagined .tag-create-section,
+.vault-reimagined .tag-existing-section {
+  padding: 15px 0;
+  border-top: 1px solid var(--border);
+}
+
+.vault-reimagined .tag-selected-list {
+  display: flex;
+  min-height: 38px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.vault-reimagined .tag-selected-item {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+  font: 700 11px/1 var(--font-body);
+}
+
+.vault-reimagined .tag-selected-item:hover {
+  filter: brightness(0.94);
+}
+
+.vault-reimagined .tag-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  margin-top: 7px;
+}
+
+.vault-reimagined .tag-create-row .modal-input {
+  margin: 0;
+}
+
+.vault-reimagined .tag-color-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.vault-reimagined .tag-color-swatch {
+  width: 30px;
+  height: 30px;
+  border: 3px solid transparent;
+  border-radius: 7px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(23, 43, 77, 0.12);
+}
+
+.vault-reimagined .tag-color-swatch.active {
+  border-color: var(--bg2);
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.vault-reimagined .tag-editor-help {
+  margin: 9px 0 0;
+}
+
+.vault-reimagined .tag-editor-error {
+  margin: 8px 0 0;
+}
+
+.vault-reimagined .tag-existing-list {
+  display: grid;
+  max-height: 245px;
+  gap: 5px;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.vault-reimagined .dialog-tag-field {
+  display: grid;
+  gap: 8px;
+}
+
+.vault-reimagined .tag-picker-trigger {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border2);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 700;
+  text-align: left;
+}
+
+.vault-reimagined .tag-picker-trigger:hover {
+  border-color: #8eaf99;
+  background: #eef5ed;
+}
+
+.vault-reimagined .dialog-tag-summary {
+  display: flex;
+  min-height: 25px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .vault-reimagined .library-scope-tabs {
   display: flex;
   align-items: center;
@@ -8015,6 +8315,24 @@ button:disabled {
   color: #bac8bf;
 }
 
+.vault-reimagined[data-theme="dark"] .search-tags-toggle:hover,
+.vault-reimagined[data-theme="dark"] .search-tags-toggle.active,
+.vault-reimagined[data-theme="dark"] .search-tag-option:hover,
+.vault-reimagined[data-theme="dark"] .search-tag-option.active,
+.vault-reimagined[data-theme="dark"] .tag-existing-item:hover,
+.vault-reimagined[data-theme="dark"] .tag-existing-item.active,
+.vault-reimagined[data-theme="dark"] .tag-picker-trigger:hover {
+  border-color: #48584f;
+  background: #2a3931;
+  color: #f2f1eb;
+}
+
+.vault-reimagined[data-theme="dark"] .search-tags-panel,
+.vault-reimagined[data-theme="dark"] .tag-picker-trigger {
+  border-color: #48584f;
+  background: #202d27;
+}
+
 .vault-reimagined[data-theme="dark"] .library-scope-tab.chip:hover,
 .vault-reimagined[data-theme="dark"] .smart-filter-row .chip:hover {
   background: #2a3931;
@@ -8151,6 +8469,14 @@ button:disabled {
   .vault-reimagined .tools-status .connection-status {
     display: inline-flex;
     justify-self: start;
+  }
+
+  .vault-reimagined #searchTagsLabel {
+    display: none;
+  }
+
+  .vault-reimagined .tag-create-row {
+    grid-template-columns: 1fr;
   }
 }
 

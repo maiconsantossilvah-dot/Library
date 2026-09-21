@@ -106,12 +106,56 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     name: "Imagem de teste",
     fileType: "image",
     size: 1,
+    tags: [{ name: "Viagem", color: "#579dff" }],
     url: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
     createdAt: new Date().toISOString(),
     folderId: null,
   });
+  const initiallyStoredImage = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-image",
+  ).data;
+  assert.equal(initiallyStoredImage.tags[0].color, "#579dff");
   document.getElementById("clearSearchFilters").click();
   assert.equal(document.getElementById("legacyMigrationNotice").hidden, true);
+  const tagChip = document.querySelector(".tag-chip");
+  assert.equal(tagChip.textContent, "Viagem");
+  assert.match(tagChip.getAttribute("style"), /#579dff/);
+  document.getElementById("searchTagsToggle").click();
+  const searchTag = document.querySelector('[data-search-tag="viagem"]');
+  assert.ok(searchTag);
+  searchTag.click();
+  assert.equal(document.getElementById("searchTagsCount").textContent, "1");
+  assert.match(
+    document.getElementById("currentFolderTitle").textContent,
+    /Viagem/,
+  );
+  document.getElementById("clearSearchTags").click();
+  document.querySelector(".tags-btn").click();
+  assert.equal(
+    document.getElementById("tagModal").classList.contains("active"),
+    true,
+  );
+  assert.match(
+    document.getElementById("tagSelectedList").textContent,
+    /Viagem/,
+  );
+  const tagNameInput = document.getElementById("tagNameInput");
+  tagNameInput.value = "Trabalho";
+  tagNameInput.dispatchEvent(new w.Event("input", { bubbles: true }));
+  document.querySelector('[data-tag-color="#f87168"]').click();
+  document.getElementById("createTagBtn").click();
+  document.getElementById("saveTags").click();
+  await new Promise((r) => setTimeout(r, 60));
+  const savedImage = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-image",
+  ).data;
+  assert.deepEqual(
+    savedImage.tags.map(({ name, color }) => ({ name, color })),
+    [
+      { name: "Viagem", color: "#579dff" },
+      { name: "Trabalho", color: "#f87168" },
+    ],
+  );
   const card = document.querySelector(".file-name");
   assert.ok(card);
   card.click();

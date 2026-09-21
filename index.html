@@ -178,7 +178,7 @@
 
             <div class="global-search">
               <label class="sr-only" for="searchInput"
-                >Buscar arquivo, tag ou conteúdo indexado</label
+                >Buscar arquivo, etiqueta ou conteúdo indexado</label
               >
               <span
                 class="search-symbol"
@@ -189,10 +189,46 @@
                 class="search-input"
                 id="searchInput"
                 placeholder="Buscar no seu acervo..."
-                aria-label="Buscar arquivo, tag ou conteúdo indexado"
+                aria-label="Buscar arquivo, etiqueta ou conteúdo indexado"
                 aria-keyshortcuts="Control+K Meta+K"
               />
+              <button
+                class="search-tags-toggle"
+                id="searchTagsToggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="searchTagsPanel"
+                title="Filtrar por etiquetas"
+              >
+                <span data-icon="Tags" aria-hidden="true"></span>
+                <span id="searchTagsLabel">Etiquetas</span>
+                <span class="search-tags-count" id="searchTagsCount" hidden
+                  >0</span
+                >
+              </button>
               <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
+              <div
+                class="search-tags-panel"
+                id="searchTagsPanel"
+                aria-label="Escolher etiquetas para pesquisar"
+                hidden
+              >
+                <div class="search-tags-heading">
+                  <div>
+                    <strong>Pesquisar por etiqueta</strong>
+                    <span>Escolha uma ou mais etiquetas.</span>
+                  </div>
+                  <button
+                    class="search-tags-clear"
+                    id="clearSearchTags"
+                    type="button"
+                    hidden
+                  >
+                    Limpar
+                  </button>
+                </div>
+                <div class="search-tag-options" id="searchTagOptions"></div>
+              </div>
             </div>
 
             <div class="masthead-actions">
@@ -341,7 +377,7 @@
             >
               <button class="chip" data-filter="duplicates">Duplicados</button>
               <button class="chip" data-filter="screenshots">Capturas</button>
-              <button class="chip" data-filter="untagged">Sem tags</button>
+              <button class="chip" data-filter="untagged">Sem etiquetas</button>
               <button class="chip" data-filter="largeVideos">
                 Vídeos grandes
               </button>
@@ -666,7 +702,7 @@
             <button
               class="bulk-btn"
               id="bulkEditBtn"
-              title="Editar tags, prioridade e descricao em lote"
+              title="Editar etiquetas, prioridade e descricao em lote"
             >
               Editar
             </button>
@@ -1123,6 +1159,97 @@
         <div class="info-grid" id="infoModalBody"></div>
         <div class="modal-actions">
           <button class="modal-btn cancel" id="closeInfoModal">Fechar</button>
+        </div>
+      </div>
+    </div>
+    <!-- MODAL: Etiquetas -->
+    <div
+      class="modal-overlay"
+      id="tagModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tagModalTitle"
+    >
+      <div class="modal tag-modal">
+        <header class="tag-modal-header">
+          <div>
+            <p class="modal-kicker">Organização</p>
+            <h2 class="modal-title" id="tagModalTitle">Etiquetas</h2>
+            <p class="tag-modal-context" id="tagModalContext"></p>
+          </div>
+          <button
+            class="modal-icon-btn cancel"
+            id="closeTagModal"
+            type="button"
+            aria-label="Fechar etiquetas"
+          >
+            <span data-icon="X"></span>
+          </button>
+        </header>
+
+        <section
+          class="tag-selected-section"
+          aria-labelledby="tagSelectedTitle"
+        >
+          <div class="tag-section-heading">
+            <strong id="tagSelectedTitle">Selecionadas</strong>
+            <span id="tagSelectedCount">0 de 12</span>
+          </div>
+          <div class="tag-selected-list" id="tagSelectedList"></div>
+        </section>
+
+        <section class="tag-create-section" aria-labelledby="tagCreateTitle">
+          <label class="field-label" for="tagNameInput" id="tagCreateTitle"
+            >Buscar ou criar etiqueta</label
+          >
+          <div class="tag-create-row">
+            <input
+              class="modal-input"
+              id="tagNameInput"
+              type="text"
+              maxlength="32"
+              placeholder="Ex.: Viagem, Trabalho, Documentos"
+              autocomplete="off"
+            />
+            <button class="modal-btn confirm" id="createTagBtn" type="button">
+              Criar etiqueta
+            </button>
+          </div>
+          <div
+            class="tag-color-options"
+            id="tagColorOptions"
+            role="group"
+            aria-label="Cor da nova etiqueta"
+          ></div>
+          <p class="tag-editor-help">
+            Escolha uma cor e crie uma etiqueta nova, ou selecione uma existente
+            abaixo.
+          </p>
+          <p
+            class="form-error tag-editor-error"
+            id="tagEditorError"
+            role="alert"
+          ></p>
+        </section>
+
+        <section
+          class="tag-existing-section"
+          aria-labelledby="tagExistingTitle"
+        >
+          <div class="tag-section-heading">
+            <strong id="tagExistingTitle">Etiquetas existentes</strong>
+            <span id="tagExistingCount"></span>
+          </div>
+          <div class="tag-existing-list" id="tagExistingList"></div>
+        </section>
+
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="cancelTagModal" type="button">
+            Cancelar
+          </button>
+          <button class="modal-btn confirm" id="saveTags" type="button">
+            Salvar etiquetas
+          </button>
         </div>
       </div>
     </div>

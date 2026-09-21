@@ -32,6 +32,13 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
 
+### Etiquetas coloridas
+
+- Em **Mais opções → Etiquetas**, selecione etiquetas existentes ou crie uma nova escolhendo sua cor. As etiquetas aparecem nos cartões como os rótulos do Trello.
+- O seletor mostra quantos arquivos usam cada etiqueta e permite remover ou combinar até 12 etiquetas por arquivo.
+- Na barra de busca, clique em **Etiquetas** e escolha uma ou mais opções para filtrar diretamente, sem digitar. Clicar em uma etiqueta no próprio cartão aplica o mesmo filtro.
+- Etiquetas antigas em formato de texto continuam funcionando e recebem uma cor automaticamente; ao serem salvas novamente, nome e cor passam a fazer parte dos metadados sincronizados.
+
 ## Proteção dos metadados
 
 - **Salvo neste navegador** não significa backup. Limpar os dados do site ou perder o dispositivo antes de sincronizar pode apagar alterações.

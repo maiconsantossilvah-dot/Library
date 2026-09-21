@@ -78,6 +78,18 @@ const NAV_CONTENT_SCOPES = new Set([
   "important",
   "favorites",
 ]);
+const TAG_COLORS = [
+  "#4bce97",
+  "#94c748",
+  "#f5cd47",
+  "#fea362",
+  "#f87168",
+  "#e774bb",
+  "#9f8fef",
+  "#579dff",
+  "#6cc3e0",
+  "#8590a2",
+];
 
 function loadNavigationMemory() {
   try {
@@ -90,6 +102,7 @@ function loadNavigationMemory() {
 
 const savedNavigation = loadNavigationMemory();
 let currentSearch = "";
+let activeSearchTags = new Set();
 let currentSort = "newest";
 let thumbQuality = localStorage.getItem("vault_thumb_quality") || "medium";
 let activeAccountView =
@@ -158,6 +171,9 @@ const driveObjectUrls = new Map();
 let fileToMove = null;
 let bulkMoveMode = false;
 let fileToDescribe = null;
+let tagEditorResolve = null;
+let tagEditorSelected = [];
+let tagEditorColor = TAG_COLORS[0];
 let folderToCover = null;
 let videoToCover = null;
 let folderForActions = null;
@@ -210,6 +226,11 @@ const toast = $("toast");
 const bulkBar = $("bulkBar");
 const bulkCount = $("bulkCount");
 const searchInput = $("searchInput");
+const searchTagsToggle = $("searchTagsToggle");
+const searchTagsPanel = $("searchTagsPanel");
+const searchTagOptions = $("searchTagOptions");
+const searchTagsCount = $("searchTagsCount");
+const searchTagsLabel = $("searchTagsLabel");
 const sortSelect = $("sortSelect");
 const qualitySelect = $("qualitySelect");
 const accountViewSelect = $("accountViewSelect");
@@ -260,6 +281,16 @@ const configError = $("configError");
 const descriptionModal = $("descriptionModal");
 const descriptionFileName = $("descriptionFileName");
 const descriptionInput = $("descriptionInput");
+const tagModal = $("tagModal");
+const tagModalTitle = $("tagModalTitle");
+const tagModalContext = $("tagModalContext");
+const tagNameInput = $("tagNameInput");
+const tagColorOptions = $("tagColorOptions");
+const tagSelectedList = $("tagSelectedList");
+const tagSelectedCount = $("tagSelectedCount");
+const tagExistingList = $("tagExistingList");
+const tagExistingCount = $("tagExistingCount");
+const tagEditorError = $("tagEditorError");
 const formModal = $("formModal");
 const formModalTitle = $("formModalTitle");
 const formModalBody = $("formModalBody");
@@ -490,12 +521,20 @@ let confirmDialogResolve = null;
 function openFieldsDialog({ title, fields, confirmText = "Salvar" }) {
   return new Promise((resolve) => {
     formDialogResolve = resolve;
-    formDialogFields = fields;
+    formDialogFields = fields.map((field) => ({
+      ...field,
+      ...(field.type === "tags"
+        ? { _tagValue: normalizeTagEntries(field.value) }
+        : {}),
+    }));
     formModalTitle.textContent = title;
     formModalConfirm.textContent = confirmText;
-    formModalBody.innerHTML = fields.map(renderDialogField).join("");
+    formModalBody.innerHTML = formDialogFields.map(renderDialogField).join("");
+    bindDialogTagPickers();
     formModal.classList.add("active");
-    const first = formModalBody.querySelector("input, textarea, select");
+    const first = formModalBody.querySelector(
+      "input, textarea, select, [data-tag-picker]",
+    );
     setTimeout(() => first?.focus(), 0);
   });
 }
@@ -507,6 +546,14 @@ function renderDialogField(field) {
   const required = field.required ? " required" : "";
   const maxLength = field.maxlength ? ` maxlength="${field.maxlength}"` : "";
   const rows = field.rows || 4;
+
+  if (field.type === "tags") {
+    return `<div class="dialog-field dialog-tag-field">
+      <span class="field-label">${label}</span>
+      <button class="tag-picker-trigger" type="button" data-tag-picker="${esc(field.name)}">Escolher etiquetas</button>
+      <div class="dialog-tag-summary" data-tag-summary="${esc(field.name)}">${renderTagPills(field._tagValue)}</div>
+    </div>`;
+  }
 
   if (field.type === "textarea") {
     return `<label class="field-label dialog-field">${label}<textarea class="modal-input" data-field="${esc(field.name)}" placeholder="${placeholder}" rows="${rows}"${maxLength}${required}>${value}</textarea></label>`;
@@ -532,6 +579,29 @@ function renderDialogField(field) {
   return `<label class="field-label dialog-field">${label}<input class="modal-input" data-field="${esc(field.name)}" type="${esc(type)}" value="${value}" placeholder="${placeholder}"${maxLength}${required} /></label>`;
 }
 
+function bindDialogTagPickers() {
+  formDialogFields
+    .filter((field) => field.type === "tags")
+    .forEach((field) => {
+      const button = formModalBody.querySelector(
+        `[data-tag-picker="${CSS.escape(field.name)}"]`,
+      );
+      button?.addEventListener("click", async () => {
+        const selected = await openTagPicker({
+          title: field.pickerTitle || field.label || "Escolher etiquetas",
+          context: field.pickerContext || "Selecione ou crie etiquetas.",
+          selected: field._tagValue,
+        });
+        if (selected === null) return;
+        field._tagValue = selected;
+        const summary = formModalBody.querySelector(
+          `[data-tag-summary="${CSS.escape(field.name)}"]`,
+        );
+        if (summary) summary.innerHTML = renderTagPills(selected);
+      });
+    });
+}
+
 function closeFieldsDialog(value) {
   formModal.classList.remove("active");
   const resolve = formDialogResolve;
@@ -543,6 +613,10 @@ function closeFieldsDialog(value) {
 function collectDialogValues() {
   const values = {};
   formDialogFields.forEach((field) => {
+    if (field.type === "tags") {
+      values[field.name] = normalizeTagEntries(field._tagValue);
+      return;
+    }
     const input = formModalBody.querySelector(
       `[data-field="${CSS.escape(field.name)}"]`,
     );
@@ -1304,6 +1378,7 @@ function listenFiles() {
       files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       refreshLegacyNotice();
       rebuildFileIndexes();
+      renderTagSearchOptions();
       updateStorageUI();
       scheduleDashboardUpdate();
       renderGrid();
@@ -1822,14 +1897,20 @@ function updateLibraryWorkspaceHeader() {
     image: "Fotos",
     video: "Vídeos",
     document: "Documentos",
-    untagged: "Sem tags",
+    untagged: "Sem etiquetas",
     largeVideos: "Vídeos grandes",
     media: "Fotos e vídeos",
   }[navState.contentScope];
+  const selectedTagNames = getTagCatalog()
+    .filter((tag) => activeSearchTags.has(tag.key))
+    .map((tag) => tag.name);
   if (currentFolderTitle)
     currentFolderTitle.textContent = currentSearch
       ? "Busca por “" + currentSearch + "”"
-      : scopeTitle || (isRoot ? "Todos os arquivos" : folder?.name || "Pasta");
+      : selectedTagNames.length
+        ? `Etiqueta${selectedTagNames.length > 1 ? "s" : ""}: ${selectedTagNames.join(", ")}`
+        : scopeTitle ||
+          (isRoot ? "Todos os arquivos" : folder?.name || "Pasta");
   if (currentFolderMeta) {
     const fileText = `${directFiles} arquivo${directFiles === 1 ? "" : "s"}`;
     const folderText = `${directFolders} subpasta${directFolders === 1 ? "" : "s"}`;
@@ -2011,7 +2092,7 @@ function updateEmptyState(itemCount) {
     recent: ["Nada recente", "Seus envios mais recentes vao aparecer aqui."],
     untagged: [
       "Tudo etiquetado",
-      "Arquivos sem tags aparecem aqui para facilitar organizacao.",
+      "Arquivos sem etiquetas aparecem aqui para facilitar organizacao.",
     ],
     largeVideos: [
       "Sem videos grandes",
@@ -2029,6 +2110,7 @@ function updateEmptyState(itemCount) {
     ];
   const filtered =
     !!currentSearch ||
+    activeSearchTags.size > 0 ||
     Object.values(advancedFilters).some(Boolean) ||
     activeAccountView !== "all";
   emptyTitle.textContent = filtered ? "Nenhum resultado encontrado" : title;
@@ -2156,11 +2238,17 @@ function dateValue(value) {
 }
 
 function fileMatchesSearch(file) {
+  const tags = normalizeTagEntries(file.tags);
+  const fileTagKeys = new Set(tags.map(tagKey));
+  if (
+    activeSearchTags.size &&
+    [...activeSearchTags].some((key) => !fileTagKeys.has(key))
+  )
+    return false;
   if (!currentSearch) return true;
-  const tags = normalizeTags(file.tags).join(" ");
   const indexedText = localTextSearch.get(file.id)?.text || "";
   return matchesSearch(
-    `${file.name || ""} ${tags} ${file.description || ""} ${getFolderPathLabel(file.folderId)} ${indexedText}`,
+    `${file.name || ""} ${tags.map((tag) => tag.name).join(" ")} ${file.description || ""} ${getFolderPathLabel(file.folderId)} ${indexedText}`,
   );
 }
 
@@ -2174,6 +2262,55 @@ function normalizeSearchText(text) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("pt-BR");
+}
+
+function renderTagSearchOptions() {
+  if (!searchTagOptions) return;
+  const catalog = getTagCatalog();
+  const selected = catalog.filter((tag) => activeSearchTags.has(tag.key));
+  searchTagsCount.textContent = String(activeSearchTags.size);
+  searchTagsCount.hidden = activeSearchTags.size === 0;
+  searchTagsLabel.textContent =
+    selected.length === 1 ? selected[0].name : "Etiquetas";
+  $("clearSearchTags").hidden = activeSearchTags.size === 0;
+  searchTagsToggle?.classList.toggle("active", activeSearchTags.size > 0);
+  searchTagOptions.innerHTML = catalog.length
+    ? catalog
+        .map(
+          (
+            tag,
+          ) => `<button class="search-tag-option${activeSearchTags.has(tag.key) ? " active" : ""}" type="button" data-search-tag="${esc(tag.key)}" aria-pressed="${activeSearchTags.has(tag.key)}">
+            <span class="tag-color-label" style="${tagInlineStyle(tag)}">${esc(tag.name)}</span>
+            <span class="search-tag-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+            <span class="search-tag-check" aria-hidden="true">${activeSearchTags.has(tag.key) ? "✓" : ""}</span>
+          </button>`,
+        )
+        .join("")
+    : `<p class="tag-empty-message">Crie uma etiqueta em um arquivo para ela aparecer aqui.</p>`;
+  searchTagOptions.querySelectorAll("[data-search-tag]").forEach((button) => {
+    button.onclick = () => toggleSearchTag(button.dataset.searchTag);
+  });
+}
+
+function toggleSearchTag(key, options = {}) {
+  const cleanKey = tagKey(key);
+  if (!cleanKey) return;
+  if (options.exclusive) activeSearchTags.clear();
+  if (!options.exclusive && activeSearchTags.has(cleanKey))
+    activeSearchTags.delete(cleanKey);
+  else activeSearchTags.add(cleanKey);
+  if (navState.viewMode === "folders") navState.viewMode = "grid";
+  openFilesSection({ render: false, refreshNavigation: false });
+  setViewButtonState(navState.viewMode);
+  visibleLimit = PAGE_SIZE;
+  renderTagSearchOptions();
+  renderGrid();
+}
+
+function clearTagSearch() {
+  activeSearchTags.clear();
+  renderTagSearchOptions();
+  renderGrid();
 }
 
 function supportsLocalIndex(file) {
@@ -2238,9 +2375,16 @@ async function getPhotoInsights(file, options = {}) {
 }
 
 function photoMetadataUpdate(file, insights) {
-  const tags = normalizeTags(file.tags);
-  if (insights.isScreenshot && !tags.includes("captura-de-tela"))
-    tags.push("captura-de-tela");
+  const tags = normalizeTagEntries(file.tags);
+  if (
+    insights.isScreenshot &&
+    !tags.some((tag) => tag.key === tagKey("captura-de-tela"))
+  )
+    tags.push({
+      name: "captura-de-tela",
+      color: defaultTagColor("captura-de-tela"),
+      key: tagKey("captura-de-tela"),
+    });
   return {
     eventDate: file.eventDate || insights.capturedAt || "",
     photoDateSource: file.eventDate
@@ -2467,7 +2611,7 @@ function makeFileCard(file) {
 
   const favClass = file.favorite ? "fav-btn active" : "fav-btn";
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
-  const tags = normalizeTags(file.tags);
+  const tags = normalizeTagEntries(file.tags);
   const isTrash = navState.contentScope === "trash" || file.deletedAt;
   const priorityLabel =
     { important: "Importante", critical: "Muito importante" }[file.priority] ||
@@ -2509,7 +2653,7 @@ function makeFileCard(file) {
         ${automaticLabels.map((label) => `<span class="auto-badge">${esc(label)}</span>`).join("")}
         ${!isMedia && description ? `<p class="file-description">${esc(description)}</p>` : ""}
         ${customFieldSummary(file) ? `<p class="file-description">${esc(customFieldSummary(file))}</p>` : ""}
-        ${tags.length ? `<div class="tag-row">${tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${tags.length ? `<div class="tag-row">${renderTagPills(tags, { interactive: true })}</div>` : ""}
       </div>
       <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
       <div class="file-actions">
@@ -2526,7 +2670,7 @@ function makeFileCard(file) {
                <button class="file-menu-item description-btn" type="button" role="menuitem">Descricao</button>
                <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
                <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
-               <button class="file-menu-item tags-btn" type="button" role="menuitem">Tags</button>
+               <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
                <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
                ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
                ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
@@ -2575,6 +2719,14 @@ function makeFileCard(file) {
       e.stopPropagation();
       closeActionMenus();
       openDescriptionModal(file);
+    });
+  });
+  card.querySelectorAll("[data-card-tag]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleSearchTag(el.dataset.cardTag, { exclusive: true });
+      searchTagsPanel.hidden = true;
+      searchTagsToggle.setAttribute("aria-expanded", "false");
     });
   });
 
@@ -3341,7 +3493,13 @@ async function bulkEditSelected() {
     title: "Editar selecionados",
     confirmText: "Aplicar",
     fields: [
-      { name: "tagsText", label: "Adicionar tags", placeholder: "tag1, tag2" },
+      {
+        name: "tags",
+        label: "Adicionar etiquetas",
+        type: "tags",
+        pickerTitle: "Adicionar etiquetas",
+        pickerContext: `${ids.length} arquivo(s) selecionado(s)`,
+      },
       {
         name: "priority",
         label: "Prioridade",
@@ -3364,8 +3522,8 @@ async function bulkEditSelected() {
     ],
   });
   if (!values) return;
-  const { tagsText, priority, description } = values;
-  const tagsToAdd = normalizeTags(tagsText);
+  const { tags, priority, description } = values;
+  const tagsToAdd = normalizeTagEntries(tags);
   const cleanPriority = ["normal", "important", "critical"].includes(
     priority.trim(),
   )
@@ -3375,8 +3533,7 @@ async function bulkEditSelected() {
     const file = files.find((f) => f.id === id);
     if (!file) continue;
     const patch = {};
-    if (tagsToAdd.length)
-      patch.tags = normalizeTags([...normalizeTags(file.tags), ...tagsToAdd]);
+    if (tagsToAdd.length) patch.tags = mergeTagEntries(file.tags, tagsToAdd);
     if (cleanPriority) patch.priority = cleanPriority;
     if (description.trim()) patch.description = description.trim();
     if (Object.keys(patch).length) {
@@ -3407,7 +3564,7 @@ function showFileInfo(file) {
       file.width && file.height ? `${file.width} x ${file.height}` : "-",
     ],
     ["Data", file.eventDate || formatDateValue(file.createdAt)],
-    ["Tags", normalizeTags(file.tags).join(", ") || "-"],
+    ["Etiquetas", normalizeTags(file.tags).join(", ") || "-"],
     ["Descricao", file.description || "-"],
     ["Link", isGoogleDriveRecord(file) ? driveViewUrl(file) : file.url || "-"],
   ];
@@ -3920,7 +4077,7 @@ async function executeCopyFileAcrossAccounts(file, options) {
       mimeType: file.mimeType || metadata.mimeType || "",
       folderId: targetFolderId,
       favorite: !!file.favorite,
-      tags: normalizeTags(file.tags),
+      tags: normalizeTagEntries(file.tags),
       description: file.description || "",
       priority: file.priority || "normal",
       eventDate: file.eventDate || "",
@@ -4247,20 +4404,158 @@ async function renameFile(file) {
   }
 }
 
-async function editTags(file) {
-  const current = normalizeTags(file.tags).join(", ");
-  const value = await openTextDialog({
-    title: "Editar tags",
-    label: "Tags separadas por virgula",
-    value: current,
-    placeholder: "ex: trabalho, recibos, viagem",
+function openTagPicker({ title = "Etiquetas", context = "", selected = [] }) {
+  return new Promise((resolve) => {
+    if (tagEditorResolve) tagEditorResolve(null);
+    tagEditorResolve = resolve;
+    tagEditorSelected = normalizeTagEntries(selected);
+    tagEditorColor = TAG_COLORS[0];
+    tagModalTitle.textContent = title;
+    tagModalContext.textContent = context;
+    tagNameInput.value = "";
+    setTagEditorError("");
+    renderTagEditor();
+    tagModal.classList.add("active");
+    setTimeout(() => tagNameInput.focus(), 0);
   });
-  if (value === null) return;
-  const tags = normalizeTags(value);
+}
+
+function closeTagPicker(value = null) {
+  tagModal.classList.remove("active");
+  const resolve = tagEditorResolve;
+  tagEditorResolve = null;
+  tagEditorSelected = [];
+  if (resolve) resolve(value);
+}
+
+function setTagEditorError(message) {
+  tagEditorError.textContent = message || "";
+  tagEditorError.style.display = message ? "block" : "none";
+}
+
+function renderTagEditor() {
+  const catalog = getTagCatalog();
+  const query = tagKey(tagNameInput.value);
+  const selectedKeys = new Set(tagEditorSelected.map((tag) => tag.key));
+  const matching = query
+    ? catalog.filter((tag) => tagKey(tag.name).includes(query))
+    : catalog;
+
+  tagSelectedCount.textContent = `${tagEditorSelected.length} de 12`;
+  tagSelectedList.innerHTML = tagEditorSelected.length
+    ? tagEditorSelected
+        .map(
+          (
+            tag,
+          ) => `<button class="tag-selected-item" type="button" data-remove-tag="${esc(tag.key)}" style="${tagInlineStyle(tag)}" title="Remover ${esc(tag.name)}">
+            <span>${esc(tag.name)}</span><span aria-hidden="true">×</span>
+          </button>`,
+        )
+        .join("")
+    : `<span class="tag-empty-inline">Nenhuma etiqueta selecionada.</span>`;
+  tagSelectedList.querySelectorAll("[data-remove-tag]").forEach((button) => {
+    button.onclick = () => {
+      tagEditorSelected = tagEditorSelected.filter(
+        (tag) => tag.key !== button.dataset.removeTag,
+      );
+      setTagEditorError("");
+      renderTagEditor();
+    };
+  });
+
+  tagColorOptions.innerHTML = TAG_COLORS.map(
+    (color, index) =>
+      `<button class="tag-color-swatch${color === tagEditorColor ? " active" : ""}" type="button" data-tag-color="${color}" style="--swatch:${color}" aria-label="Cor ${index + 1}" aria-pressed="${color === tagEditorColor}"></button>`,
+  ).join("");
+  tagColorOptions.querySelectorAll("[data-tag-color]").forEach((button) => {
+    button.onclick = () => {
+      tagEditorColor = button.dataset.tagColor;
+      renderTagEditor();
+    };
+  });
+
+  tagExistingCount.textContent = catalog.length
+    ? `${catalog.length} no acervo`
+    : "";
+  tagExistingList.innerHTML = matching.length
+    ? matching
+        .map(
+          (
+            tag,
+          ) => `<button class="tag-existing-item${selectedKeys.has(tag.key) ? " active" : ""}" type="button" data-existing-tag="${esc(tag.key)}" aria-pressed="${selectedKeys.has(tag.key)}">
+            <span class="tag-color-label" style="${tagInlineStyle(tag)}">${esc(tag.name)}</span>
+            <span class="tag-existing-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+            <span class="tag-existing-check" aria-hidden="true">${selectedKeys.has(tag.key) ? "✓" : ""}</span>
+          </button>`,
+        )
+        .join("")
+    : `<p class="tag-empty-message">${query ? "Nenhuma etiqueta existente corresponde à busca." : "Ainda não há etiquetas no acervo."}</p>`;
+  tagExistingList.querySelectorAll("[data-existing-tag]").forEach((button) => {
+    button.onclick = () => toggleTagEditorSelection(button.dataset.existingTag);
+  });
+
+  const cleanName = cleanTagName(tagNameInput.value);
+  const exact = catalog.find((tag) => tag.key === tagKey(cleanName));
+  const alreadySelected = exact && selectedKeys.has(exact.key);
+  $("createTagBtn").disabled = !cleanName || alreadySelected;
+  $("createTagBtn").textContent = alreadySelected
+    ? "Já selecionada"
+    : exact
+      ? "Adicionar etiqueta"
+      : "Criar etiqueta";
+  tagColorOptions.hidden = !!exact;
+}
+
+function toggleTagEditorSelection(key) {
+  const cleanKey = tagKey(key);
+  const selected = tagEditorSelected.some((tag) => tag.key === cleanKey);
+  if (selected) {
+    tagEditorSelected = tagEditorSelected.filter((tag) => tag.key !== cleanKey);
+  } else {
+    if (tagEditorSelected.length >= 12) {
+      setTagEditorError("Cada arquivo pode ter no máximo 12 etiquetas.");
+      return;
+    }
+    const tag = getTagCatalog().find((item) => item.key === cleanKey);
+    if (tag) tagEditorSelected = mergeTagEntries(tagEditorSelected, [tag]);
+  }
+  setTagEditorError("");
+  renderTagEditor();
+}
+
+function addTagFromInput() {
+  const name = cleanTagName(tagNameInput.value);
+  if (!name) {
+    setTagEditorError("Digite um nome para a etiqueta.");
+    return;
+  }
+  if (tagEditorSelected.length >= 12) {
+    setTagEditorError("Cada arquivo pode ter no máximo 12 etiquetas.");
+    return;
+  }
+  const existing = getTagCatalog().find((tag) => tag.key === tagKey(name));
+  tagEditorSelected = mergeTagEntries(tagEditorSelected, [
+    existing || { name, color: tagEditorColor },
+  ]);
+  tagNameInput.value = "";
+  setTagEditorError("");
+  renderTagEditor();
+  tagNameInput.focus();
+}
+
+async function editTags(file) {
+  const tags = await openTagPicker({
+    title: "Etiquetas do arquivo",
+    context: file.name || "Arquivo",
+    selected: file.tags,
+  });
+  if (tags === null) return;
   try {
-    await updateDoc(doc(db, "vault_files", file.id), { tags });
-    addHistory(`Tags: ${file.name}`);
-    showToast("Tags atualizadas", "success");
+    await updateDoc(doc(db, "vault_files", file.id), {
+      tags: normalizeTagEntries(tags),
+    });
+    addHistory(`Etiquetas: ${file.name}`);
+    showToast("Etiquetas atualizadas", "success");
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -4566,7 +4861,7 @@ function openLightbox(file) {
       <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${favLabel}</button>
       <button class="lb-action-btn" id="lbMoveBtn" type="button">Mover</button>
       <button class="lb-action-btn" id="lbRenameBtn" type="button">Renomear</button>
-      <button class="lb-action-btn" id="lbTagsBtn" type="button">Tags</button>
+      <button class="lb-action-btn" id="lbTagsBtn" type="button">Etiquetas</button>
       <button class="lb-action-btn" id="lbShareBtn" type="button">Copiar link</button>
       ${imageActions}
       ${videoActions}
@@ -4727,6 +5022,8 @@ document.onkeydown = (e) => {
     if (blockingOverlay || configModal.style.display === "flex") return;
     setPanelOpen(filterPanel, $("filterPanelToggle"), false);
     setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+    searchTagsPanel.hidden = true;
+    searchTagsToggle.setAttribute("aria-expanded", "false");
     searchInput.focus();
     searchInput.select();
     return;
@@ -5367,7 +5664,9 @@ async function uploadOneFile(
       albumKey: "",
       albumLabel: "",
     };
-    const initialTags = photoInsights.isScreenshot ? ["captura-de-tela"] : [];
+    const initialTags = photoInsights.isScreenshot
+      ? normalizeTagEntries(["captura-de-tela"])
+      : [];
     const imageMetadata = metadata.imageMediaMetadata || {};
     const videoMetadata = metadata.videoMediaMetadata || {};
     const savedFile = await addDoc(collection(db, "vault_files"), {
@@ -5589,6 +5888,27 @@ searchInput.oninput = () => {
     renderGrid();
   }, 180);
 };
+searchTagsToggle.onclick = (event) => {
+  event.stopPropagation();
+  const open = searchTagsPanel.hidden;
+  searchTagsPanel.hidden = !open;
+  searchTagsToggle.setAttribute("aria-expanded", String(open));
+  if (open) renderTagSearchOptions();
+};
+searchTagsPanel.onclick = (event) => event.stopPropagation();
+$("clearSearchTags").onclick = clearTagSearch;
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".global-search") && !searchTagsPanel.hidden) {
+    searchTagsPanel.hidden = true;
+    searchTagsToggle.setAttribute("aria-expanded", "false");
+  }
+});
+searchInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  searchTagsPanel.hidden = true;
+  searchTagsToggle.setAttribute("aria-expanded", "false");
+  searchInput.blur();
+});
 sortSelect.onchange = () => {
   currentSort = sortSelect.value;
   visibleLimit = PAGE_SIZE;
@@ -5725,6 +6045,24 @@ $("exportJsonBtn").onclick = () => exportData("json");
 $("exportCsvBtn").onclick = () => exportData("csv");
 $("btnSlideshow").onclick = startSlideshow;
 $("closeInfoModal").onclick = () => infoModal.classList.remove("active");
+$("createTagBtn").onclick = addTagFromInput;
+$("saveTags").onclick = () =>
+  closeTagPicker(normalizeTagEntries(tagEditorSelected));
+$("cancelTagModal").onclick = () => closeTagPicker(null);
+$("closeTagModal").onclick = () => closeTagPicker(null);
+tagModal.onclick = (event) => {
+  if (event.target === tagModal) closeTagPicker(null);
+};
+tagNameInput.oninput = () => {
+  setTagEditorError("");
+  renderTagEditor();
+};
+tagNameInput.onkeydown = (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addTagFromInput();
+  }
+};
 $("cancelDescription").onclick = closeDescriptionModal;
 $("saveDescription").onclick = saveFileDescription;
 descriptionModal.onclick = (e) => {
@@ -6111,7 +6449,7 @@ function normalizeBackupFile(fileRecord) {
     mimeType: fileRecord.mimeType || "",
     folderId: fileRecord.folderId || null,
     favorite: !!fileRecord.favorite,
-    tags: normalizeTags(fileRecord.tags),
+    tags: normalizeTagEntries(fileRecord.tags),
     description: fileRecord.description || "",
     priority: ["normal", "important", "critical"].includes(fileRecord.priority)
       ? fileRecord.priority
@@ -6617,19 +6955,136 @@ function esc(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-function normalizeTags(value) {
-  if (Array.isArray(value))
-    return [
-      ...new Set(value.map((t) => String(t).trim()).filter(Boolean)),
-    ].slice(0, 12);
-  return [
-    ...new Set(
-      String(value || "")
+function cleanTagName(value) {
+  return String(value || "")
+    .replace(/[,;]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 32);
+}
+
+function tagKey(value) {
+  return normalizeSearchText(
+    typeof value === "object" && value ? value.name : value,
+  );
+}
+
+function isTagColor(value) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || ""));
+}
+
+function defaultTagColor(name) {
+  const key = tagKey(name);
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+  return TAG_COLORS[hash % TAG_COLORS.length];
+}
+
+function normalizeTagEntries(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || "")
         .split(/[,;]/)
-        .map((t) => t.trim())
-        .filter(Boolean),
-    ),
-  ].slice(0, 12);
+        .filter(Boolean);
+  const result = [];
+  const seen = new Set();
+  source.forEach((item) => {
+    const name = cleanTagName(
+      typeof item === "object" && item ? item.name : item,
+    );
+    const key = tagKey(name);
+    if (!name || !key || seen.has(key)) return;
+    seen.add(key);
+    result.push({
+      name,
+      color:
+        typeof item === "object" && item && isTagColor(item.color)
+          ? String(item.color).toLowerCase()
+          : defaultTagColor(name),
+      key,
+    });
+  });
+  return result.slice(0, 12);
+}
+
+function normalizeTags(value) {
+  return normalizeTagEntries(value).map((tag) => tag.name);
+}
+
+function mergeTagEntries(...values) {
+  const merged = [];
+  const seen = new Set();
+  values.flatMap(normalizeTagEntries).forEach((tag) => {
+    if (seen.has(tag.key)) return;
+    seen.add(tag.key);
+    merged.push(tag);
+  });
+  return merged.slice(0, 12);
+}
+
+function getTagCatalog() {
+  const catalog = new Map();
+  files.filter(isActiveFile).forEach((file) => {
+    const explicitColors = new Set(
+      (Array.isArray(file.tags) ? file.tags : [])
+        .filter(
+          (tag) => tag && typeof tag === "object" && isTagColor(tag.color),
+        )
+        .map((tag) => tagKey(tag.name)),
+    );
+    const seenInFile = new Set();
+    normalizeTagEntries(file.tags).forEach((tag) => {
+      if (seenInFile.has(tag.key)) return;
+      seenInFile.add(tag.key);
+      const current = catalog.get(tag.key);
+      const explicit = explicitColors.has(tag.key);
+      if (!current) {
+        catalog.set(tag.key, { ...tag, count: 1, explicit });
+      } else {
+        current.count += 1;
+        if (explicit && !current.explicit) {
+          current.name = tag.name;
+          current.color = tag.color;
+          current.explicit = true;
+        }
+      }
+    });
+  });
+  return [...catalog.values()].sort(
+    (a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"),
+  );
+}
+
+function tagTextColor(color) {
+  const hex = isTagColor(color) ? color.slice(1) : "8590a2";
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  return red * 0.299 + green * 0.587 + blue * 0.114 > 165
+    ? "#172b4d"
+    : "#ffffff";
+}
+
+function tagInlineStyle(tag) {
+  const color = isTagColor(tag?.color)
+    ? tag.color.toLowerCase()
+    : defaultTagColor(tag?.name);
+  return `--tag-bg:${color};--tag-fg:${tagTextColor(color)}`;
+}
+
+function renderTagPills(value, options = {}) {
+  const entries = normalizeTagEntries(value);
+  if (!entries.length)
+    return options.emptyText
+      ? `<span class="tag-empty-inline">${esc(options.emptyText)}</span>`
+      : "";
+  return entries
+    .map((tag) => {
+      if (options.interactive)
+        return `<button class="tag-chip" type="button" data-card-tag="${esc(tag.key)}" style="${tagInlineStyle(tag)}" title="Filtrar por ${esc(tag.name)}">${esc(tag.name)}</button>`;
+      return `<span class="tag-chip" style="${tagInlineStyle(tag)}">${esc(tag.name)}</span>`;
+    })
+    .join("");
 }
 function parseCustomFields(value) {
   const fields = {};
@@ -6852,6 +7307,8 @@ if (savedCfg?.projectId && !localStorage.getItem("vault_legacy_firebase"))
 $("clearSearchFilters").onclick = () => {
   currentSearch = "";
   searchInput.value = "";
+  activeSearchTags.clear();
+  renderTagSearchOptions();
   activeAccountView = "all";
   accountViewSelect.value = "all";
   localStorage.setItem("vault_drive_account_view", "all");
