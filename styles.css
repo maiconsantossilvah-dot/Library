@@ -8624,7 +8624,10 @@ button.tag-chip:hover {
   }
 
   .vault-reimagined .sidebar-scroll {
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
 
   .vault-reimagined .sidebar-library-section {
@@ -8633,11 +8636,10 @@ button.tag-chip:hover {
   }
 
   .vault-reimagined .sidebar-collections {
-    flex: 1 1 auto;
-    min-height: 150px;
+    flex: 0 0 auto;
+    min-height: 0;
     margin-top: 4px;
-    overflow-y: auto;
-    scrollbar-color: rgba(241, 244, 234, 0.2) transparent;
+    overflow: visible;
   }
 
   .vault-reimagined .sidebar-footer {
