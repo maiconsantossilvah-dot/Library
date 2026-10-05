@@ -35,8 +35,8 @@
               class="sidebar-cfg-btn"
               id="openConfigBtn"
               type="button"
-              title="Configuracoes"
-              aria-label="Abrir configuracoes"
+              title="Configurar Google Drive"
+              aria-label="Configurar Google Drive"
             >
               <span data-icon="Settings"></span>
             </button>
@@ -202,7 +202,7 @@
               <input
                 class="search-input"
                 id="searchInput"
-                placeholder="Buscar no seu acervo..."
+                placeholder="Buscar arquivos..."
                 aria-label="Buscar arquivo, etiqueta ou conteúdo indexado"
                 aria-keyshortcuts="Control+K Meta+K"
               />
@@ -246,6 +246,16 @@
             </div>
 
             <div class="masthead-actions">
+              <button
+                class="sync-summary-btn"
+                id="syncSummaryBtn"
+                type="button"
+                aria-label="Ver estado da sincronização"
+                title="Ver estado da sincronização"
+              >
+                <span class="sync-summary-dot" aria-hidden="true"></span>
+                <span id="syncSummaryText">Verificando Drive…</span>
+              </button>
               <button
                 class="utility-btn"
                 id="toolsPanelToggle"
@@ -486,7 +496,7 @@
                 id="connectionStatus"
                 role="status"
                 aria-live="polite"
-                >Verificando conexao</span
+                >Verificando conexão</span
               >
               <button
                 id="updateAppBtn"
@@ -497,125 +507,13 @@
                 Atualizar aplicativo
               </button>
             </div>
-            <div class="settings-shortcuts">
-              <button
-                class="utility-btn"
-                id="privacyToggle"
-                type="button"
-                title="Modo discreto"
-                aria-label="Modo discreto"
-                aria-pressed="false"
-              >
-                <span data-icon="ShieldAlert"></span><span>Modo discreto</span>
+            <div class="tools-quick-actions">
+              <button class="utility-btn" id="syncNowBtn" type="button">
+                Sincronizar agora
               </button>
-              <button
-                class="utility-btn"
-                id="privacyHide"
-                type="button"
-                title="Ocultar conteudo (Ctrl+Shift+H)"
-                aria-label="Ocultar conteudo"
-              >
-                <span data-icon="PanelLeftClose"></span
-                ><span>Ocultar conteúdo</span>
+              <button class="utility-btn" id="exportJsonBtn" type="button">
+                Fazer backup JSON
               </button>
-              <button
-                class="theme-toggle"
-                id="themeToggle"
-                type="button"
-                aria-label="Ativar modo escuro"
-                title="Ativar modo escuro"
-              >
-                <span class="theme-icon-moon" data-icon="Moon"></span
-                ><span class="theme-icon-sun" data-icon="Sun"></span>
-                <span id="themeToggleText">Ativar modo escuro</span>
-              </button>
-            </div>
-            <div class="privacy-settings">
-              <label
-                >Previa discreta
-                <select id="privacyPreview" class="sort-select">
-                  <option value="blur">Desfocar</option>
-                  <option value="hide">Ocultar</option>
-                </select></label
-              >
-              <label
-                ><input id="privacyMute" type="checkbox" checked /> Silenciar no
-                modo discreto</label
-              >
-            </div>
-            <div class="advanced-views" aria-label="Mais visualizações">
-              <button
-                class="view-btn"
-                id="viewGallery"
-                type="button"
-                title="Galeria"
-                aria-label="Visualizar galeria de midia"
-                aria-pressed="false"
-              >
-                <span data-icon="Images"></span>
-              </button>
-              <button
-                class="view-btn view-text"
-                id="viewFolders"
-                type="button"
-                title="Mostrar apenas pastas"
-                aria-pressed="false"
-              >
-                Pastas
-              </button>
-              <button
-                class="view-btn view-text"
-                id="viewTimeline"
-                type="button"
-                title="Linha do tempo"
-                aria-pressed="false"
-              >
-                Linha do tempo
-              </button>
-              <button
-                class="view-btn view-text"
-                id="viewManga"
-                type="button"
-                title="Ler imagens da pasta como mangá"
-                aria-pressed="false"
-              >
-                Mangá
-              </button>
-              <button
-                class="view-btn view-text compact-toggle"
-                id="viewDensity"
-                type="button"
-                title="Alternar compacto/detalhado"
-                aria-pressed="false"
-              >
-                Compacto
-              </button>
-              <button
-                class="view-btn"
-                id="viewSelect"
-                type="button"
-                title="Selecionar em lote"
-                aria-label="Selecionar em lote"
-                aria-pressed="false"
-              >
-                <span data-icon="CheckSquare"></span>
-              </button>
-            </div>
-            <div class="control-cluster account-cluster">
-              <label class="sr-only" for="accountViewSelect"
-                >Conta do Google Drive</label
-              >
-              <select
-                class="sort-select account-view-select"
-                id="accountViewSelect"
-                title="Visualizar uma conta ou todas"
-              >
-                <option value="all">Todas as contas</option>
-                <option value="ac1">Ac1</option>
-                <option value="ac2">Ac2</option>
-                <option value="ac3">Ac3</option>
-                <option value="ac4">Ac4</option>
-              </select>
               <button
                 class="utility-btn account-connect-btn"
                 id="accountConnectBtn"
@@ -624,86 +522,230 @@
               >
                 Central de contas
               </button>
-              <button
-                class="utility-btn activity-center-btn"
-                id="activityCenterBtn"
-                type="button"
-                aria-controls="uploadPanel"
-                aria-expanded="false"
-              >
-                Atividades <span id="activityCount" hidden>0</span>
-              </button>
             </div>
-            <div class="tool-grid">
-              <button class="utility-btn" id="btnCheckFiles" type="button">
-                Verificar arquivos
-              </button>
-              <button class="utility-btn" id="syncNowBtn" type="button">
-                Sincronizar metadados
-              </button>
-              <button class="utility-btn" id="exportJsonBtn" type="button">
-                Exportar JSON
-              </button>
-              <button class="utility-btn" id="exportCsvBtn" type="button">
-                Exportar CSV
-              </button>
-              <button class="utility-btn" id="importJsonBtn" type="button">
-                Restaurar JSON
-              </button>
-              <button class="utility-btn" id="importUrlBtn" type="button">
-                Importar URL
-              </button>
-              <button class="utility-btn" id="btnSlideshow" type="button">
-                Apresentar
-              </button>
-              <button
-                class="utility-btn"
-                id="indexSearchBtn"
-                type="button"
-                title="Extrai texto localmente de imagens, PDFs e TXT"
-              >
-                Indexar busca local
-              </button>
-              <button
-                class="utility-btn"
-                id="clearSearchIndexBtn"
-                type="button"
-                title="Remove apenas os textos extraídos deste navegador"
-              >
-                Limpar índice local
-              </button>
-              <button
-                class="utility-btn"
-                id="analyzePhotosBtn"
-                type="button"
-                title="Lê a data EXIF e identifica capturas de tela"
-              >
-                Analisar fotos
-              </button>
-              <button
-                class="utility-btn"
-                id="tagManagerBtn"
-                type="button"
-                title="Renomear, recolorir, mesclar ou excluir etiquetas"
-                aria-haspopup="dialog"
-              >
-                Central de etiquetas
-              </button>
-              <button
-                class="utility-btn"
-                id="migrateCloudinaryBtn"
-                type="button"
-                title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
-              >
-                Migrar Cloudinary → Drive
-              </button>
-              <input
-                id="backupInput"
-                type="file"
-                accept="application/json,.json"
-                hidden
-              />
-            </div>
+            <details class="tools-group">
+              <summary>Aparência e privacidade</summary>
+              <div class="settings-shortcuts">
+                <button
+                  class="utility-btn"
+                  id="privacyToggle"
+                  type="button"
+                  title="Modo discreto"
+                  aria-label="Modo discreto"
+                  aria-pressed="false"
+                >
+                  <span data-icon="ShieldAlert"></span
+                  ><span>Modo discreto</span>
+                </button>
+                <button
+                  class="utility-btn"
+                  id="privacyHide"
+                  type="button"
+                  title="Ocultar conteudo (Ctrl+Shift+H)"
+                  aria-label="Ocultar conteudo"
+                >
+                  <span data-icon="PanelLeftClose"></span
+                  ><span>Ocultar conteúdo</span>
+                </button>
+                <button
+                  class="theme-toggle"
+                  id="themeToggle"
+                  type="button"
+                  aria-label="Ativar modo escuro"
+                  title="Ativar modo escuro"
+                >
+                  <span class="theme-icon-moon" data-icon="Moon"></span
+                  ><span class="theme-icon-sun" data-icon="Sun"></span>
+                  <span id="themeToggleText">Ativar modo escuro</span>
+                </button>
+              </div>
+              <div class="privacy-settings">
+                <label
+                  >Prévia discreta
+                  <select id="privacyPreview" class="sort-select">
+                    <option value="blur">Desfocar</option>
+                    <option value="hide">Ocultar</option>
+                  </select></label
+                >
+                <label
+                  ><input id="privacyMute" type="checkbox" checked /> Silenciar
+                  no modo discreto</label
+                >
+              </div>
+            </details>
+            <details class="tools-group">
+              <summary>Visualização</summary>
+              <div class="advanced-views" aria-label="Mais visualizações">
+                <button
+                  class="view-btn"
+                  id="viewGallery"
+                  type="button"
+                  title="Galeria"
+                  aria-label="Visualizar galeria de midia"
+                  aria-pressed="false"
+                >
+                  <span data-icon="Images"></span>
+                </button>
+                <button
+                  class="view-btn view-text"
+                  id="viewFolders"
+                  type="button"
+                  title="Mostrar apenas pastas"
+                  aria-pressed="false"
+                >
+                  Pastas
+                </button>
+                <button
+                  class="view-btn view-text"
+                  id="viewTimeline"
+                  type="button"
+                  title="Linha do tempo"
+                  aria-pressed="false"
+                >
+                  Linha do tempo
+                </button>
+                <button
+                  class="view-btn view-text"
+                  id="viewManga"
+                  type="button"
+                  title="Ler imagens da pasta como mangá"
+                  aria-pressed="false"
+                >
+                  Mangá
+                </button>
+                <button
+                  class="view-btn view-text compact-toggle"
+                  id="viewDensity"
+                  type="button"
+                  title="Alternar compacto/detalhado"
+                  aria-pressed="false"
+                >
+                  Compacto
+                </button>
+                <button
+                  class="view-btn"
+                  id="viewSelect"
+                  type="button"
+                  title="Selecionar em lote"
+                  aria-label="Selecionar em lote"
+                  aria-pressed="false"
+                >
+                  <span data-icon="CheckSquare"></span>
+                </button>
+              </div>
+            </details>
+            <details class="tools-group">
+              <summary>Contas e atividades</summary>
+              <div class="control-cluster account-cluster">
+                <label class="sr-only" for="accountViewSelect"
+                  >Conta do Google Drive</label
+                >
+                <select
+                  class="sort-select account-view-select"
+                  id="accountViewSelect"
+                  title="Visualizar uma conta ou todas"
+                >
+                  <option value="all">Todas as contas</option>
+                  <option value="ac1">Ac1</option>
+                  <option value="ac2">Ac2</option>
+                  <option value="ac3">Ac3</option>
+                  <option value="ac4">Ac4</option>
+                </select>
+                <button
+                  class="utility-btn activity-center-btn"
+                  id="activityCenterBtn"
+                  type="button"
+                  aria-controls="uploadPanel"
+                  aria-expanded="false"
+                >
+                  Atividades <span id="activityCount" hidden>0</span>
+                </button>
+              </div>
+            </details>
+            <details class="tools-group">
+              <summary>Organização</summary>
+              <div class="tool-grid">
+                <button class="utility-btn" id="btnCheckFiles" type="button">
+                  Verificar arquivos
+                </button>
+                <button class="utility-btn" id="importUrlBtn" type="button">
+                  Importar URL
+                </button>
+                <button class="utility-btn" id="btnSlideshow" type="button">
+                  Apresentar
+                </button>
+                <button
+                  class="utility-btn"
+                  id="analyzePhotosBtn"
+                  type="button"
+                  title="Lê a data EXIF e identifica capturas de tela"
+                >
+                  Analisar fotos
+                </button>
+                <button
+                  class="utility-btn"
+                  id="tagManagerBtn"
+                  type="button"
+                  title="Renomear, recolorir, mesclar ou excluir etiquetas"
+                  aria-haspopup="dialog"
+                >
+                  Central de etiquetas
+                </button>
+              </div>
+            </details>
+            <details class="tools-group">
+              <summary>Backup e restauração</summary>
+              <div class="tool-grid">
+                <button class="utility-btn" id="exportCsvBtn" type="button">
+                  Exportar CSV
+                </button>
+                <button class="utility-btn" id="importJsonBtn" type="button">
+                  Restaurar JSON
+                </button>
+              </div>
+            </details>
+            <details class="tools-group">
+              <summary>Avançado e migração</summary>
+              <div class="tool-grid">
+                <button
+                  class="utility-btn"
+                  id="indexSearchBtn"
+                  type="button"
+                  title="Extrai texto localmente de imagens, PDFs e TXT"
+                >
+                  Indexar busca local
+                </button>
+                <button
+                  class="utility-btn"
+                  id="clearSearchIndexBtn"
+                  type="button"
+                  title="Remove apenas os textos extraídos deste navegador"
+                >
+                  Limpar índice local
+                </button>
+                <button
+                  class="utility-btn"
+                  id="migrateCloudinaryBtn"
+                  type="button"
+                  title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
+                >
+                  Migrar Cloudinary → Drive
+                </button>
+                <button
+                  class="utility-btn"
+                  id="openDriveConfigBtn"
+                  type="button"
+                >
+                  Configurar conexão do Drive
+                </button>
+                <input
+                  id="backupInput"
+                  type="file"
+                  accept="application/json,.json"
+                  hidden
+                />
+              </div>
+            </details>
           </div>
 
           <div class="bulk-bar" id="bulkBar" style="display: none">
@@ -753,7 +795,7 @@
             <button
               class="bulk-btn"
               id="bulkSelectMediaBtn"
-              title="Selecionar fotos e videos visiveis"
+              title="Selecionar fotos e vídeos visíveis"
             >
               Mídia
             </button>
@@ -814,105 +856,149 @@
             </header>
 
             <section
-              class="dashboard-stat-grid"
-              aria-label="Resumo da biblioteca"
-            >
-              <article class="dash-card">
-                <span class="dash-label">Arquivos</span
-                ><strong id="dashTotal">0</strong
-                ><span class="dash-foot">na biblioteca</span>
-              </article>
-              <article class="dash-card">
-                <span class="dash-label">Imagens</span
-                ><strong id="dashImages">0</strong
-                ><span class="dash-foot">fotos e capturas</span>
-              </article>
-              <article class="dash-card">
-                <span class="dash-label">Videos</span
-                ><strong id="dashVideos">0</strong
-                ><span class="dash-foot">para assistir</span>
-              </article>
-              <article class="dash-card">
-                <span class="dash-label">Documentos</span
-                ><strong id="dashDocs">0</strong
-                ><span class="dash-foot">para consultar</span>
-              </article>
-              <article class="dash-card storage-card">
-                <span class="dash-label">Armazenamento</span
-                ><strong id="dashStorageSummary">0 B</strong
-                ><span class="dash-foot">do seu cofre</span>
-              </article>
-            </section>
-
-            <section class="dashboard-feature-grid">
-              <article class="home-panel memory-spotlight-panel">
-                <div class="home-panel-head">
-                  <span class="eyebrow">NESTE DIA</span
-                  ><span class="panel-kicker">MEMÓRIAS</span>
-                </div>
-                <div id="dashMemories" class="memory-spotlight">
-                  Sem memórias nesta data
-                </div>
-              </article>
-              <article class="home-panel highlights-panel">
-                <div class="home-panel-head">
-                  <span class="eyebrow">DESTAQUES</span
-                  ><button
-                    class="text-panel-action"
-                    id="dashboardAllFilesBtn"
-                    type="button"
-                  >
-                    Ver arquivos
-                  </button>
-                </div>
-                <div id="dashHighlights" class="home-highlight-list">
-                  Nenhum destaque ainda
-                </div>
-              </article>
-            </section>
-
-            <section
-              class="dashboard-continue"
-              id="dashboardContinueSection"
+              class="home-setup"
+              id="homeSetup"
+              aria-label="Começar a usar o VAULT"
               hidden
-              aria-label="Continuar de onde parei"
             >
-              <article class="home-panel continue-panel">
-                <div class="home-panel-head">
-                  <div>
-                    <span class="eyebrow">ACESSADOS RECENTEMENTE</span>
-                    <h2>Continuar de onde parei</h2>
-                  </div>
-                  <button
-                    class="text-panel-action"
-                    id="clearRecentlyViewed"
-                    type="button"
+              <div class="home-setup-heading">
+                <span class="eyebrow">PRIMEIROS PASSOS</span>
+                <h2>Prepare seu acervo</h2>
+                <p>Três passos para guardar seus arquivos com segurança.</p>
+              </div>
+              <div class="home-setup-steps">
+                <button id="setupDriveBtn" type="button">
+                  <span class="home-setup-number">1</span>
+                  <span
+                    ><strong>Conectar o Drive</strong
+                    ><small id="setupDriveHint"
+                      >Escolha a conta que guardará seus arquivos.</small
+                    ></span
                   >
-                    Limpar histórico
-                  </button>
-                </div>
-                <div class="continue-file-list" id="dashContinue"></div>
-              </article>
+                </button>
+                <button id="setupUploadBtn" type="button">
+                  <span class="home-setup-number">2</span>
+                  <span
+                    ><strong>Adicionar arquivos</strong
+                    ><small>Comece com uma foto ou documento.</small></span
+                  >
+                </button>
+                <button id="setupFolderBtn" type="button">
+                  <span class="home-setup-number">3</span>
+                  <span
+                    ><strong>Criar uma pasta</strong
+                    ><small>Organize o acervo do seu jeito.</small></span
+                  >
+                </button>
+              </div>
+              <p class="home-setup-footnote">
+                Depois de adicionar arquivos, faça um backup JSON dos metadados
+                em Ferramentas.
+              </p>
             </section>
 
-            <section class="dashboard-lower-grid">
-              <article class="home-panel albums-panel">
-                <div class="home-panel-head">
-                  <span class="eyebrow">ÁLBUNS</span
-                  ><span class="panel-kicker">SUGERIDOS</span>
-                </div>
-                <div id="dashAlbumSuggestions" class="home-album-grid">
-                  As sugestões aparecerão nas fotos analisadas
-                </div>
-              </article>
-              <article class="home-panel activity-panel">
-                <div class="home-panel-head">
-                  <span class="eyebrow">ATIVIDADE RECENTE</span
-                  ><span class="panel-kicker">ÚLTIMAS AÇÕES</span>
-                </div>
-                <div id="dashHistory" class="dash-history">Sem histórico</div>
-              </article>
-            </section>
+            <div id="homeOverview">
+              <section
+                class="dashboard-stat-grid"
+                aria-label="Resumo da biblioteca"
+              >
+                <article class="dash-card">
+                  <span class="dash-label">Arquivos</span
+                  ><strong id="dashTotal">0</strong
+                  ><span class="dash-foot">na biblioteca</span>
+                </article>
+                <article class="dash-card">
+                  <span class="dash-label">Imagens</span
+                  ><strong id="dashImages">0</strong
+                  ><span class="dash-foot">fotos e capturas</span>
+                </article>
+                <article class="dash-card">
+                  <span class="dash-label">Vídeos</span
+                  ><strong id="dashVideos">0</strong
+                  ><span class="dash-foot">para assistir</span>
+                </article>
+                <article class="dash-card">
+                  <span class="dash-label">Documentos</span
+                  ><strong id="dashDocs">0</strong
+                  ><span class="dash-foot">para consultar</span>
+                </article>
+                <article class="dash-card storage-card">
+                  <span class="dash-label">Armazenamento</span
+                  ><strong id="dashStorageSummary">0 B</strong
+                  ><span class="dash-foot">do seu cofre</span>
+                </article>
+              </section>
+
+              <section class="dashboard-feature-grid">
+                <article class="home-panel memory-spotlight-panel">
+                  <div class="home-panel-head">
+                    <span class="eyebrow">NESTE DIA</span
+                    ><span class="panel-kicker">MEMÓRIAS</span>
+                  </div>
+                  <div id="dashMemories" class="memory-spotlight">
+                    Sem memórias nesta data
+                  </div>
+                </article>
+                <article class="home-panel highlights-panel">
+                  <div class="home-panel-head">
+                    <span class="eyebrow">DESTAQUES</span
+                    ><button
+                      class="text-panel-action"
+                      id="dashboardAllFilesBtn"
+                      type="button"
+                    >
+                      Ver arquivos
+                    </button>
+                  </div>
+                  <div id="dashHighlights" class="home-highlight-list">
+                    Nenhum destaque ainda
+                  </div>
+                </article>
+              </section>
+
+              <section
+                class="dashboard-continue"
+                id="dashboardContinueSection"
+                hidden
+                aria-label="Continuar de onde parei"
+              >
+                <article class="home-panel continue-panel">
+                  <div class="home-panel-head">
+                    <div>
+                      <span class="eyebrow">ACESSADOS RECENTEMENTE</span>
+                      <h2>Continuar de onde parei</h2>
+                    </div>
+                    <button
+                      class="text-panel-action"
+                      id="clearRecentlyViewed"
+                      type="button"
+                    >
+                      Limpar histórico
+                    </button>
+                  </div>
+                  <div class="continue-file-list" id="dashContinue"></div>
+                </article>
+              </section>
+
+              <section class="dashboard-lower-grid">
+                <article class="home-panel albums-panel">
+                  <div class="home-panel-head">
+                    <span class="eyebrow">ÁLBUNS</span
+                    ><span class="panel-kicker">SUGERIDOS</span>
+                  </div>
+                  <div id="dashAlbumSuggestions" class="home-album-grid">
+                    As sugestões aparecerão nas fotos analisadas
+                  </div>
+                </article>
+                <article class="home-panel activity-panel">
+                  <div class="home-panel-head">
+                    <span class="eyebrow">ATIVIDADE RECENTE</span
+                    ><span class="panel-kicker">ÚLTIMAS AÇÕES</span>
+                  </div>
+                  <div id="dashHistory" class="dash-history">Sem histórico</div>
+                </article>
+              </section>
+            </div>
           </section>
           <section
             class="files-workspace"
@@ -957,7 +1043,7 @@
               </div>
               <h3 class="empty-title" id="emptyTitle">Cofre vazio</h3>
               <p class="empty-sub" id="emptySub">
-                Organize fotos, videos e documentos em pastas.
+                Adicione arquivos para começar a organizar seu acervo.
               </p>
               <div class="empty-actions">
                 <button
@@ -1122,11 +1208,11 @@
         <div class="config-header">
           <span class="logo-icon">V</span>
           <div>
-            <p class="modal-kicker">Primeiro uso</p>
+            <p class="modal-kicker" id="configKicker">Primeiro uso</p>
             <h2 class="modal-title">Configurar seu acervo</h2>
           </div>
         </div>
-        <p class="config-desc">
+        <p class="config-desc" id="configDesc">
           Explore agora. Configure o Google Drive quando quiser enviar arquivos
           e guardar uma cópia dos metadados fora deste navegador.
         </p>
@@ -1180,7 +1266,9 @@
             </details>
           </section>
           <section class="config-step drive-config-step">
-            <p class="cfg-section-label">Google Drive · conexão opcional</p>
+            <p class="cfg-section-label">
+              Google Drive · necessário para enviar arquivos
+            </p>
             <label class="field-label" for="cfg_googleClientId"
               >OAuth Client ID
               <input

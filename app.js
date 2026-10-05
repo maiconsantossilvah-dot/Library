@@ -84,6 +84,9 @@ const PINNED_FOLDERS_KEY = "vault_pinned_folders_v1";
 const DRIVE_THUMBNAIL_CACHE_KEY = "vault_drive_thumbnails_v1";
 const DRIVE_THUMBNAIL_CACHE_TTL = 24 * 60 * 60 * 1000;
 const DRIVE_THUMBNAIL_CACHE_LIMIT = 240;
+const LAST_UPLOAD_ACCOUNT_KEY = "vault_last_upload_account_v1";
+const LAST_SYNC_AT_KEY = "vault_last_sync_at_v1";
+let currentSyncState = "";
 
 function readStoredArray(key) {
   try {
@@ -537,6 +540,12 @@ function configFromForm() {
 function openConfigModal(canCancel = true) {
   configModal.style.display = "flex";
   configModal.querySelector(".modal").scrollTop = 0;
+  $("configKicker").textContent = canCancel
+    ? "CONEXÃO E RECUPERAÇÃO"
+    : "PRIMEIRO USO";
+  $("configDesc").textContent = canCancel
+    ? "Configure o Google Drive para enviar arquivos e guardar uma cópia dos metadados fora deste navegador."
+    : "Explore agora. Configure o Google Drive quando quiser enviar arquivos e guardar uma cópia dos metadados fora deste navegador.";
   $("cancelConfig").style.display = canCancel ? "inline-flex" : "none";
   $("skipConfig").style.display = canCancel ? "none" : "inline-flex";
   showConfigError("");
@@ -570,7 +579,8 @@ function updateConnectionStatus() {
     0;
   connectionStatus.textContent = online
     ? `Online · ${connected}/4 Drive`
-    : "Sem conexao";
+    : "Sem conexão";
+  refreshSyncStatus();
 }
 
 window.addEventListener("online", updateConnectionStatus);
@@ -842,6 +852,7 @@ async function persistDriveAccounts(accounts) {
   renderAccountCenter();
   updateConnectionStatus();
   updateStorageUI();
+  scheduleDashboardUpdate();
 }
 
 function accountLabel(slot, includeEmail = true) {
@@ -1126,12 +1137,9 @@ function bindAccountCardActions() {
 }
 
 function openAccountsModal(returnFocus = document.activeElement) {
-  if (!currentConfig) {
+  if (!currentConfig || !googleClientId) {
     openConfigModal(true);
-    showToast(
-      "Salve a configuração do Firebase e o OAuth Client ID primeiro",
-      "error",
-    );
+    showToast("Salve o OAuth Client ID do Google Drive primeiro.", "error");
     return;
   }
   accountModalReturnFocus = returnFocus;
@@ -1652,7 +1660,10 @@ function renderFolderList() {
 }
 
 function persistPinnedFolders() {
-  localStorage.setItem(PINNED_FOLDERS_KEY, JSON.stringify([...pinnedFolderIds]));
+  localStorage.setItem(
+    PINNED_FOLDERS_KEY,
+    JSON.stringify([...pinnedFolderIds]),
+  );
 }
 
 function renderPinnedFolders() {
@@ -1663,18 +1674,22 @@ function renderPinnedFolders() {
   pinnedFoldersSection.hidden = pinned.length === 0;
   pinnedFolderList.innerHTML = pinned
     .map(
-      (folder) => `<button class="pinned-folder-item${navState.folderId === folder.id ? " active" : ""}" type="button" data-pinned-folder="${esc(folder.id)}" title="Abrir ${esc(folder.name)}">
+      (
+        folder,
+      ) => `<button class="pinned-folder-item${navState.folderId === folder.id ? " active" : ""}" type="button" data-pinned-folder="${esc(folder.id)}" title="Abrir ${esc(folder.name)}">
         <span class="pinned-folder-icon">${icon("Folder")}</span>
         <span>${esc(folder.name)}</span>
         <span class="pinned-folder-star" aria-hidden="true">${icon("Star")}</span>
       </button>`,
     )
     .join("");
-  pinnedFolderList.querySelectorAll("[data-pinned-folder]").forEach((button) => {
-    const folderId = button.dataset.pinnedFolder;
-    button.onclick = () => dispatchNavigation("open", { folderId });
-    attachFolderDrop(button, folderId);
-  });
+  pinnedFolderList
+    .querySelectorAll("[data-pinned-folder]")
+    .forEach((button) => {
+      const folderId = button.dataset.pinnedFolder;
+      button.onclick = () => dispatchNavigation("open", { folderId });
+      attachFolderDrop(button, folderId);
+    });
 }
 
 function togglePinnedFolder(folder) {
@@ -2197,6 +2212,12 @@ function updateEmptyState(itemCount) {
     ],
   };
   const scopeMessages = {
+    image: ["Nenhuma foto ainda", "Adicione fotos para vê-las aqui."],
+    video: ["Nenhum vídeo ainda", "Adicione vídeos para vê-los aqui."],
+    document: [
+      "Nenhum documento ainda",
+      "Adicione documentos para vê-los aqui.",
+    ],
     trash: ["Lixeira vazia", "Itens enviados para a lixeira aparecem aqui."],
     favorites: [
       "Sem favoritos",
@@ -2212,8 +2233,8 @@ function updateEmptyState(itemCount) {
       "Arquivos sem etiquetas aparecem aqui para facilitar organizacao.",
     ],
     largeVideos: [
-      "Sem videos grandes",
-      "Videos acima de 100 MB aparecem aqui.",
+      "Sem vídeos grandes",
+      "Vídeos acima de 100 MB aparecem aqui.",
     ],
     important: [
       "Nada importante",
@@ -2223,7 +2244,7 @@ function updateEmptyState(itemCount) {
   const [title, sub] = modeMessages[navState.viewMode] ||
     scopeMessages[navState.contentScope] || [
       "Cofre vazio",
-      "Organize fotos, videos e documentos em pastas.",
+      "Adicione arquivos para começar a organizar seu acervo.",
     ];
   const filtered =
     !!currentSearch ||
@@ -2860,10 +2881,7 @@ function makeFileCard(file) {
   card.draggable = !isTrash;
   card.addEventListener("dragstart", (e) => {
     const ids = selectedIds.has(file.id) ? [...selectedIds] : [file.id];
-    e.dataTransfer.setData(
-      "application/x-vault-file-ids",
-      JSON.stringify(ids),
-    );
+    e.dataTransfer.setData("application/x-vault-file-ids", JSON.stringify(ids));
     e.dataTransfer.setData("text/plain", file.id);
     e.dataTransfer.effectAllowed = "move";
     card.classList.add("is-dragging");
@@ -4832,7 +4850,9 @@ function renderTagManagerList() {
   tagManagerList.innerHTML = visible.length
     ? visible
         .map(
-          (tag) => `<button class="tag-manager-item${tag.key === tagManagerSelectedKey ? " active" : ""}" type="button" data-manage-tag="${esc(tag.key)}" aria-pressed="${tag.key === tagManagerSelectedKey}" style="${tagInlineStyle(tag)}">
+          (
+            tag,
+          ) => `<button class="tag-manager-item${tag.key === tagManagerSelectedKey ? " active" : ""}" type="button" data-manage-tag="${esc(tag.key)}" aria-pressed="${tag.key === tagManagerSelectedKey}" style="${tagInlineStyle(tag)}">
             <span class="tag-manager-color" aria-hidden="true"></span>
             <span class="tag-manager-item-copy"><strong>${esc(tag.name)}</strong><small>${esc(tag.color.toUpperCase())}</small></span>
             <span class="tag-manager-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
@@ -4893,10 +4913,7 @@ function syncManagedTagPreview() {
     ? tagManagerDraftColor
     : DEFAULT_TAG_COLOR;
   tagManagerColorPreview.textContent = name || "Etiqueta";
-  tagManagerColorPreview.setAttribute(
-    "style",
-    tagInlineStyle({ name, color }),
-  );
+  tagManagerColorPreview.setAttribute("style", tagInlineStyle({ name, color }));
   $("saveManagedTag").disabled = !name || !isTagColor(color) || tagManagerBusy;
 }
 
@@ -4986,9 +5003,7 @@ async function saveManagedTag() {
 async function mergeManagedTag() {
   const catalog = getManagedTagCatalog();
   const source = catalog.find((tag) => tag.key === tagManagerSelectedKey);
-  const target = catalog.find(
-    (tag) => tag.key === tagManagerMergeTarget.value,
-  );
+  const target = catalog.find((tag) => tag.key === tagManagerMergeTarget.value);
   if (!source || !target || source.key === target.key) return;
   const confirmed = await openConfirmDialog({
     title: "Mesclar etiquetas",
@@ -4999,15 +5014,16 @@ async function mergeManagedTag() {
 
   setTagManagerBusy(true, `Mesclando ${source.count} arquivo(s)...`);
   const result = await rewriteTagAcrossFiles(source.key, (tags) =>
-    mergeTagEntries(
-      tags.map((tag) => (tag.key === source.key ? target : tag)),
-    ),
+    mergeTagEntries(tags.map((tag) => (tag.key === source.key ? target : tag))),
   );
   if (activeSearchTags.delete(source.key)) activeSearchTags.add(target.key);
   tagManagerSelectedKey = target.key;
   addHistory(`Etiquetas mescladas: ${source.name} -> ${target.name}`);
   setTagManagerBusy(false);
-  finishTagManagerOperation(result, `“${source.name}” foi mesclada em “${target.name}”`);
+  finishTagManagerOperation(
+    result,
+    `“${source.name}” foi mesclada em “${target.name}”`,
+  );
   selectManagedTag(target.key);
 }
 
@@ -5401,7 +5417,7 @@ function openLightbox(file) {
       if (generation !== lightboxGeneration) return;
       showMissingLightbox(
         file,
-        "Nao foi possivel reproduzir este video. Verifique a conexao ou o formato do arquivo.",
+        "Não foi possível reproduzir este vídeo. Verifique a conexão ou o formato do arquivo.",
       );
     };
     lightboxInner.appendChild(vid);
@@ -5740,10 +5756,7 @@ function currentLightboxFile() {
 function handleLightboxShortcut(event) {
   if (!lightbox.classList.contains("active")) return false;
   if (event.ctrlKey || event.metaKey || event.altKey) return false;
-  if (
-    event.target.closest("button, a") &&
-    ["Enter", " "].includes(event.key)
-  )
+  if (event.target.closest("button, a") && ["Enter", " "].includes(event.key))
     return false;
   const file = currentLightboxFile();
   const key = event.key.toLowerCase();
@@ -5766,8 +5779,7 @@ function handleLightboxShortcut(event) {
   if (key === "m" && file) return run(() => openMoveModal(file));
   if (["+", "="].includes(event.key))
     return run(() => setLightboxZoom(lightboxZoom + 0.25));
-  if (event.key === "-")
-    return run(() => setLightboxZoom(lightboxZoom - 0.25));
+  if (event.key === "-") return run(() => setLightboxZoom(lightboxZoom - 0.25));
   if (event.key === "0") return run(() => setLightboxFitMode("fit"));
   if (event.key === "1") return run(() => setLightboxFitMode("original"));
   if (event.key === "Enter") return run(toggleLightboxFullscreen);
@@ -5794,7 +5806,7 @@ document.onkeydown = (e) => {
   if (primaryModifier && !e.altKey && e.key.toLowerCase() === "u") {
     e.preventDefault();
     if (!blockingOverlay && configModal.style.display !== "flex")
-      fileInput.click();
+      requestUpload();
     return;
   }
   if (primaryModifier && (e.shiftKey || e.altKey) && e.code === "KeyN") {
@@ -6193,11 +6205,46 @@ mangaClose.onclick = closeMangaReader;
 mangaStage.addEventListener("scroll", updateMangaIndexFromScroll);
 
 // ??? Upload ???????????????????????????????????????????????
+function requestUpload() {
+  if (!googleClientId) {
+    openConfigModal(true);
+    showToast("Configure o Google Drive para enviar arquivos.");
+    return;
+  }
+  const connected =
+    driveManager?.getAccounts().filter((account) => account.connected) || [];
+  if (!connected.length) {
+    openAccountsModal();
+    showToast("Conecte uma conta do Drive antes de adicionar arquivos.");
+    return;
+  }
+  const folder =
+    navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
+  const requiredSlot = folder
+    ? recordAccountSlot(folder)
+    : activeAccountView !== "all"
+      ? activeAccountView
+      : "";
+  if (requiredSlot === "legacy") {
+    showToast("Migre esta pasta para o Drive antes de adicionar arquivos.");
+    return;
+  }
+  if (requiredSlot && !driveManager.isConnected(requiredSlot)) {
+    openAccountsModal();
+    showToast(`Reconecte ${slotTag(requiredSlot)} para enviar arquivos aqui.`);
+    return;
+  }
+  fileInput.click();
+}
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-upload]")) requestUpload();
+});
 fileInput.onchange = (e) => handleFiles(Array.from(e.target.files));
 
 async function handleFiles(fileList) {
   if (!db || !driveManager) {
-    showToast("Configure o Firebase e o Google Drive primeiro", "error");
+    showToast("Configure o Google Drive antes de enviar arquivos.", "error");
     return;
   }
   if (!fileList.length) return;
@@ -6254,7 +6301,20 @@ async function handleFiles(fileList) {
 }
 
 async function chooseAccountSlot(title = "Escolher conta do Drive") {
-  if (activeAccountView !== "all") return activeAccountView;
+  const connected =
+    driveManager?.getAccounts().filter((account) => account.connected) || [];
+  if (!connected.length)
+    throw new Error("Conecte uma conta do Drive para continuar.");
+  if (
+    activeAccountView !== "all" &&
+    driveManager.isConnected(activeAccountView)
+  )
+    return activeAccountView;
+  if (connected.length === 1) return connected[0].slot;
+  const lastUsed = localStorage.getItem(LAST_UPLOAD_ACCOUNT_KEY);
+  const preferred = connected.some((account) => account.slot === lastUsed)
+    ? lastUsed
+    : connected[0].slot;
   const values = await openFieldsDialog({
     title,
     confirmText: "Continuar",
@@ -6263,15 +6323,15 @@ async function chooseAccountSlot(title = "Escolher conta do Drive") {
         name: "accountSlot",
         label: "Conta",
         type: "select",
-        value: "ac1",
-        options: ["ac1", "ac2", "ac3", "ac4"].map((slot) => ({
-          value: slot,
-          label: `${accountLabel(slot)}${driveManager?.isConnected(slot) ? " · conectada" : " · desconectada"}`,
+        value: preferred,
+        options: connected.map((account) => ({
+          value: account.slot,
+          label: accountLabel(account.slot),
         })),
       },
     ],
   });
-  if (!values) throw new Error("Operacao cancelada");
+  if (!values) throw new Error("Operação cancelada");
   return values.accountSlot;
 }
 
@@ -6292,6 +6352,7 @@ async function resolveUploadDestination() {
   const driveParentId = folder
     ? await ensureFolderOnDrive(folder, accountSlot)
     : await driveManager.ensureRootFolder(accountSlot);
+  localStorage.setItem(LAST_UPLOAD_ACCOUNT_KEY, accountSlot);
   return {
     accountSlot,
     driveParentId,
@@ -6930,9 +6991,7 @@ tagManagerHexInput.oninput = () => {
     setTagManagerError("");
     syncManagedTagPreview();
   } else {
-    tagManagerHexInput.setCustomValidity(
-      "Informe seis dígitos hexadecimais.",
-    );
+    tagManagerHexInput.setCustomValidity("Informe seis dígitos hexadecimais.");
     tagManagerHexInput.setAttribute("aria-invalid", "true");
     $("saveManagedTag").disabled = true;
   }
@@ -6985,6 +7044,12 @@ $("toolsPanelToggle").onclick = () =>
     filterPanel,
     $("filterPanelToggle"),
   );
+$("syncSummaryBtn").onclick = () => {
+  setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+  setPanelOpen(toolsPanel, $("toolsPanelToggle"), true);
+  $("syncNowBtn").focus();
+};
+$("openDriveConfigBtn").onclick = () => openConfigModal(true);
 $("closeFilterPanel").onclick = () =>
   setPanelOpen(filterPanel, $("filterPanelToggle"), false);
 $("closeToolsPanel").onclick = () =>
@@ -7056,7 +7121,7 @@ async function migrateLegacyFilesToDrive() {
     (file) => !file.deletedAt && !isGoogleDriveRecord(file) && file.url,
   );
   if (!legacyFiles.length) {
-    showToast("Nao ha arquivos antigos para migrar");
+    showToast("Não há arquivos antigos para migrar");
     return;
   }
   const confirmed = await openConfirmDialog({
@@ -7575,6 +7640,17 @@ function scheduleDashboardUpdate() {
 function updateDashboard() {
   if (navState.section !== "home") return;
   const active = files.filter((f) => !f.deletedAt && matchesAccountView(f));
+  const needsSetup = files.every((file) => file.deletedAt);
+  $("homeSetup").hidden = !needsSetup;
+  $("homeOverview").hidden = needsSetup;
+  $("dashboardTimelineBtn").hidden = needsSetup;
+  const hasDrive = !!driveManager
+    ?.getAccounts()
+    .some((account) => account.connected);
+  $("setupDriveBtn").classList.toggle("is-complete", hasDrive);
+  $("setupDriveHint").textContent = hasDrive
+    ? "Conta conectada. Você já pode adicionar arquivos."
+    : "Escolha a conta que guardará seus arquivos.";
   $("dashTotal").textContent = active.length;
   $("dashImages").textContent = active.filter(
     (f) => f.fileType === "image",
@@ -7599,6 +7675,13 @@ function updateDashboard() {
   renderRecentlyViewed(active);
   hydrateDriveThumbnails(dashboard);
 }
+
+$("setupDriveBtn").onclick = () => {
+  if (googleClientId) openAccountsModal($("setupDriveBtn"));
+  else openConfigModal(true);
+};
+$("setupUploadBtn").onclick = requestUpload;
+$("setupFolderBtn").onclick = () => openFolderCreateDialog(ROOT_ID);
 
 function persistRecentlyViewed() {
   try {
@@ -7897,7 +7980,7 @@ function renderHistory() {
     ? items
         .map((item) => `<span title="${esc(item.at)}">${esc(item.text)}</span>`)
         .join("")
-    : "Sem historico";
+    : "Sem histórico";
 }
 
 // ??? Helpers ??????????????????????????????????????????????
@@ -8126,12 +8209,47 @@ function showToast(msg, type = "") {
 async function refreshSyncStatus() {
   const summary = await getSyncSummary();
   const el = $("syncStatus");
-  el.dataset.state = summary.pending ? "pending" : "local";
-  el.textContent = summary.pending
-    ? summary.pending + " alteração(ões) sem cópia no Drive"
-    : "Biblioteca local pronta";
+  if (currentSyncState !== "syncing" && currentSyncState !== "error") {
+    el.dataset.state = summary.pending ? "pending" : "local";
+    el.textContent = summary.pending
+      ? summary.pending + " alteração(ões) sem cópia no Drive"
+      : "Biblioteca local pronta";
+  }
+  const badge = $("syncSummaryBtn");
+  const text = $("syncSummaryText");
+  if (!badge || !text) return;
+  const connected = driveManager
+    ?.getAccounts()
+    .some((account) => account.connected);
+  const syncAt = Number(localStorage.getItem(LAST_SYNC_AT_KEY) || 0);
+  let state = "disconnected";
+  let label = "Drive desconectado";
+  if (connected && currentSyncState === "error") {
+    state = "error";
+    label = "Erro ao sincronizar";
+  } else if (connected && currentSyncState === "syncing") {
+    state = "syncing";
+    label = "Sincronizando…";
+  } else if (summary.pending) {
+    state = "pending";
+    label = `${summary.pending} pendente${summary.pending === 1 ? "" : "s"}`;
+  } else if (connected && currentSyncState === "synced" && syncAt) {
+    state = "synced";
+    label = `Sincronizado às ${new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(syncAt)}`;
+  } else if (connected) {
+    state = "connected";
+    label = "Drive conectado";
+  }
+  badge.dataset.state = state;
+  text.textContent = label;
+  badge.title = `${label}. Abrir ferramentas e sincronização.`;
+  badge.setAttribute("aria-label", badge.title);
 }
 window.addEventListener("vault-sync", ({ detail }) => {
+  currentSyncState = detail.state;
+  if (detail.state === "synced")
+    localStorage.setItem(LAST_SYNC_AT_KEY, String(Date.now()));
+  refreshSyncStatus();
   if (legacyMigrationState === "running") return;
   if (["error", "empty"].includes(legacyMigrationState)) return;
   $("syncStatus").textContent = detail.message;
@@ -8209,7 +8327,7 @@ function refreshLegacyNotice() {
   const notice = $("legacyMigrationNotice");
   notice.hidden =
     legacyMigrationState === "synced" ||
-    (legacyMigrationState === "idle" && !getLegacyConfig() && files.length > 0);
+    (legacyMigrationState === "idle" && !getLegacyConfig());
   $("legacyMigrationMessage").textContent =
     legacyMigrationMessage ||
     "Seu acervo antigo não aparece? Recupere os metadados do Firebase e guarde uma cópia no Drive.";

@@ -116,7 +116,6 @@ export function installInterface() {
   });
   mobile.addEventListener("change", refresh);
   document.addEventListener("click", (e) => {
-    if (e.target.closest("[data-upload]")) $("fileInput").click();
     if (e.target.closest(".app-nav-item,.sidebar .chip"))
       sidebar.classList.remove("mobile-open");
   });

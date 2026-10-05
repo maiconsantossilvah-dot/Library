@@ -4,7 +4,7 @@ Aplicativo estático, sem backend próprio: HTML, CSS, JavaScript e ícones **Lu
 
 ## Executar e gerar a versão estática
 
-A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique essa pasta junto com `modules/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
+A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique `vendor/`, `modules/`, `styles/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
 
 Para testar a raiz localmente, com Node.js 22 ou superior: `npm run dev:source`. Para desenvolver com o build otimizado:
 
@@ -101,7 +101,8 @@ A migração Cloudinary → Drive continua em **Ferramentas** e preserva as refe
 
 ```text
 app.js                    fluxos da biblioteca e integração
-styles.css                estilos consolidados, temas e responsividade
+styles.css                camada visual atual, temas e responsividade
+styles/legacy.css         estilos antigos isolados para migração gradual
 modules/interface.js      diálogos, foco, navegação móvel e acessibilidade
 modules/icons.js          conjunto Lucide compartilhado
 modules/local-store.js    IndexedDB, revisões e sincronização

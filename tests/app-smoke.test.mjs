@@ -50,8 +50,24 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(w.localStorage.getItem("vault_theme"), "dark");
   assert.ok(document.querySelectorAll("svg.lucide").length > 20);
   document.getElementById("skipConfig").click();
-  assert.equal(document.getElementById("legacyMigrationNotice").hidden, false);
-  document.getElementById("legacyMigrationAction").click();
+  for (
+    let attempt = 0;
+    attempt < 40 && document.getElementById("homeSetup").hidden;
+    attempt++
+  )
+    await new Promise((r) => setTimeout(r, 25));
+  assert.equal(
+    document.getElementById("homeSetup").hidden,
+    false,
+    errors.join("\n"),
+  );
+  assert.equal(document.getElementById("homeOverview").hidden, true);
+  document.querySelector("[data-upload]").click();
+  assert.equal(document.getElementById("configModal").style.display, "flex");
+  document.getElementById("cancelConfig").click();
+  assert.equal(document.getElementById("legacyMigrationNotice").hidden, true);
+  document.getElementById("openConfigBtn").click();
+  document.querySelector("#legacyFirebaseConfig summary").click();
   assert.equal(document.getElementById("legacyFirebaseConfig").open, true);
   document.getElementById("legacyImportBtn").click();
   assert.match(
@@ -65,6 +81,10 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.getElementById("navFiles").click();
   assert.equal(document.body.dataset.section, "files", errors.join("\n"));
   document.querySelector('.library-scope-tab[data-filter="image"]').click();
+  assert.equal(
+    document.getElementById("emptyTitle").textContent,
+    "Nenhuma foto ainda",
+  );
   assert.equal(
     JSON.parse(w.localStorage.getItem("vault_navigation_v1")).contentScope,
     "image",
@@ -278,7 +298,8 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     "qa-folder",
   );
   const card = [...document.querySelectorAll(".file-name")].find(
-    (button) => button.textContent === "Imagem vertical de teste com nome completo",
+    (button) =>
+      button.textContent === "Imagem vertical de teste com nome completo",
   );
   assert.ok(card);
   assert.equal(card.closest(".file-card").draggable, true);
@@ -337,7 +358,9 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     new w.KeyboardEvent("keydown", { key: "1", bubbles: true }),
   );
   assert.equal(
-    document.getElementById("lightboxInner").classList.contains("original-size"),
+    document
+      .getElementById("lightboxInner")
+      .classList.contains("original-size"),
     true,
   );
   document.body.dispatchEvent(
@@ -346,7 +369,10 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: " ", bubbles: true }),
   );
-  assert.equal(document.getElementById("lightboxType").textContent, "Documento");
+  assert.equal(
+    document.getElementById("lightboxType").textContent,
+    "Documento",
+  );
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
   );
@@ -354,7 +380,10 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "m", bubbles: true }),
   );
-  assert.equal(document.getElementById("moveModal").classList.contains("active"), true);
+  assert.equal(
+    document.getElementById("moveModal").classList.contains("active"),
+    true,
+  );
   document.getElementById("closeMoveModal").click();
   document.getElementById("lightboxInfoToggle").click();
   assert.equal(
@@ -370,7 +399,10 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.getElementById("lightboxClose").click();
   document.getElementById("navHome").click();
   await new Promise((r) => setTimeout(r, 140));
-  assert.equal(document.getElementById("dashboardContinueSection").hidden, false);
+  assert.equal(
+    document.getElementById("dashboardContinueSection").hidden,
+    false,
+  );
   assert.ok(document.querySelectorAll(".continue-file-item").length >= 2);
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),

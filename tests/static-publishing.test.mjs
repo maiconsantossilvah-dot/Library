@@ -43,6 +43,9 @@ test("raiz publicada: todos os imports resolvem no navegador, sem npm ou build",
   const shell = vm.runInContext("APP_SHELL", context);
   for (const file of files)
     assert.ok(shell.includes(`./${file}`), `${file} cached offline`);
+  const stylesheet = await fs.readFile("styles.css", "utf8");
+  assert.match(stylesheet, /@import url\("\.\/styles\/legacy\.css"\)/);
+  assert.ok(shell.includes("./styles/legacy.css"), "CSS legado cached offline");
   for (const asset of shell) await fs.access(asset);
 });
 
