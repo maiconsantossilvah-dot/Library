@@ -29,6 +29,11 @@
               ><span class="logo-text">VAULT</span
               ><small>arquivo pessoal</small></span
             >
+            <span
+              class="after-dark-brand-mark"
+              data-icon="Spade"
+              aria-hidden="true"
+            ></span>
           </div>
           <div class="sidebar-header-actions">
             <button
@@ -107,6 +112,14 @@
                 ></span
                 ><span>Favoritos</span>
               </button>
+              <button class="chip sissy-nav-chip" data-filter="sissyHighlights">
+                <span
+                  class="nav-chip-icon"
+                  data-icon="Spade"
+                  aria-hidden="true"
+                ></span
+                ><span>Destaques sissy</span>
+              </button>
               <button class="chip" data-filter="important">
                 <span
                   class="nav-chip-icon"
@@ -184,7 +197,14 @@
               <span data-icon="Menu"></span>
             </button>
             <div class="topbar-context">
-              <span class="topbar-kicker">MEU ARQUIVO</span>
+              <span class="topbar-kicker"
+                ><span
+                  class="after-dark-topbar-mark"
+                  data-icon="Sparkles"
+                  aria-hidden="true"
+                ></span
+                >MEU ARQUIVO</span
+              >
               <div class="breadcrumb" id="breadcrumb">
                 <span>Todos os Arquivos</span>
               </div>
@@ -566,7 +586,11 @@
                   aria-pressed="false"
                   title="Ativar tema After Dark"
                 >
-                  <span class="after-dark-symbol" aria-hidden="true">♠</span>
+                  <span
+                    class="after-dark-symbol"
+                    data-icon="Spade"
+                    aria-hidden="true"
+                  ></span>
                   <span id="afterDarkToggleText">Ativar tema After Dark</span>
                 </button>
               </div>
@@ -869,6 +893,11 @@
                   Ver linha do tempo
                 </button>
               </div>
+              <div class="after-dark-hero-crest" aria-hidden="true">
+                <span data-icon="Sparkles"></span>
+                <span data-icon="Spade"></span>
+                <span data-icon="Sparkles"></span>
+              </div>
             </header>
 
             <section
@@ -973,6 +1002,42 @@
               </section>
 
               <section
+                class="home-panel sissy-highlights-panel"
+                id="sissyHighlightsPanel"
+                aria-label="Destaques sissy"
+              >
+                <div class="home-panel-head sissy-highlights-head">
+                  <div class="sissy-highlights-title">
+                    <span
+                      class="sissy-highlights-icon"
+                      data-icon="Crown"
+                      aria-hidden="true"
+                    ></span>
+                    <div>
+                      <span class="eyebrow">SELEÇÃO PESSOAL</span>
+                      <h2>Destaques sissy</h2>
+                    </div>
+                  </div>
+                  <div class="sissy-highlights-actions">
+                    <span class="sissy-highlight-count" id="dashSissyCount"
+                      >0 itens</span
+                    >
+                    <button
+                      class="text-panel-action"
+                      id="dashSissyAllBtn"
+                      type="button"
+                    >
+                      Ver coleção
+                    </button>
+                  </div>
+                </div>
+                <div
+                  id="dashSissyHighlights"
+                  class="sissy-highlights-grid"
+                ></div>
+              </section>
+
+              <section
                 class="dashboard-continue"
                 id="dashboardContinueSection"
                 hidden
@@ -1072,6 +1137,15 @@
                 </button>
                 <button class="empty-action primary" type="button" data-upload>
                   Enviar arquivos
+                </button>
+                <button
+                  class="empty-action primary"
+                  id="emptySissyExploreBtn"
+                  type="button"
+                  hidden
+                >
+                  <span data-icon="Spade" aria-hidden="true"></span>
+                  Explorar fotos e vídeos
                 </button>
                 <button
                   class="empty-action"

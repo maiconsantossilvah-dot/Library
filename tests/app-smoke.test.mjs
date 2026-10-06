@@ -93,6 +93,17 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(document.body.dataset.section, "mural");
   document.getElementById("navFiles").click();
   assert.equal(document.body.dataset.section, "files", errors.join("\n"));
+  document.querySelector('[data-filter="sissyHighlights"]').click();
+  assert.equal(
+    document.getElementById("emptyTitle").textContent,
+    "Nenhum destaque sissy ainda",
+  );
+  assert.equal(document.getElementById("emptySissyExploreBtn").hidden, false);
+  document.getElementById("emptySissyExploreBtn").click();
+  assert.equal(
+    document.getElementById("currentFolderTitle").textContent,
+    "Fotos e vídeos",
+  );
   document.querySelector('.library-scope-tab[data-filter="image"]').click();
   assert.equal(
     document.getElementById("emptyTitle").textContent,
@@ -162,6 +173,68 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     /Data 04\/08\/2026/,
   );
   assert.equal(mediaCard.querySelectorAll(".file-actions").length, 1);
+  mediaCard.querySelector(".action-menu-btn").click();
+  mediaCard.querySelector(".sissy-highlight-btn").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const record = (await store.allRecords(db)).find(
+      (entry) => entry.id === "qa-image",
+    );
+    if (record?.data.sissyHighlight) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  const featuredRecord = (await store.allRecords(db)).find(
+    (entry) => entry.id === "qa-image",
+  ).data;
+  assert.equal(featuredRecord.sissyHighlight, true);
+  assert.ok(featuredRecord.sissyHighlightedAt);
+  assert.equal(
+    document.querySelector(".sissy-quick-btn").getAttribute("aria-pressed"),
+    "true",
+  );
+  document.querySelector(".sissy-quick-btn").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const record = (await store.allRecords(db)).find(
+      (entry) => entry.id === "qa-image",
+    );
+    if (record?.data.sissyHighlight === false) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.equal(
+    (await store.allRecords(db)).find((entry) => entry.id === "qa-image").data
+      .sissyHighlight,
+    false,
+  );
+  document.querySelector(".sissy-quick-btn").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const record = (await store.allRecords(db)).find(
+      (entry) => entry.id === "qa-image",
+    );
+    if (record?.data.sissyHighlight) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.equal(
+    (await store.allRecords(db)).find((entry) => entry.id === "qa-image").data
+      .sissyHighlight,
+    true,
+  );
+  document.querySelector('[data-filter="sissyHighlights"]').click();
+  assert.equal(
+    document.getElementById("currentFolderTitle").textContent,
+    "Destaques sissy",
+  );
+  assert.equal(document.querySelectorAll(".file-card").length, 1);
+  assert.ok(document.querySelector(".sissy-highlight-badge"));
+  document.getElementById("navHome").click();
+  for (
+    let attempt = 0;
+    attempt < 40 &&
+    document.querySelectorAll(".sissy-feature-card").length === 0;
+    attempt++
+  )
+    await new Promise((r) => setTimeout(r, 25));
+  assert.equal(document.getElementById("dashSissyCount").textContent, "1 item");
+  assert.equal(document.querySelectorAll(".sissy-feature-card").length, 1);
+  document.querySelector('.library-scope-tab[data-filter="all"]').click();
   const tagChip = document.querySelector(".tag-chip");
   assert.equal(tagChip.textContent, "Viagem");
   assert.match(tagChip.getAttribute("style"), /#579dff/);
@@ -408,6 +481,19 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(
     document.getElementById("lightboxInfoToggle").getAttribute("aria-expanded"),
     "true",
+  );
+  document.getElementById("lbSissyHighlightBtn").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const record = (await store.allRecords(db)).find(
+      (entry) => entry.id === "qa-image",
+    );
+    if (record?.data.sissyHighlight === false) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.equal(
+    (await store.allRecords(db)).find((entry) => entry.id === "qa-image").data
+      .sissyHighlight,
+    false,
   );
   document.getElementById("lightboxClose").click();
   document.getElementById("navHome").click();

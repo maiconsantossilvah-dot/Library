@@ -28,7 +28,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 ## Navegação no computador
 
 - **Início** resume o acervo; **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual.
-- Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
+- Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, **Destaques sissy**, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
 - Arraste um cartão para uma pasta da árvore, uma pasta fixada ou um cartão de pasta para movê-lo. Ao arrastar um item selecionado, todos os selecionados são movidos juntos; arquivos do computador continuam abrindo a área de envio.
@@ -36,7 +36,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ### Visualizador
 
-- Use `←` e `→` para navegar, `Espaço` para avançar, `F` para favoritar, `T` para editar etiquetas e `M` para mover.
+- Use `←` e `→` para navegar, `Espaço` para avançar, `F` para favoritar, `S` para alternar o destaque sissy em fotos/vídeos, `T` para editar etiquetas e `M` para mover.
 - Em fotos e vídeos, `0` ajusta à tela, `1` mostra o tamanho original e `Enter` alterna a tela cheia. Em fotos, `+` e `-` controlam o zoom.
 - As miniaturas são carregadas progressivamente. URLs temporárias do Drive são reaproveitadas enquanto válidas e os arquivos vizinhos são pré-carregados para reduzir a espera ao navegar.
 
@@ -61,7 +61,11 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ## Aparência
 
-Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma identidade visual adulta opcional, com uma imagem editorial e o motivo da carta de espadas. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias.
+Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma identidade visual adulta opcional, com imagem editorial e motivos de espadas, coroa e brilhos distribuídos pela interface. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias.
+
+### Destaques sissy
+
+Em fotos e vídeos, use o botão de espadas no cartão, **Mais opções → Adicionar aos Destaques sissy** ou o botão no visualizador (`S`). Essa seleção é independente dos favoritos e etiquetas. Acesse todos os itens pelo atalho lateral ou veja os quatro mais recentes na vitrine do Início. A marcação é um metadado: acompanha a sincronização e os backups JSON, sem duplicar o arquivo original. Na exportação CSV ela aparece em coluna própria.
 
 ### Como a sincronização resolve alterações
 

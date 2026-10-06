@@ -77,6 +77,7 @@ const NAV_CONTENT_SCOPES = new Set([
   "largeVideos",
   "important",
   "favorites",
+  "sissyHighlights",
 ]);
 const DEFAULT_TAG_COLOR = "#4bce97";
 const RECENTLY_VIEWED_KEY = "vault_recently_viewed_v1";
@@ -2024,6 +2025,17 @@ const CONTENT_STRATEGIES = {
     sortFiles(
       applyFilter(files.filter((file) => file.favorite && isActiveFile(file))),
     ),
+  sissyHighlights: () =>
+    sortFiles(
+      applyFilter(
+        files.filter(
+          (file) =>
+            isActiveFile(file) &&
+            file.sissyHighlight &&
+            ["image", "video"].includes(file.fileType),
+        ),
+      ),
+    ),
 };
 
 const VIEW_RENDERERS = {
@@ -2041,6 +2053,7 @@ function updateLibraryWorkspaceHeader() {
   const directFolders = getFolderChildren(navState.folderId).length;
   const scopeTitle = {
     favorites: "Favoritos",
+    sissyHighlights: "Destaques sissy",
     recent: "Recentes",
     trash: "Lixeira",
     duplicates: "Duplicados",
@@ -2072,6 +2085,8 @@ function updateLibraryWorkspaceHeader() {
   }
   if (createSubfolderLabel)
     createSubfolderLabel.textContent = isRoot ? "Nova pasta" : "Nova subpasta";
+  if (createSubfolderBtn)
+    createSubfolderBtn.hidden = navState.contentScope === "sissyHighlights";
   createSubfolderBtn?.setAttribute(
     "aria-label",
     isRoot ? "Criar nova pasta" : "Criar subpasta nesta pasta",
@@ -2243,6 +2258,10 @@ function updateEmptyState(itemCount) {
       "Sem favoritos",
       "Marque arquivos importantes com estrela para encontra-los rapido.",
     ],
+    sissyHighlights: [
+      "Nenhum destaque sissy ainda",
+      "Abra uma foto ou vídeo e escolha Adicionar aos Destaques sissy.",
+    ],
     duplicates: [
       "Sem duplicados",
       "Arquivos iguais pelo hash ou pelo mesmo nome e tamanho aparecem aqui.",
@@ -2275,11 +2294,20 @@ function updateEmptyState(itemCount) {
   emptySub.textContent = filtered
     ? "Tente outro termo, altere a conta ou limpe os filtros."
     : sub;
+  emptyState.querySelector(".empty-icon").innerHTML = icon(
+    navState.contentScope === "sissyHighlights" ? "Spade" : "FolderOpen",
+  );
   $("clearSearchFilters").hidden = !filtered;
+  $("emptySissyExploreBtn").hidden =
+    filtered || navState.contentScope !== "sissyHighlights";
   emptyState
     .querySelectorAll("[data-upload], #emptyNewFolderBtn")
     .forEach(
-      (el) => (el.hidden = filtered || navState.contentScope === "trash"),
+      (el) =>
+        (el.hidden =
+          filtered ||
+          navState.contentScope === "trash" ||
+          navState.contentScope === "sissyHighlights"),
     );
 }
 
@@ -2737,6 +2765,7 @@ function makeFileCard(file) {
   card.className =
     "file-card" +
     (file.favorite ? " is-favorite" : "") +
+    (file.sissyHighlight ? " is-sissy-highlight" : "") +
     (file.priority === "important" || file.priority === "critical"
       ? " is-priority"
       : "") +
@@ -2762,6 +2791,9 @@ function makeFileCard(file) {
 
   const favClass = file.favorite ? "fav-btn active" : "fav-btn";
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
+  const sissyActionLabel = file.sissyHighlight
+    ? "Remover dos Destaques sissy"
+    : "Adicionar aos Destaques sissy";
   const tags = normalizeTagEntries(file.tags);
   const isTrash = navState.contentScope === "trash" || file.deletedAt;
   const priorityLabel =
@@ -2782,6 +2814,7 @@ function makeFileCard(file) {
       <span class="file-type-badge">${typeLabel}</span>
       <span class="account-badge file-account-badge">${accountBadge(file)}</span>
       <button class="${favClass}" title="${favTitle}" aria-label="${favTitle}" aria-pressed="${!!file.favorite}">${icon("Star")}</button>
+      ${isMedia && !isTrash ? `<button type="button" class="sissy-quick-btn${file.sissyHighlight ? " active" : ""}" title="${sissyActionLabel}" aria-label="${sissyActionLabel}" aria-pressed="${!!file.sissyHighlight}">${icon("Spade")}</button>` : ""}
       <button type="button" class="select-checkbox" aria-label="Selecionar ${esc(file.name)}" aria-pressed="${selectedIds.has(file.id)}"><span class="chk">${icon(selectedIds.has(file.id) ? "Check" : "Square")}</span></button>
     </div>`;
 
@@ -2805,6 +2838,7 @@ function makeFileCard(file) {
                  <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
                  <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
                  <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
+                 ${isMedia ? `<button class="file-menu-item sissy-highlight-btn" type="button" role="menuitem">${sissyActionLabel}</button>` : ""}
                  <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
                  ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
                  ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
@@ -2819,6 +2853,7 @@ function makeFileCard(file) {
         <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
       </div>
       <div class="file-meta">
+        ${file.sissyHighlight && isMedia ? `<span class="sissy-highlight-badge">${icon("Spade")} Destaque sissy</span>` : ""}
         ${priorityLabel ? `<span class="priority-badge">${priorityLabel}</span>` : ""}
         ${folderLabel ? `<span class="file-folder-path">${esc(folderLabel)}</span>` : ""}
         ${automaticLabels.map((label) => `<span class="auto-badge">${esc(label)}</span>`).join("")}
@@ -2857,6 +2892,8 @@ function makeFileCard(file) {
   bindAction(".description-btn", () => openDescriptionModal(file));
   bindAction(".info-btn", () => editFileInfo(file));
   bindAction(".tags-btn", () => editTags(file));
+  bindAction(".sissy-highlight-btn", () => toggleSissyHighlight(file));
+  bindAction(".sissy-quick-btn", () => toggleSissyHighlight(file));
   bindAction(".share-btn", () => shareFile(file));
   bindAction(".copy-account-btn", () => copyFileToAnotherAccount(file));
   bindAction(".manga-btn-card", () => openMangaReader(file));
@@ -3606,6 +3643,23 @@ async function toggleFavorite(file) {
   }
 }
 
+async function toggleSissyHighlight(file) {
+  if (!["image", "video"].includes(file.fileType) || file.deletedAt) return;
+  const next = !file.sissyHighlight;
+  try {
+    await updateDoc(doc(db, "vault_files", file.id), {
+      sissyHighlight: next,
+      sissyHighlightedAt: next ? new Date().toISOString() : null,
+    });
+    showToast(
+      next ? "Adicionado aos Destaques sissy" : "Removido dos Destaques sissy",
+      "success",
+    );
+  } catch (error) {
+    showToast("Erro: " + error.message, "error");
+  }
+}
+
 // ??? Select mode ??????????????????????????????????????????
 function enterSelectMode() {
   isSelectMode = true;
@@ -3811,6 +3865,7 @@ function showFileInfo(file) {
     ],
     ["Prioridade", file.priority || "normal"],
     ["Favorito", file.favorite ? "Sim" : "Nao"],
+    ["Destaque sissy", file.sissyHighlight ? "Sim" : "Não"],
     [
       "Resolucao",
       file.width && file.height ? `${file.width} x ${file.height}` : "-",
@@ -3875,6 +3930,8 @@ async function exportData(format) {
     folder: getFolderPathLabel(f.folderId) || "Raiz",
     folderId: f.folderId || null,
     favorite: !!f.favorite,
+    sissyHighlight: !!f.sissyHighlight,
+    sissyHighlightedAt: f.sissyHighlightedAt || null,
     priority: f.priority || "normal",
     tags: normalizeTags(f.tags).join("; "),
     description: f.description || "",
@@ -3911,6 +3968,7 @@ async function exportData(format) {
         "size",
         "folder",
         "favorite",
+        "sissyHighlight",
         "priority",
         "tags",
         "description",
@@ -3924,6 +3982,7 @@ async function exportData(format) {
         f.size,
         f.folder,
         f.favorite,
+        f.sissyHighlight,
         f.priority,
         f.tags,
         f.description,
@@ -4329,6 +4388,8 @@ async function executeCopyFileAcrossAccounts(file, options) {
       mimeType: file.mimeType || metadata.mimeType || "",
       folderId: targetFolderId,
       favorite: !!file.favorite,
+      sissyHighlight: !!file.sissyHighlight,
+      sissyHighlightedAt: file.sissyHighlightedAt || null,
       tags: normalizeTagEntries(file.tags),
       description: file.description || "",
       priority: file.priority || "normal",
@@ -5478,6 +5539,9 @@ function openLightbox(file) {
     { important: "Importante", critical: "Muito importante" }[file.priority] ||
     "Normal";
   const favLabel = file.favorite ? "Favoritado" : "Favoritar";
+  const sissyLabel = file.sissyHighlight
+    ? "Remover dos destaques"
+    : "Destacar sissy";
   const mediaViewActions = ["image", "video"].includes(file.fileType)
     ? `<button class="lb-action-btn is-active" id="lbFitBtn" type="button" aria-pressed="true" title="Ajustar à tela (0)">${icon("ScanLine")}<span>Ajustar</span></button>
        <button class="lb-action-btn" id="lbOriginalBtn" type="button" aria-pressed="false" title="Tamanho original (1)">${icon("Square")}<span>Original</span></button>`
@@ -5521,12 +5585,13 @@ function openLightbox(file) {
     </section>
     <section class="lb-panel-section">
       <div class="lb-section-heading"><div><span class="lb-eyebrow">Atalhos</span><h2>Ações</h2></div></div>
-      <p class="lb-shortcut-help"><kbd>F</kbd> favorito <kbd>T</kbd> etiquetas <kbd>M</kbd> mover <kbd>0</kbd> ajustar <kbd>1</kbd> original <kbd>Enter</kbd> tela cheia</p>
+      <p class="lb-shortcut-help"><kbd>F</kbd> favorito ${["image", "video"].includes(file.fileType) ? "<kbd>S</kbd> destaque sissy " : ""}<kbd>T</kbd> etiquetas <kbd>M</kbd> mover <kbd>0</kbd> ajustar <kbd>1</kbd> original <kbd>Enter</kbd> tela cheia</p>
       <div class="lb-actions">
         ${mediaViewActions}
         ${imageActions}
         ${videoActions}
         <button class="lb-action-btn ${file.favorite ? "is-active" : ""}" id="lbFavBtn" type="button">${icon("Star")}<span>${favLabel}</span></button>
+        ${["image", "video"].includes(file.fileType) ? `<button class="lb-action-btn sissy-lightbox-btn ${file.sissyHighlight ? "is-active" : ""}" id="lbSissyHighlightBtn" type="button" aria-pressed="${!!file.sissyHighlight}">${icon("Spade")}<span>${sissyLabel}</span></button>` : ""}
         <button class="lb-action-btn" id="lbDescriptionBtn" type="button">${icon("FileText")}<span>Descrição</span></button>
         <button class="lb-action-btn" id="lbTagsBtn" type="button">${icon("Tags")}<span>Etiquetas</span></button>
         <button class="lb-action-btn" id="lbMoveBtn" type="button">${icon("FolderOpen")}<span>Mover</span></button>
@@ -5544,6 +5609,12 @@ function openLightbox(file) {
     const updated = fileById.get(file.id) || file;
     if (lightbox.classList.contains("active")) openLightbox(updated);
   };
+  if (["image", "video"].includes(file.fileType))
+    $("lbSissyHighlightBtn").onclick = async () => {
+      await toggleSissyHighlight(file);
+      if (lightbox.classList.contains("active"))
+        openLightbox(fileById.get(file.id) || file);
+    };
   $("lbMoveBtn").onclick = () => openMoveModal(file);
   $("lbRenameBtn").onclick = async () => {
     if ((await renameFile(file)) && lightbox.classList.contains("active"))
@@ -5788,6 +5859,12 @@ function handleLightboxShortcut(event) {
   if (key === "f" && file)
     return run(async () => {
       await toggleFavorite(file);
+      if (lightbox.classList.contains("active"))
+        openLightbox(fileById.get(file.id) || file);
+    });
+  if (key === "s" && file && ["image", "video"].includes(file.fileType))
+    return run(async () => {
+      await toggleSissyHighlight(file);
       if (lightbox.classList.contains("active"))
         openLightbox(fileById.get(file.id) || file);
     });
@@ -6545,6 +6622,8 @@ async function uploadOneFile(
       mimeType: file.type || metadata.mimeType || "",
       folderId: targetFolderId,
       favorite: false,
+      sissyHighlight: false,
+      sissyHighlightedAt: null,
       tags: initialTags,
       description: "",
       priority: "normal",
@@ -6706,6 +6785,18 @@ function setActiveFilterChip(filterKey) {
 }
 
 function setContentFilter(filterKey) {
+  if (filterKey === "sissyHighlights") {
+    openLibraryView({
+      folderId: ROOT_ID,
+      contentScope: filterKey,
+      viewMode: "grid",
+      resetAdvancedFilters: true,
+    });
+    setPanelOpen(filterPanel, $("filterPanelToggle"), false);
+    setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+    sidebar.classList.remove("mobile-open");
+    return;
+  }
   openFilesSection({ render: false });
   navState.contentScope = filterKey;
   setActiveFilterChip(filterKey);
@@ -6741,6 +6832,14 @@ $("dashboardAllFilesBtn").onclick = () => {
   openLibraryView({
     folderId: ROOT_ID,
     contentScope: "all",
+    viewMode: "grid",
+    resetAdvancedFilters: true,
+  });
+};
+$("dashSissyAllBtn").onclick = () => {
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "sissyHighlights",
     viewMode: "grid",
     resetAdvancedFilters: true,
   });
@@ -7050,6 +7149,13 @@ descriptionInput.onkeydown = (e) => {
 };
 $("emptyNewFolderBtn").onclick = () =>
   openFolderCreateDialog(navState.folderId);
+$("emptySissyExploreBtn").onclick = () =>
+  openLibraryView({
+    folderId: ROOT_ID,
+    contentScope: "media",
+    viewMode: "grid",
+    resetAdvancedFilters: true,
+  });
 $("filterPanelToggle").onclick = () =>
   togglePanel(
     filterPanel,
@@ -7432,6 +7538,8 @@ function normalizeBackupFile(fileRecord) {
     mimeType: fileRecord.mimeType || "",
     folderId: fileRecord.folderId || null,
     favorite: !!fileRecord.favorite,
+    sissyHighlight: !!fileRecord.sissyHighlight,
+    sissyHighlightedAt: fileRecord.sissyHighlightedAt || null,
     tags: normalizeTagEntries(fileRecord.tags),
     description: fileRecord.description || "",
     priority: ["normal", "important", "critical"].includes(fileRecord.priority)
@@ -7692,6 +7800,7 @@ function updateDashboard() {
   renderHistory();
   renderPhotoDashboard(active);
   renderDashboardHighlights(active);
+  renderDashboardSissyHighlights(active);
   renderRecentlyViewed(active);
   hydrateDriveThumbnails(dashboard);
 }
@@ -7921,6 +8030,56 @@ function renderDashboardHighlights(active) {
         lightboxFiles = highlights;
         openLightbox(file);
       };
+  });
+}
+
+function renderDashboardSissyHighlights(active) {
+  const element = $("dashSissyHighlights");
+  if (!element) return;
+  const selected = active
+    .filter(
+      (file) =>
+        file.sissyHighlight && ["image", "video"].includes(file.fileType),
+    )
+    .sort(
+      (a, b) =>
+        (Date.parse(b.sissyHighlightedAt) || fileDate(b).getTime()) -
+        (Date.parse(a.sissyHighlightedAt) || fileDate(a).getTime()),
+    );
+  $("dashSissyCount").textContent =
+    `${selected.length} ${selected.length === 1 ? "item" : "itens"}`;
+  if (!selected.length) {
+    element.innerHTML = `<div class="sissy-highlights-empty">
+      <span class="sissy-highlights-empty-icon">${icon("Sparkles")}</span>
+      <div><strong>Escolha o que merece destaque.</strong><p>Abra uma foto ou vídeo e use “Destacar sissy” para montar sua seleção.</p></div>
+      <button type="button" id="sissyExploreBtn">Explorar mídias ${icon("ArrowRight")}</button>
+    </div>`;
+    $("sissyExploreBtn").onclick = () =>
+      openLibraryView({
+        folderId: ROOT_ID,
+        contentScope: "media",
+        viewMode: "grid",
+        resetAdvancedFilters: true,
+      });
+    return;
+  }
+  const visible = selected.slice(0, 4);
+  element.innerHTML = visible
+    .map((file, index) => {
+      const thumb = dashboardThumb(file, 420, 280);
+      return `<button class="sissy-feature-card" type="button" data-file-id="${esc(file.id)}">
+        <span class="sissy-feature-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />` : icon(file.fileType === "video" ? "Film" : "Image")}
+          <span class="sissy-feature-mark">${icon("Spade")}</span>
+        </span>
+        <span class="sissy-feature-copy"><strong>${esc(file.name)}</strong><small>${file.fileType === "video" ? "Vídeo" : "Foto"} · ${esc(monthLabel(file))}</small></span>
+      </button>`;
+    })
+    .join("");
+  element.querySelectorAll(".sissy-feature-card").forEach((button, index) => {
+    button.onclick = () => {
+      lightboxFiles = selected;
+      openLightbox(visible[index]);
+    };
   });
 }
 
