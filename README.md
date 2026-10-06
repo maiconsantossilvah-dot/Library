@@ -4,7 +4,7 @@ Aplicativo estático, sem backend próprio: HTML, CSS, JavaScript e ícones **Lu
 
 ## Executar e gerar a versão estática
 
-A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique `vendor/`, `modules/`, `styles/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
+A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique `vendor/`, `modules/`, `styles/`, `assets/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
 
 Para testar a raiz localmente, com Node.js 22 ou superior: `npm run dev:source`. Para desenvolver com o build otimizado:
 
@@ -58,6 +58,10 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 - Para recuperar em outro dispositivo, configure o **mesmo OAuth Client ID**, conecte as contas Google originais e aguarde a sincronização. Use os mesmos slots Ac1–Ac4 para facilitar a organização. As propriedades privadas dos índices pertencem ao aplicativo OAuth.
 - Não apague os arquivos `.vault-index-*.json` da pasta VAULT no Drive: eles compõem o histórico de metadados. A aplicação não os apaga nem compacta automaticamente.
 - O navegador pode solicitar armazenamento persistente ao sincronizar, mas isso não impede uma limpeza manual dos dados.
+
+## Aparência
+
+Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma identidade visual adulta opcional, com uma imagem editorial e o motivo da carta de espadas. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias.
 
 ### Como a sincronização resolve alterações
 

@@ -46,6 +46,10 @@ test("raiz publicada: todos os imports resolvem no navegador, sem npm ou build",
   const stylesheet = await fs.readFile("styles.css", "utf8");
   assert.match(stylesheet, /@import url\("\.\/styles\/legacy\.css"\)/);
   assert.ok(shell.includes("./styles/legacy.css"), "CSS legado cached offline");
+  assert.ok(
+    shell.includes("./assets/after-dark-hero.png"),
+    "imagem do tema cached offline",
+  );
   for (const asset of shell) await fs.access(asset);
 });
 

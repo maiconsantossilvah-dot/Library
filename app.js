@@ -311,6 +311,8 @@ const navHome = $("navHome");
 const navFiles = $("navFiles");
 const themeToggle = $("themeToggle");
 const themeToggleText = $("themeToggleText");
+const afterDarkToggle = $("afterDarkToggle");
+const afterDarkToggleText = $("afterDarkToggleText");
 const loadMoreBtn = $("loadMoreBtn");
 const advFolderSelect = $("advFolderSelect");
 const advPrioritySelect = $("advPrioritySelect");
@@ -413,17 +415,20 @@ function persistNavigationMemory() {
 
 function preferredTheme() {
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") return saved;
+  if (saved === "light" || saved === "dark" || saved === "after-dark")
+    return saved;
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
 }
 
 function applyTheme(theme, options = {}) {
-  const nextTheme = theme === "dark" ? "dark" : "light";
-  const isDark = nextTheme === "dark";
-  document.body.dataset.theme = nextTheme;
-  document.documentElement.style.colorScheme = nextTheme;
+  const nextTheme = ["dark", "after-dark"].includes(theme) ? theme : "light";
+  const isAfterDark = nextTheme === "after-dark";
+  const isDark = nextTheme !== "light";
+  document.body.dataset.theme = isDark ? "dark" : "light";
+  document.body.dataset.visualTheme = isAfterDark ? "after-dark" : "default";
+  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
   if (options.persist !== false) localStorage.setItem(THEME_KEY, nextTheme);
   themeToggle?.setAttribute(
     "aria-label",
@@ -438,13 +443,28 @@ function applyTheme(theme, options = {}) {
     themeToggleText.textContent = isDark
       ? "Ativar modo claro"
       : "Ativar modo escuro";
+  const afterDarkLabel = isAfterDark
+    ? "Desativar tema After Dark"
+    : "Ativar tema After Dark";
+  afterDarkToggle?.setAttribute("aria-label", afterDarkLabel);
+  afterDarkToggle?.setAttribute("title", afterDarkLabel);
+  afterDarkToggle?.setAttribute("aria-pressed", String(isAfterDark));
+  if (afterDarkToggleText) afterDarkToggleText.textContent = afterDarkLabel;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", isDark ? "#151b18" : "#f3f0e8");
+    ?.setAttribute(
+      "content",
+      isAfterDark ? "#140d15" : isDark ? "#151b18" : "#f3f0e8",
+    );
 }
 
 themeToggle?.addEventListener("click", () => {
   applyTheme(document.body.dataset.theme === "dark" ? "light" : "dark");
+});
+afterDarkToggle?.addEventListener("click", () => {
+  applyTheme(
+    document.body.dataset.visualTheme === "after-dark" ? "dark" : "after-dark",
+  );
 });
 applyTheme(preferredTheme(), { persist: false });
 syncSectionUI();

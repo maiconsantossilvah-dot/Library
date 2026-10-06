@@ -5023,3 +5023,258 @@ button.tag-chip:hover {
     scroll-behavior: auto !important;
   }
 }
+
+/* Tema pessoal After Dark: opcional, sem alterar a aparência padrão. */
+.vault-reimagined .settings-shortcuts .after-dark-toggle {
+  grid-column: 1 / -1;
+  gap: 11px;
+}
+
+.vault-reimagined .after-dark-symbol {
+  display: inline-grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  place-items: center;
+  border-radius: 7px;
+  background: #251721;
+  color: #e9b9d6;
+  font-family: Georgia, serif;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.vault-reimagined .hero-after-dark-label {
+  display: none;
+}
+
+body.vault-reimagined[data-theme="dark"][data-visual-theme="after-dark"] {
+  --bg: #140d15;
+  --bg2: #1b111e;
+  --bg3: #2b1b2d;
+  --surface: #211523;
+  --border: #4d304b;
+  --border2: #68425f;
+  --accent: #e98fc0;
+  --accent2: #c5a1d9;
+  --text: #fff5fa;
+  --text2: #e0c7d8;
+  --text3: #af8fa8;
+  --danger: #ff9aab;
+  background:
+    radial-gradient(
+      circle at 72% 4%,
+      rgba(132, 39, 92, 0.22),
+      transparent 40rem
+    ),
+    radial-gradient(
+      circle at 10% 95%,
+      rgba(99, 47, 112, 0.18),
+      transparent 31rem
+    ),
+    #140d15;
+  color-scheme: dark;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .sidebar {
+  border-right: 1px solid #55314f;
+  background: linear-gradient(180deg, #251127, #170f1b 66%);
+  box-shadow: 16px 0 42px rgba(6, 2, 10, 0.29);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .logo-icon {
+  border-color: #9d597e;
+  background: linear-gradient(135deg, #743756, #311a33);
+  color: #ffe3f0;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .logo-text,
+.vault-reimagined[data-visual-theme="after-dark"] .breadcrumb,
+.vault-reimagined[data-visual-theme="after-dark"] .file-name,
+.vault-reimagined[data-visual-theme="after-dark"] .folder-card-name {
+  color: #fff0f7;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .sidebar-label,
+.vault-reimagined[data-visual-theme="after-dark"] .topbar-kicker,
+.vault-reimagined[data-visual-theme="after-dark"] .eyebrow {
+  color: #e8a8ca;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .app-navigation {
+  border-color: rgba(222, 137, 183, 0.15);
+  background: rgba(255, 227, 244, 0.035);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .app-nav-item.active,
+.vault-reimagined[data-visual-theme="after-dark"] .view-btn.active,
+.vault-reimagined[data-visual-theme="after-dark"]
+  .library-scope-tab.chip.active,
+.vault-reimagined[data-visual-theme="after-dark"]
+  .smart-filter-row
+  .chip.active {
+  border-color: #b86a96;
+  background: #f1b8d4;
+  color: #2b1528;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .topbar {
+  border-bottom-color: #50304c;
+  background: rgba(24, 13, 27, 0.88);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .global-search,
+.vault-reimagined[data-visual-theme="after-dark"] .connection-status,
+.vault-reimagined[data-visual-theme="after-dark"] .sort-select,
+.vault-reimagined[data-visual-theme="after-dark"] .date-input,
+.vault-reimagined[data-visual-theme="after-dark"] .view-toggle,
+.vault-reimagined[data-visual-theme="after-dark"] .toolbar-actions {
+  border-color: #53334f;
+  background: #231628;
+  color: #f4dbea;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero {
+  position: relative;
+  border: 1px solid #8d4a70;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(27, 10, 28, 0.94) 0%,
+      rgba(28, 10, 27, 0.8) 35%,
+      rgba(20, 7, 22, 0.07) 75%
+    ),
+    url("./assets/after-dark-hero.png") center right / cover no-repeat;
+  box-shadow: 0 22px 46px rgba(6, 1, 9, 0.38);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero-copy,
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero .eyebrow {
+  color: #f0b3d3;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .hero-default-label {
+  display: none;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .hero-after-dark-label {
+  display: inline;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero h1,
+.vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero p {
+  color: #fff5fa;
+  text-shadow: 0 2px 12px rgba(12, 4, 14, 0.7);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .home-primary-action,
+.vault-reimagined[data-visual-theme="after-dark"] .modal-btn.confirm,
+.vault-reimagined[data-visual-theme="after-dark"] .action-primary {
+  border-color: #f4b8d7;
+  background: #efadd0;
+  color: #301429;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .action-primary:hover {
+  border-color: #ffd8e8;
+  background: #ffd0e4;
+  color: #301429;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .home-secondary-action {
+  border-color: rgba(255, 218, 238, 0.66);
+  background: rgba(27, 10, 28, 0.66);
+  color: #fff1f8;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"]
+  :is(
+    .home-panel,
+    .dash-card,
+    .file-card,
+    .folder-card,
+    .folder-children-section,
+    .home-setup,
+    .topbar-panel,
+    .modal,
+    .upload-progress-panel
+  ) {
+  border-color: #4c304b;
+  background: #211523;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"]
+  :is(.file-card, .folder-card):hover {
+  border-color: #b46b98;
+  box-shadow: 0 16px 34px rgba(6, 1, 9, 0.42);
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .file-thumb,
+.vault-reimagined[data-visual-theme="after-dark"] .folder-card-cover {
+  background: #301d31;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"]
+  .settings-shortcuts
+  .after-dark-toggle {
+  border-color: #b9719b;
+  background: linear-gradient(105deg, #47233f, #301d34);
+  color: #ffe5f2;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .after-dark-symbol {
+  background: #f0b3d3;
+  color: #321627;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"]
+  .tools-panel
+  .utility-btn:not(.after-dark-toggle),
+.vault-reimagined[data-visual-theme="after-dark"]
+  .settings-shortcuts
+  .theme-toggle,
+.vault-reimagined[data-visual-theme="after-dark"] .view-btn,
+.vault-reimagined[data-visual-theme="after-dark"] .file-action-btn {
+  border-color: #63405c;
+  background: #2b1b2e;
+  color: #f3dbe9;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"]
+  .tools-panel
+  .utility-btn:not(.after-dark-toggle):hover,
+.vault-reimagined[data-visual-theme="after-dark"]
+  .settings-shortcuts
+  .theme-toggle:hover {
+  border-color: #a76790;
+  background: #3b2440;
+  color: #fff0f8;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .lightbox {
+  background: #0c0710;
+}
+
+.vault-reimagined[data-visual-theme="after-dark"] .lightbox-topbar,
+.vault-reimagined[data-visual-theme="after-dark"] .lightbox-info {
+  border-color: #58334e;
+  background: #1d111e;
+}
+
+@media (max-width: 1100px) {
+  .vault-reimagined[data-visual-theme="after-dark"] .dashboard-hero {
+    background:
+      linear-gradient(
+        90deg,
+        rgba(27, 10, 28, 0.97),
+        rgba(27, 10, 28, 0.8) 65%,
+        rgba(27, 10, 28, 0.25)
+      ),
+      url("./assets/after-dark-hero.png") center right / cover no-repeat;
+  }
+}

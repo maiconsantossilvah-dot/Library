@@ -25,6 +25,8 @@ const css = await build({
   bundle: true,
   outdir: "dist/assets",
   entryNames: "styles-[hash]",
+  assetNames: "[name]-[hash]",
+  loader: { ".png": "file" },
   minify: true,
   metafile: true,
 });

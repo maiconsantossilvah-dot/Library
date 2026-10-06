@@ -48,6 +48,19 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   themeToggle.click();
   assert.equal(document.body.dataset.theme, "dark");
   assert.equal(w.localStorage.getItem("vault_theme"), "dark");
+  const afterDarkToggle = document.getElementById("afterDarkToggle");
+  afterDarkToggle.click();
+  assert.equal(document.body.dataset.visualTheme, "after-dark");
+  assert.equal(document.body.dataset.theme, "dark");
+  assert.equal(w.localStorage.getItem("vault_theme"), "after-dark");
+  assert.equal(afterDarkToggle.getAttribute("aria-pressed"), "true");
+  assert.equal(
+    document.querySelector('meta[name="theme-color"]').content,
+    "#140d15",
+  );
+  afterDarkToggle.click();
+  assert.equal(document.body.dataset.visualTheme, "default");
+  assert.equal(w.localStorage.getItem("vault_theme"), "dark");
   assert.ok(document.querySelectorAll("svg.lucide").length > 20);
   document.getElementById("skipConfig").click();
   for (
