@@ -29,6 +29,7 @@ import { createMural } from "./modules/mural.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
+import { createMangaPreloader } from "./modules/manga-preloader.js";
 import { buildFolderCoverIndex } from "./modules/folder-covers.js";
 import {
   createLocalTextSearch,
@@ -228,6 +229,7 @@ let mangaState = {
   fit: localStorage.getItem("vault_manga_fit") || "width",
 };
 let disposeMangaImages = () => {};
+let mangaPreloader = null;
 let visibleLimit = 60;
 const PAGE_SIZE = 60;
 
@@ -6021,6 +6023,9 @@ function openMangaReader(startFile = null) {
     return;
   }
 
+  disposeMangaImages();
+  mangaPreloader?.dispose();
+
   mangaState.pages = pages;
   mangaState.index = startFile
     ? Math.max(
@@ -6029,6 +6034,11 @@ function openMangaReader(startFile = null) {
       )
     : 0;
   if (mangaState.index < 0) mangaState.index = 0;
+  mangaPreloader = createMangaPreloader(
+    pages,
+    preloadMangaPage,
+    mangaState.index,
+  );
   mangaTitle.textContent = getFolderPathLabel(folderId) || "Raiz";
   mangaReader.classList.add("active");
   $("viewManga")?.classList.add("active");
@@ -6145,14 +6155,43 @@ $("mangaFit").onchange = (event) => {
 };
 $("mangaZoomReset").onclick = () => setMangaZoom(1);
 
+async function preloadMangaPage(page) {
+  let url = "";
+  let release = () => {};
+  try {
+    if (isGoogleDriveRecord(page)) {
+      url = URL.createObjectURL(await fetchStoredBlob(page));
+      release = () => URL.revokeObjectURL(url);
+    } else {
+      url =
+        page.url ||
+        (page.cloudPublicId && cloudName
+          ? `https://res.cloudinary.com/${cloudName}/image/upload/${page.cloudPublicId}`
+          : "");
+    }
+    if (!url) throw new Error("Imagem sem endereco de origem");
+    await new Promise((resolve, reject) => {
+      const preview = new Image();
+      preview.onload = resolve;
+      preview.onerror = () =>
+        reject(new Error("Nao foi possivel carregar a imagem"));
+      preview.src = url;
+    });
+    return { url, release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
 function loadMangaImages() {
   let disposed = false;
-  const objectUrls = new Set();
   const pages = mangaState.pages;
+  const preloader = mangaPreloader;
   const load = async (image) => {
     if (disposed || image.dataset.loading) return;
     image.dataset.loading = "true";
-    const page = pages[Number(image.dataset.pageIndex)];
+    const index = Number(image.dataset.pageIndex);
     const status = image.parentElement.querySelector(".manga-page-status");
     status.textContent = "Carregando...";
     image.onload = () => {
@@ -6168,26 +6207,14 @@ function loadMangaImages() {
       retry.textContent = "Tentar novamente";
       retry.onclick = () => {
         delete image.dataset.loading;
+        preloader.retry(index);
         load(image);
       };
       status.append("Nao foi possivel carregar a imagem. ", retry);
     };
     image.onerror = fail;
     try {
-      let url;
-      if (isGoogleDriveRecord(page)) {
-        const blob = await fetchStoredBlob(page);
-        if (disposed) return;
-        url = URL.createObjectURL(blob);
-        objectUrls.add(url);
-      } else {
-        url =
-          page.url ||
-          (page.cloudPublicId && cloudName
-            ? `https://res.cloudinary.com/${cloudName}/image/upload/${page.cloudPublicId}`
-            : "");
-      }
-      if (!url) throw new Error("Imagem sem endereco de origem");
+      const { url } = await preloader.request(index);
       if (!disposed) image.src = url;
     } catch {
       fail();
@@ -6210,12 +6237,12 @@ function loadMangaImages() {
       Number(page.width || page.mediaWidth) || 800,
       Number(page.height || page.mediaHeight) || 1200,
     );
-    observer.observe(image);
+    if (mangaState.mode === "horizontal") load(image);
+    else observer.observe(image);
   });
   disposeMangaImages = () => {
     disposed = true;
     observer.disconnect();
-    objectUrls.forEach((url) => URL.revokeObjectURL(url));
   };
 }
 
@@ -6287,6 +6314,8 @@ function updateMangaIndexFromScroll() {
 
 function closeMangaReader() {
   disposeMangaImages();
+  mangaPreloader?.dispose();
+  mangaPreloader = null;
   mangaReader.classList.remove("active");
   $("viewManga")?.classList.remove("active");
   mangaStage.innerHTML = "";
