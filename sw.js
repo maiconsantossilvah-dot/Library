@@ -1,6 +1,6 @@
 // These concrete defaults also run when GitHub Pages serves the repository root.
 // The optional build replaces only these two declarations with hashed assets.
-const CACHE_NAME = "vault-shell-source-v19";
+const CACHE_NAME = "vault-shell-source-v20";
 const SOURCE_ASSETS = [
   "./app.js",
   "./assets/after-dark-hero.png",

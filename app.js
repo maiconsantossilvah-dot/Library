@@ -367,6 +367,9 @@ const formModalConfirm = $("formModalConfirm");
 const confirmModal = $("confirmModal");
 const confirmModalTitle = $("confirmModalTitle");
 const confirmModalMessage = $("confirmModalMessage");
+const confirmModalApplyAllRow = $("confirmModalApplyAllRow");
+const confirmModalApplyAll = $("confirmModalApplyAll");
+const confirmModalApplyAllLabel = $("confirmModalApplyAllLabel");
 const confirmModalCancel = $("confirmModalCancel");
 const confirmModalConfirm = $("confirmModalConfirm");
 const coverModal = $("coverModal");
@@ -613,6 +616,7 @@ window.addEventListener("offline", updateConnectionStatus);
 let formDialogResolve = null;
 let formDialogFields = [];
 let confirmDialogResolve = null;
+let confirmDialogHasApplyAll = false;
 
 function openFieldsDialog({ title, fields, confirmText = "Salvar" }) {
   return new Promise((resolve) => {
@@ -746,11 +750,16 @@ function openConfirmDialog({
   message,
   confirmText = "Confirmar",
   danger = false,
+  applyToAllLabel = "",
 }) {
   return new Promise((resolve) => {
     confirmDialogResolve = resolve;
+    confirmDialogHasApplyAll = !!applyToAllLabel;
     confirmModalTitle.textContent = title;
     confirmModalMessage.textContent = message || "";
+    confirmModalApplyAllRow.hidden = !confirmDialogHasApplyAll;
+    confirmModalApplyAll.checked = false;
+    confirmModalApplyAllLabel.textContent = applyToAllLabel;
     confirmModalConfirm.textContent = confirmText;
     confirmModalConfirm.classList.toggle("danger", danger);
     confirmModal.classList.add("active");
@@ -762,8 +771,13 @@ function closeConfirmDialog(value) {
   confirmModal.classList.remove("active");
   confirmModalConfirm.classList.remove("danger");
   const resolve = confirmDialogResolve;
+  const result = confirmDialogHasApplyAll
+    ? { confirmed: value, applyToAll: value && confirmModalApplyAll.checked }
+    : value;
   confirmDialogResolve = null;
-  if (resolve) resolve(value);
+  confirmDialogHasApplyAll = false;
+  confirmModalApplyAllRow.hidden = true;
+  if (resolve) resolve(result);
 }
 
 formModalCancel.onclick = () => closeFieldsDialog(null);
@@ -6383,21 +6397,28 @@ async function handleFiles(fileList) {
     return;
   }
   const uniqueFiles = [];
+  let sendAllDuplicates = false;
   showToast("Analisando arquivos...");
   for (const file of fileList) {
     if (isPhotoFile(file)) await getPhotoInsights(file);
     const contentHash = await getOrComputeUploadHash(file);
-    if (isUploadDuplicate(file, contentHash)) {
-      const confirmed = await openConfirmDialog({
-        title: "Possivel duplicado",
-        message: `Ja existe um arquivo igual ou muito parecido com "${file.name}". Enviar mesmo assim?`,
-        confirmText: "Enviar",
+    if (!sendAllDuplicates && isUploadDuplicate(file, contentHash)) {
+      const decision = await openConfirmDialog({
+        title: "Possível duplicado",
+        message: `Já existe um arquivo igual ou muito parecido com "${file.name}". Enviar mesmo assim?`,
+        confirmText: "Enviar assim mesmo",
+        applyToAllLabel:
+          "Aplicar ‘Enviar assim mesmo’ a todos os possíveis duplicados deste envio",
       });
-      if (!confirmed) continue;
+      if (!decision.confirmed) continue;
+      sendAllDuplicates = decision.applyToAll;
     }
     uniqueFiles.push(file);
   }
-  if (!uniqueFiles.length) return;
+  if (!uniqueFiles.length) {
+    fileInput.value = "";
+    return;
+  }
   const destinationConfirmed = await openConfirmDialog({
     title: "Confirmar destino do upload",
     message: `${uniqueFiles.length} arquivo(s) serão enviados para ${destination.label}. Continuar?`,
