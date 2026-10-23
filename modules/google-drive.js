@@ -1,6 +1,5 @@
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-export const MULTIPART_UPLOAD_LIMIT = 5 * 1024 * 1024;
 const DRIVE_SCOPE = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.email",
@@ -416,32 +415,14 @@ export class GoogleDriveManager {
   async uploadFile(slot, file, parentId, { onProgress, onXhr } = {}) {
     const normalized = normalizeSlot(slot);
     const session = this.requireSession(normalized);
+    if (!file.size)
+      throw new Error(
+        "O arquivo está vazio (0 B). Verifique o original no computador antes de enviar.",
+      );
     const fields =
       "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents";
     const mimeType = file.type || "application/octet-stream";
     const metadata = { name: file.name, mimeType, parents: [parentId] };
-    if (file.size <= MULTIPART_UPLOAD_LIMIT) {
-      const boundary = `vault_${crypto.randomUUID()}`;
-      const body = new Blob([
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-        JSON.stringify(metadata),
-        `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
-        file,
-        `\r\n--${boundary}--`,
-      ]);
-      return this.sendUploadXhr(
-        normalized,
-        "POST",
-        `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=${encodeURIComponent(fields)}`,
-        body,
-        {
-          Authorization: `Bearer ${session.accessToken}`,
-          "Content-Type": `multipart/related; boundary=${boundary}`,
-        },
-        { onProgress, onXhr },
-      );
-    }
-
     let startResponse;
     try {
       startResponse = await fetch(
@@ -480,7 +461,7 @@ export class GoogleDriveManager {
     if (!uploadUrl)
       throw new Error("O Google Drive nao retornou a sessao de upload");
 
-    return this.sendUploadXhr(
+    const uploaded = await this.sendUploadXhr(
       normalized,
       "PUT",
       uploadUrl,
@@ -488,6 +469,17 @@ export class GoogleDriveManager {
       { "Content-Type": mimeType },
       { onProgress, onXhr },
     );
+    if (!uploaded?.id)
+      throw new Error("O Drive não confirmou o arquivo enviado. Tente novamente.");
+    if (uploaded.size === undefined || Number(uploaded.size) !== file.size) {
+      const confirmed = await this.getMetadata(normalized, uploaded.id);
+      if (Number(confirmed.size) !== file.size)
+        throw new Error(
+          `O Drive recebeu ${confirmed.size || 0} B de ${file.size} B. O envio não foi salvo na biblioteca; confira o original e tente novamente.`,
+        );
+      return { ...uploaded, ...confirmed };
+    }
+    return uploaded;
   }
 
   sendUploadXhr(slot, method, url, body, headers, { onProgress, onXhr }) {

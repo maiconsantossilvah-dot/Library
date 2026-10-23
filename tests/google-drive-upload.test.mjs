@@ -31,7 +31,11 @@ function mockXhr(status = 200, response = { id: "drive-file" }) {
       this.body = body;
       queueMicrotask(() => {
         this.status = status;
-        this.responseText = JSON.stringify(response);
+        this.responseText = JSON.stringify(
+          status >= 200 && status < 300 && response.size === undefined
+            ? { ...response, size: String(body.size) }
+            : response,
+        );
         this.upload.onprogress?.({
           lengthComputable: true,
           loaded: body.size,
@@ -47,11 +51,16 @@ function mockXhr(status = 200, response = { id: "drive-file" }) {
   };
 }
 
-test("arquivos pequenos usam multipart com metadados, conteúdo e progresso", async () => {
+test("arquivo pequeno envia os bytes por sessão retomável", async () => {
   const originalFetch = globalThis.fetch;
   const xhr = mockXhr();
-  globalThis.fetch = () => {
-    throw new Error("multipart não deve abrir sessão resumível");
+  let initiation;
+  globalThis.fetch = async (url, options) => {
+    initiation = { url, options };
+    return new Response(null, {
+      status: 200,
+      headers: { location: "https://upload.example/session" },
+    });
   };
   try {
     const manager = connectedManager();
@@ -63,19 +72,17 @@ test("arquivos pequenos usam multipart com metadados, conteúdo e progresso", as
     });
     assert.equal(saved.id, "drive-file");
     assert.equal(xhr.requests.length, 1);
+    assert.match(initiation.url, /uploadType=resumable/);
+    assert.deepEqual(JSON.parse(initiation.options.body), {
+      name: "pagina.png",
+      mimeType: "image/png",
+      parents: ["pasta"],
+    });
     const request = xhr.requests[0];
-    assert.equal(request.method, "POST");
-    assert.match(request.url, /uploadType=multipart/);
-    assert.equal(request.headers.Authorization, "Bearer test-token");
-    assert.match(
-      request.headers["Content-Type"],
-      /^multipart\/related; boundary=/,
-    );
-    const body = await request.body.text();
-    assert.match(body, /"name":"pagina.png"/);
-    assert.match(body, /"parents":\["pasta"\]/);
-    assert.match(body, /imagem de teste/);
-    assert.deepEqual(progress, [[request.body.size, request.body.size]]);
+    assert.equal(request.method, "PUT");
+    assert.equal(request.body, file);
+    assert.equal(await request.body.text(), "imagem de teste");
+    assert.deepEqual(progress, [[file.size, file.size]]);
   } finally {
     globalThis.fetch = originalFetch;
     xhr.restore();
@@ -135,8 +142,59 @@ test("falha de rede ao abrir sessão mostra orientação, sem erro bruto", async
   }
 });
 
-test("resposta 401 no multipart invalida a sessão", async () => {
+test("arquivo vazio é recusado antes de criar um item no Drive", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    throw new Error("não deveria acessar o Drive");
+  };
+  try {
+    const file = new Blob([], { type: "image/jpeg" });
+    file.name = "pagina.jpg";
+    await assert.rejects(
+      connectedManager().uploadFile("ac1", file, "pasta"),
+      /arquivo está vazio \(0 B\)/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("tamanho diferente no Drive impede sucesso falso", async () => {
+  const originalFetch = globalThis.fetch;
+  const xhr = mockXhr(200, { id: "drive-file", size: "0" });
+  globalThis.fetch = async (url) => {
+    if (url.includes("uploadType=resumable"))
+      return new Response(null, {
+        status: 200,
+        headers: { location: "https://upload.example/session" },
+      });
+    return new Response(JSON.stringify({ id: "drive-file", size: "0" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const file = new Blob(["conteúdo"], { type: "image/jpeg" });
+    file.name = "pagina.jpg";
+    await assert.rejects(
+      connectedManager().uploadFile("ac1", file, "pasta"),
+      /O Drive recebeu 0 B de 9 B/,
+    );
+    assert.equal(xhr.requests[0].body, file);
+  } finally {
+    globalThis.fetch = originalFetch;
+    xhr.restore();
+  }
+});
+
+test("resposta 401 na transferência invalida a sessão", async () => {
+  const originalFetch = globalThis.fetch;
   const xhr = mockXhr(401, { error: { message: "Token expirado" } });
+  globalThis.fetch = async () =>
+    new Response(null, {
+      status: 200,
+      headers: { location: "https://upload.example/session" },
+    });
   let invalidated = false;
   try {
     const manager = connectedManager(() => (invalidated = true));
@@ -149,6 +207,7 @@ test("resposta 401 no multipart invalida a sessão", async () => {
     assert.equal(invalidated, true);
     assert.equal(manager.sessions.has("ac1"), false);
   } finally {
+    globalThis.fetch = originalFetch;
     xhr.restore();
   }
 });

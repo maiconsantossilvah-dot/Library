@@ -38,7 +38,6 @@ import {
 import { readPhotoMetadata } from "./modules/photo-metadata.js";
 import {
   GoogleDriveManager,
-  MULTIPART_UPLOAD_LIMIT,
   isGoogleDriveRecord,
   drivePreviewUrl,
   driveViewUrl,
@@ -174,6 +173,7 @@ const VIEW_BUTTONS = {
 };
 const UPLOAD_CONCURRENCY = 3;
 const SMALL_UPLOAD_CONCURRENCY = 5;
+const SMALL_UPLOAD_LIMIT = 5 * 1024 * 1024;
 const FOLDER_NAME_LIMIT = 200;
 const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
@@ -3016,12 +3016,13 @@ function markFileUnavailable(card, file = null) {
   if (!thumb) return;
   card.classList.add("file-unavailable");
   thumb.querySelectorAll("img, video").forEach((el) => el.remove());
+  if (thumb.querySelector(".missing-media")) return;
   thumb.insertAdjacentHTML(
     "afterbegin",
     `
     <div class="missing-media">
-      <span class="missing-media-title">Conflito de armazenamento</span>
-      <span class="missing-media-sub">${file?.conflictReason === "trashed_in_drive" ? "O arquivo está na lixeira do Google Drive" : file?.conflictReason === "removed_from_drive" ? "O arquivo foi removido diretamente do Google Drive" : "Não foi encontrado no armazenamento"}</span>
+      <span class="missing-media-title">${file?.emptyInDrive ? "Imagem vazia" : "Conflito de armazenamento"}</span>
+      <span class="missing-media-sub">${file?.emptyInDrive ? "0 B no Google Drive. Reenvie o original." : file?.conflictReason === "trashed_in_drive" ? "O arquivo está na lixeira do Google Drive" : file?.conflictReason === "removed_from_drive" ? "O arquivo foi removido diretamente do Google Drive" : "Não foi encontrado no armazenamento"}</span>
     </div>
   `,
   );
@@ -3123,13 +3124,24 @@ async function loadDriveThumbnail(file, force = false) {
     !driveManager?.isConnected(recordAccountSlot(file))
   )
     return "";
-  if (!force && driveThumbnailCache.has(file.id))
+  if (!force && driveThumbnailCache.has(file.id) && Number(file.size || 0) > 0)
     return driveThumbnailCache.get(file.id);
   if (!force && driveThumbnailRequests.has(file.id))
     return driveThumbnailRequests.get(file.id);
   const request = driveManager
     .getMetadata(recordAccountSlot(file), file.driveFileId)
     .then((metadata) => {
+      if (metadata.size !== undefined) {
+        const actualSize = Number(metadata.size);
+        if (Number.isFinite(actualSize)) {
+          file.emptyInDrive = file.fileType === "image" && actualSize === 0;
+          if (actualSize !== Number(file.size || 0)) {
+            file.size = actualSize;
+            updateDoc(doc(db, "vault_files", file.id), { size: actualSize })
+              .catch((error) => console.warn("Tamanho não atualizado", error));
+          }
+        }
+      }
       const thumbnail = metadata.thumbnailLink || "";
       if (thumbnail) rememberDriveThumbnail(file.id, thumbnail);
       file.driveThumbnailLink = thumbnail;
@@ -3162,6 +3174,17 @@ function hydrateDriveThumbnails(root = document) {
     let thumbnail = await loadDriveThumbnail(file);
     const current = fileById.get(id);
     if (!current || current.deletedAt) return;
+    if (current.emptyInDrive) {
+      root
+        .querySelectorAll?.(
+          `[data-drive-file-id="${CSS.escape(id)}"], [data-drive-thumb-id="${CSS.escape(id)}"]`,
+        )
+        .forEach((element) => {
+          const card = element.closest(".file-card");
+          if (card) markFileUnavailable(card, current);
+        });
+      return;
+    }
     if (current.customCover || current.coverFileId)
       thumbnail = (await loadDriveThumbnail(current)) || mediaThumbUrl(current);
     if (!thumbnail) return;
@@ -3201,8 +3224,17 @@ document.addEventListener(
 );
 
 async function fetchStoredBlob(file) {
-  if (isGoogleDriveRecord(file))
-    return driveManager.getBlob(recordAccountSlot(file), file.driveFileId);
+  if (isGoogleDriveRecord(file)) {
+    const blob = await driveManager.getBlob(
+      recordAccountSlot(file),
+      file.driveFileId,
+    );
+    if (file.fileType === "image" && blob.size === 0)
+      throw new Error(
+        "A imagem no Google Drive está vazia (0 B). Reenvie o arquivo original.",
+      );
+    return blob;
+  }
   if (!file.url) throw new Error("Arquivo sem endereco de origem");
   const response = await fetch(file.url);
   if (!response.ok)
@@ -5463,6 +5495,13 @@ function openLightbox(file) {
     img.loading = "eager";
     img.decoding = "async";
     if (isGoogleDriveRecord(file)) {
+      img.onerror = () => {
+        if (generation === lightboxGeneration && img.src.startsWith("blob:"))
+          showMissingLightbox(
+            file,
+            "O arquivo foi baixado, mas o navegador não conseguiu abrir este formato de imagem.",
+          );
+      };
       img.src = mediaThumbUrl(file, 1600, 1200) || "";
       storedObjectUrl(file)
         .then((url) => {
@@ -6423,7 +6462,7 @@ async function handleFiles(fileList) {
       )
         completedUploads++;
     },
-    uniqueFiles.every((file) => file.size <= MULTIPART_UPLOAD_LIMIT)
+    uniqueFiles.every((file) => file.size <= SMALL_UPLOAD_LIMIT)
       ? SMALL_UPLOAD_CONCURRENCY
       : UPLOAD_CONCURRENCY,
   );
