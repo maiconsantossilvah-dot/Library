@@ -174,6 +174,7 @@ const VIEW_BUTTONS = {
 };
 const UPLOAD_CONCURRENCY = 3;
 const SMALL_UPLOAD_CONCURRENCY = 5;
+const FOLDER_NAME_LIMIT = 200;
 const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
@@ -3611,7 +3612,7 @@ async function renameFolder(folder) {
     title: "Renomear pasta",
     label: "Nome da pasta",
     value: folder.name || "",
-    maxlength: 40,
+    maxlength: FOLDER_NAME_LIMIT,
     required: true,
   });
   if (name === null) return;
