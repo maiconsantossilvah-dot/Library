@@ -1,5 +1,6 @@
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+export const MULTIPART_UPLOAD_LIMIT = 5 * 1024 * 1024;
 const DRIVE_SCOPE = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.email",
@@ -417,23 +418,51 @@ export class GoogleDriveManager {
     const session = this.requireSession(normalized);
     const fields =
       "id,name,mimeType,size,thumbnailLink,webViewLink,webContentLink,imageMediaMetadata,videoMediaMetadata,parents";
-    const startResponse = await fetch(
-      `${DRIVE_UPLOAD_API}/files?uploadType=resumable&fields=${encodeURIComponent(fields)}`,
-      {
-        method: "POST",
-        headers: {
+    const mimeType = file.type || "application/octet-stream";
+    const metadata = { name: file.name, mimeType, parents: [parentId] };
+    if (file.size <= MULTIPART_UPLOAD_LIMIT) {
+      const boundary = `vault_${crypto.randomUUID()}`;
+      const body = new Blob([
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+        JSON.stringify(metadata),
+        `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+        file,
+        `\r\n--${boundary}--`,
+      ]);
+      return this.sendUploadXhr(
+        normalized,
+        "POST",
+        `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=${encodeURIComponent(fields)}`,
+        body,
+        {
           Authorization: `Bearer ${session.accessToken}`,
-          "Content-Type": "application/json; charset=UTF-8",
-          "X-Upload-Content-Type": file.type || "application/octet-stream",
-          "X-Upload-Content-Length": String(file.size),
+          "Content-Type": `multipart/related; boundary=${boundary}`,
         },
-        body: JSON.stringify({
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
-          parents: [parentId],
-        }),
-      },
-    );
+        { onProgress, onXhr },
+      );
+    }
+
+    let startResponse;
+    try {
+      startResponse = await fetch(
+        `${DRIVE_UPLOAD_API}/files?uploadType=resumable&fields=${encodeURIComponent(fields)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            "Content-Type": "application/json; charset=UTF-8",
+          },
+          body: JSON.stringify(metadata),
+        },
+      );
+    } catch (error) {
+      if (error instanceof TypeError)
+        throw new Error(
+          "Não foi possível acessar o servidor de upload do Google Drive. Verifique a conexão ou algum bloqueio a www.googleapis.com e tente novamente.",
+          { cause: error },
+        );
+      throw error;
+    }
     if (!startResponse.ok) {
       const payload = await parseResponse(startResponse);
       if (startResponse.status === 401) {
@@ -451,14 +480,23 @@ export class GoogleDriveManager {
     if (!uploadUrl)
       throw new Error("O Google Drive nao retornou a sessao de upload");
 
+    return this.sendUploadXhr(
+      normalized,
+      "PUT",
+      uploadUrl,
+      file,
+      { "Content-Type": mimeType },
+      { onProgress, onXhr },
+    );
+  }
+
+  sendUploadXhr(slot, method, url, body, headers, { onProgress, onXhr }) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      for (const [name, value] of Object.entries(headers))
+        xhr.setRequestHeader(name, value);
       onXhr?.(xhr);
-      xhr.open("PUT", uploadUrl);
-      xhr.setRequestHeader(
-        "Content-Type",
-        file.type || "application/octet-stream",
-      );
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(event.loaded, event.total);
       };
@@ -470,8 +508,8 @@ export class GoogleDriveManager {
         if (xhr.status >= 200 && xhr.status < 300) resolve(payload);
         else {
           if (xhr.status === 401) {
-            this.sessions.delete(normalized);
-            this.onSessionInvalid?.(normalized, payload);
+            this.sessions.delete(slot);
+            this.onSessionInvalid?.(slot, payload);
           }
           reject(
             new Error(
@@ -484,10 +522,14 @@ export class GoogleDriveManager {
         }
       };
       xhr.onerror = () =>
-        reject(new Error("Erro de rede durante o upload para o Drive"));
+        reject(
+          new Error(
+            "Não foi possível acessar o servidor de upload do Google Drive. Verifique a conexão ou algum bloqueio a www.googleapis.com e tente novamente.",
+          ),
+        );
       xhr.onabort = () =>
         reject(new DOMException("Upload cancelado", "AbortError"));
-      xhr.send(file);
+      xhr.send(body);
     });
   }
 

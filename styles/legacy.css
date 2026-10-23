@@ -3145,6 +3145,9 @@ body {
   font-size: 10px;
   color: var(--text3);
 }
+.folder-card-tags {
+  margin-top: 6px;
+}
 .folder-card-menu-btn {
   width: 34px;
   height: 34px;

@@ -38,6 +38,7 @@ import {
 import { readPhotoMetadata } from "./modules/photo-metadata.js";
 import {
   GoogleDriveManager,
+  MULTIPART_UPLOAD_LIMIT,
   isGoogleDriveRecord,
   drivePreviewUrl,
   driveViewUrl,
@@ -172,6 +173,7 @@ const VIEW_BUTTONS = {
   timeline: "viewTimeline",
 };
 const UPLOAD_CONCURRENCY = 3;
+const SMALL_UPLOAD_CONCURRENCY = 5;
 const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
@@ -380,6 +382,7 @@ const clearFolderCoverBtn = $("clearFolderCover");
 const folderActionsModal = $("folderActionsModal");
 const folderActionsTitle = $("folderActionsTitle");
 const folderActionRename = $("folderActionRename");
+const folderActionTags = $("folderActionTags");
 const folderActionDelete = $("folderActionDelete");
 const folderActionPin = $("folderActionPin");
 const folderActionsClose = $("folderActionsClose");
@@ -1472,6 +1475,7 @@ function listenFolders() {
       renderBreadcrumb();
       renderFolderList();
       populateFolderFilter();
+      renderTagSearchOptions();
       renderGrid();
       renderAccountCenter();
     },
@@ -2104,7 +2108,6 @@ function shouldShowFolderChildren() {
     navState.section === "files" &&
     navState.viewMode !== "folders" &&
     navState.contentScope === "all" &&
-    !currentSearch &&
     !advancedFilters.folderId &&
     !advancedFilters.priority &&
     !advancedFilters.dateFrom &&
@@ -2119,7 +2122,9 @@ function renderFolderChildrenSection() {
     folderChildrenGrid.replaceChildren();
     return 0;
   }
-  const children = getFolderChildren(navState.folderId);
+  const children = getFolderChildren(navState.folderId).filter(
+    folderMatchesSearch,
+  );
   folderChildrenSection.hidden = children.length === 0;
   folderChildrenCount.textContent = `${children.length} subpasta${children.length === 1 ? "" : "s"}`;
   const fragment = document.createDocumentFragment();
@@ -2153,8 +2158,8 @@ function renderGrid() {
   let itemCount = 0;
   let elements = [];
   if (navState.viewMode === "folders") {
-    const folderItems = getFolderChildren(navState.folderId).filter((folder) =>
-      matchesSearch(folder.name),
+    const folderItems = getFolderChildren(navState.folderId).filter(
+      folderMatchesSearch,
     );
     itemCount = folderItems.length;
     lightboxFiles = [];
@@ -2215,7 +2220,7 @@ function renderTimelineViewItems(list = getContentFiles()) {
 
 function renderFolderItems() {
   return getFolderChildren(navState.folderId)
-    .filter((folder) => matchesSearch(folder.name))
+    .filter(folderMatchesSearch)
     .map((folder) => makeFolderCard(folder, countFilesInFolder(folder.id)));
 }
 
@@ -2430,6 +2435,19 @@ function fileMatchesSearch(file) {
   );
 }
 
+function folderMatchesSearch(folder) {
+  const tags = normalizeTagEntries(folder.tags);
+  const tagKeys = new Set(tags.map(tagKey));
+  if (
+    activeSearchTags.size &&
+    [...activeSearchTags].some((key) => !tagKeys.has(key))
+  )
+    return false;
+  return matchesSearch(
+    `${folder.name || ""} ${tags.map((tag) => tag.name).join(" ")} ${getFolderPathLabel(folder.parentId)}`,
+  );
+}
+
 function matchesSearch(text) {
   if (!currentSearch) return true;
   return normalizeSearchText(text).includes(currentSearch);
@@ -2459,12 +2477,12 @@ function renderTagSearchOptions() {
             tag,
           ) => `<button class="search-tag-option${activeSearchTags.has(tag.key) ? " active" : ""}" type="button" data-search-tag="${esc(tag.key)}" aria-pressed="${activeSearchTags.has(tag.key)}">
             <span class="tag-color-label" style="${tagInlineStyle(tag)}">${esc(tag.name)}</span>
-            <span class="search-tag-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+            <span class="search-tag-usage">${tagUsageText(tag)}</span>
             <span class="search-tag-check" aria-hidden="true">${activeSearchTags.has(tag.key) ? "✓" : ""}</span>
           </button>`,
         )
         .join("")
-    : `<p class="tag-empty-message">Crie uma etiqueta em um arquivo para ela aparecer aqui.</p>`;
+    : `<p class="tag-empty-message">Crie uma etiqueta em um arquivo ou pasta para ela aparecer aqui.</p>`;
   searchTagOptions.querySelectorAll("[data-search-tag]").forEach((button) => {
     button.onclick = () => toggleSearchTag(button.dataset.searchTag);
   });
@@ -2477,7 +2495,6 @@ function toggleSearchTag(key, options = {}) {
   if (!options.exclusive && activeSearchTags.has(cleanKey))
     activeSearchTags.delete(cleanKey);
   else activeSearchTags.add(cleanKey);
-  if (navState.viewMode === "folders") navState.viewMode = "grid";
   openFilesSection({ render: false, refreshNavigation: false });
   setViewButtonState(navState.viewMode);
   visibleLimit = PAGE_SIZE;
@@ -3275,6 +3292,7 @@ function makeFolderCard(folder, count) {
       <div class="folder-card-main">
         <button type="button" class="folder-card-name" title="${esc(folder.name)}">${esc(folder.name)}</button>
         <span class="folder-card-count">${count} arquivo${count === 1 ? "" : "s"}${subCount ? ` · ${subCount} subpasta${subCount === 1 ? "" : "s"}` : ""}</span>
+        ${normalizeTagEntries(folder.tags).length ? `<div class="folder-card-tags tag-row">${renderTagPills(folder.tags, { interactive: true })}</div>` : ""}
       </div>
       <button class="folder-card-menu-btn" type="button" title="Mais opcoes" aria-label="Mais opcoes" aria-expanded="false">${icon("MoreHorizontal")}</button>
     </div>`;
@@ -3286,6 +3304,12 @@ function makeFolderCard(folder, count) {
     e.stopPropagation();
     openFolderActionsModal(folder);
   };
+  card.querySelectorAll("[data-card-tag]").forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      toggleSearchTag(button.dataset.cardTag, { exclusive: true });
+    };
+  });
   card.onclick = () => navigateFolder(folder.id);
   attachFolderDrop(card, folder.id);
   return card;
@@ -3489,6 +3513,11 @@ folderActionRename.onclick = async () => {
   const folder = folderForActions;
   closeFolderActionsModal();
   if (folder) await renameFolder(folder);
+};
+folderActionTags.onclick = async () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder) await editFolderTags(folder);
 };
 folderActionDelete.onclick = async () => {
   const folder = folderForActions;
@@ -3880,6 +3909,7 @@ async function exportData(format) {
     name: f.name,
     parentId: f.parentId || null,
     coverFileId: f.coverFileId || null,
+    tags: normalizeTagEntries(f.tags),
     accountSlot: f.accountSlot || "",
     driveFolderId: f.driveFolderId || "",
     createdAt: f.createdAt || null,
@@ -4496,6 +4526,7 @@ async function createFolder() {
     await addDoc(collection(db, "vault_folders"), {
       name,
       parentId,
+      tags: [],
       accountSlot,
       driveFolderId: driveFolder.id,
       createdAt: serverTimestamp(),
@@ -4750,7 +4781,7 @@ function renderTagEditor() {
             tag,
           ) => `<button class="tag-existing-item${selectedKeys.has(tag.key) ? " active" : ""}" type="button" data-existing-tag="${esc(tag.key)}" aria-pressed="${selectedKeys.has(tag.key)}">
             <span class="tag-color-label" style="${tagInlineStyle(tag)}">${esc(tag.name)}</span>
-            <span class="tag-existing-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+            <span class="tag-existing-usage">${tagUsageText(tag)}</span>
             <span class="tag-existing-check" aria-hidden="true">${selectedKeys.has(tag.key) ? "✓" : ""}</span>
           </button>`,
         )
@@ -4793,7 +4824,7 @@ function toggleTagEditorSelection(key) {
     tagEditorSelected = tagEditorSelected.filter((tag) => tag.key !== cleanKey);
   } else {
     if (tagEditorSelected.length >= 12) {
-      setTagEditorError("Cada arquivo pode ter no máximo 12 etiquetas.");
+      setTagEditorError("Cada item pode ter no máximo 12 etiquetas.");
       return;
     }
     const tag = getTagCatalog().find((item) => item.key === cleanKey);
@@ -4810,7 +4841,7 @@ function addTagFromInput() {
     return;
   }
   if (tagEditorSelected.length >= 12) {
-    setTagEditorError("Cada arquivo pode ter no máximo 12 etiquetas.");
+    setTagEditorError("Cada item pode ter no máximo 12 etiquetas.");
     return;
   }
   const existing = getTagCatalog().find((tag) => tag.key === tagKey(name));
@@ -4823,26 +4854,34 @@ function addTagFromInput() {
   tagNameInput.focus();
 }
 
-async function editTags(file) {
+async function editRecordTags(record, collectionName, kindLabel) {
   const tags = await openTagPicker({
-    title: "Etiquetas do arquivo",
-    context: file.name || "Arquivo",
-    selected: file.tags,
+    title: `Etiquetas ${kindLabel}`,
+    context: record.name || "Item",
+    selected: record.tags,
   });
   if (tags === null) return false;
   try {
     const normalizedTags = normalizeTagEntries(tags);
-    await updateDoc(doc(db, "vault_files", file.id), {
+    await updateDoc(doc(db, collectionName, record.id), {
       tags: normalizedTags,
     });
-    file.tags = normalizedTags;
-    addHistory(`Etiquetas: ${file.name}`);
+    record.tags = normalizedTags;
+    addHistory(`Etiquetas ${kindLabel}: ${record.name}`);
     showToast("Etiquetas atualizadas", "success");
     return true;
   } catch (e) {
     showToast("Erro: " + e.message, "error");
     return false;
   }
+}
+
+function editTags(file) {
+  return editRecordTags(file, "vault_files", "do arquivo");
+}
+
+function editFolderTags(folder) {
+  return editRecordTags(folder, "vault_folders", "da pasta");
 }
 
 function openTagManager() {
@@ -4877,6 +4916,9 @@ function renderTagManagerList() {
   const taggedFiles = files.filter(
     (file) => normalizeTagEntries(file.tags).length > 0,
   ).length;
+  const taggedFolders = folders.filter(
+    (folder) => normalizeTagEntries(folder.tags).length > 0,
+  ).length;
   const query = tagKey(tagManagerSearch.value);
   const visible = catalog
     .filter((tag) => !query || tag.key.includes(query))
@@ -4886,7 +4928,7 @@ function renderTagManagerList() {
         : b.count - a.count || a.name.localeCompare(b.name, "pt-BR"),
     );
 
-  tagManagerStats.textContent = `${catalog.length} etiqueta${catalog.length === 1 ? "" : "s"} · ${taggedFiles} arquivo${taggedFiles === 1 ? "" : "s"}`;
+  tagManagerStats.textContent = `${catalog.length} etiqueta${catalog.length === 1 ? "" : "s"} · ${taggedFiles} arquivo${taggedFiles === 1 ? "" : "s"} · ${taggedFolders} pasta${taggedFolders === 1 ? "" : "s"}`;
   tagManagerList.innerHTML = visible.length
     ? visible
         .map(
@@ -4895,11 +4937,11 @@ function renderTagManagerList() {
           ) => `<button class="tag-manager-item${tag.key === tagManagerSelectedKey ? " active" : ""}" type="button" data-manage-tag="${esc(tag.key)}" aria-pressed="${tag.key === tagManagerSelectedKey}" style="${tagInlineStyle(tag)}">
             <span class="tag-manager-color" aria-hidden="true"></span>
             <span class="tag-manager-item-copy"><strong>${esc(tag.name)}</strong><small>${esc(tag.color.toUpperCase())}</small></span>
-            <span class="tag-manager-usage">${tag.count} arquivo${tag.count === 1 ? "" : "s"}</span>
+            <span class="tag-manager-usage">${tagUsageText(tag)}</span>
           </button>`,
         )
         .join("")
-    : `<div class="tag-manager-empty"><strong>${catalog.length ? "Nenhuma etiqueta encontrada" : "Ainda não há etiquetas"}</strong><span>${catalog.length ? "Tente outro termo de busca." : "Crie uma etiqueta ao editar um arquivo."}</span></div>`;
+    : `<div class="tag-manager-empty"><strong>${catalog.length ? "Nenhuma etiqueta encontrada" : "Ainda não há etiquetas"}</strong><span>${catalog.length ? "Tente outro termo de busca." : "Crie uma etiqueta ao editar um arquivo ou pasta."}</span></div>`;
   tagManagerList.querySelectorAll("[data-manage-tag]").forEach((button) => {
     button.onclick = () => selectManagedTag(button.dataset.manageTag);
   });
@@ -4923,7 +4965,7 @@ function selectManagedTag(key) {
   tagManagerEditor.hidden = false;
   tagManagerPlaceholder.hidden = true;
   tagManagerEditingName.textContent = tag.name;
-  tagManagerEditingUsage.textContent = `${tag.count} arquivo${tag.count === 1 ? "" : "s"}`;
+  tagManagerEditingUsage.textContent = tagUsageText(tag);
   tagManagerNameInput.value = tag.name;
   tagManagerColorPicker.value = tag.color;
   tagManagerHexInput.value = tag.color.toUpperCase();
@@ -4966,20 +5008,23 @@ function setTagManagerBusy(busy, message = "") {
   if (!busy) syncManagedTagPreview();
 }
 
-async function rewriteTagAcrossFiles(sourceKey, transform) {
-  const affected = files.filter((file) =>
-    normalizeTagEntries(file.tags).some((tag) => tag.key === sourceKey),
+async function rewriteTagAcrossRecords(sourceKey, transform) {
+  const affected = [
+    ...files.map((record) => ({ record, collectionName: "vault_files" })),
+    ...folders.map((record) => ({ record, collectionName: "vault_folders" })),
+  ].filter(({ record }) =>
+    normalizeTagEntries(record.tags).some((tag) => tag.key === sourceKey),
   );
   let updated = 0;
   let failed = 0;
-  for (const file of affected) {
-    const current = normalizeTagEntries(file.tags);
+  for (const { record, collectionName } of affected) {
+    const current = normalizeTagEntries(record.tags);
     const next = normalizeTagEntries(transform(current));
     try {
-      await updateDoc(doc(db, "vault_files", file.id), { tags: next });
+      await updateDoc(doc(db, collectionName, record.id), { tags: next });
       updated += 1;
     } catch (error) {
-      console.warn("Nao foi possivel atualizar a etiqueta", file.name, error);
+      console.warn("Nao foi possivel atualizar a etiqueta", record.name, error);
       failed += 1;
     }
   }
@@ -4988,6 +5033,7 @@ async function rewriteTagAcrossFiles(sourceKey, transform) {
 
 function finishTagManagerOperation(result, message) {
   renderTagSearchOptions();
+  renderFolderList();
   renderGrid();
   const feedback = result.failed
     ? `${result.updated} atualizado(s) · ${result.failed} com erro`
@@ -5023,9 +5069,9 @@ async function saveManagedTag() {
   }
 
   setTagManagerError("");
-  setTagManagerBusy(true, `Atualizando ${source.count} arquivo(s)...`);
+  setTagManagerBusy(true, `Atualizando ${tagUsageText(source)}...`);
   const replacement = { name, color };
-  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+  const result = await rewriteTagAcrossRecords(source.key, (tags) =>
     tags.map((tag) => (tag.key === source.key ? replacement : tag)),
   );
   if (activeSearchTags.delete(source.key)) activeSearchTags.add(nextKey);
@@ -5047,13 +5093,13 @@ async function mergeManagedTag() {
   if (!source || !target || source.key === target.key) return;
   const confirmed = await openConfirmDialog({
     title: "Mesclar etiquetas",
-    message: `Substituir “${source.name}” por “${target.name}” em ${source.count} arquivo(s)? A etiqueta “${source.name}” deixará de existir.`,
+    message: `Substituir “${source.name}” por “${target.name}” em ${tagUsageText(source)}? A etiqueta “${source.name}” deixará de existir.`,
     confirmText: "Mesclar",
   });
   if (!confirmed) return;
 
-  setTagManagerBusy(true, `Mesclando ${source.count} arquivo(s)...`);
-  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+  setTagManagerBusy(true, `Mesclando em ${tagUsageText(source)}...`);
+  const result = await rewriteTagAcrossRecords(source.key, (tags) =>
     mergeTagEntries(tags.map((tag) => (tag.key === source.key ? target : tag))),
   );
   if (activeSearchTags.delete(source.key)) activeSearchTags.add(target.key);
@@ -5074,14 +5120,14 @@ async function deleteManagedTag() {
   if (!source) return;
   const confirmed = await openConfirmDialog({
     title: "Excluir etiqueta",
-    message: `Remover “${source.name}” de ${source.count} arquivo(s)? Os arquivos não serão excluídos.`,
+    message: `Remover “${source.name}” de ${tagUsageText(source)}? Arquivos e pastas não serão excluídos.`,
     confirmText: "Excluir etiqueta",
     danger: true,
   });
   if (!confirmed) return;
 
-  setTagManagerBusy(true, `Removendo de ${source.count} arquivo(s)...`);
-  const result = await rewriteTagAcrossFiles(source.key, (tags) =>
+  setTagManagerBusy(true, `Removendo de ${tagUsageText(source)}...`);
+  const result = await rewriteTagAcrossRecords(source.key, (tags) =>
     tags.filter((tag) => tag.key !== source.key),
   );
   activeSearchTags.delete(source.key);
@@ -6327,9 +6373,13 @@ async function handleFiles(fileList) {
   let sendAllDuplicates = false;
   showToast("Analisando arquivos...");
   for (const file of fileList) {
-    if (isPhotoFile(file)) await getPhotoInsights(file);
-    const contentHash = await getOrComputeUploadHash(file);
-    if (!sendAllDuplicates && isUploadDuplicate(file, contentHash)) {
+    let duplicate = false;
+    if (!sendAllDuplicates) {
+      duplicate = isUploadDuplicate(file);
+      if (!duplicate && hasPotentialUploadHashDuplicate(file))
+        duplicate = isUploadDuplicate(file, await getOrComputeUploadHash(file));
+    }
+    if (duplicate) {
       const decision = await openConfirmDialog({
         title: "Possível duplicado",
         message: `Já existe um arquivo igual ou muito parecido com "${file.name}". Enviar mesmo assim?`,
@@ -6358,20 +6408,31 @@ async function handleFiles(fileList) {
   uploadPanel.style.display = "block";
   updateActivityCenter();
   pendingUploadAccountSlot = destination.accountSlot;
+  let completedUploads = 0;
   await runLimitedQueue(
     uniqueFiles,
-    (file) =>
-      uploadOneFile(
-        file,
-        destination.accountSlot,
-        destination.driveParentId,
-        destination.folderId,
-      ),
-    UPLOAD_CONCURRENCY,
+    async (file) => {
+      if (
+        await uploadOneFile(
+          file,
+          destination.accountSlot,
+          destination.driveParentId,
+          destination.folderId,
+        )
+      )
+        completedUploads++;
+    },
+    uniqueFiles.every((file) => file.size <= MULTIPART_UPLOAD_LIMIT)
+      ? SMALL_UPLOAD_CONCURRENCY
+      : UPLOAD_CONCURRENCY,
   );
   pendingUploadAccountSlot = "";
   fileInput.value = "";
-  showToast(`${uniqueFiles.length} upload(s) processado(s)`, "success");
+  const failedUploads = uniqueFiles.length - completedUploads;
+  showToast(
+    `${completedUploads} enviado(s)${failedUploads ? ` · ${failedUploads} com erro ou cancelado(s)` : ""}`,
+    failedUploads ? "error" : "success",
+  );
 }
 
 async function chooseAccountSlot(title = "Escolher conta do Drive") {
@@ -6465,6 +6526,15 @@ function isUploadDuplicate(file, contentHash = "") {
   });
 }
 
+function hasPotentialUploadHashDuplicate(file) {
+  return files.some(
+    (existing) =>
+      !existing.deletedAt &&
+      !!existing.contentHash &&
+      (!Number(existing.size || 0) || Number(existing.size) === file.size),
+  );
+}
+
 function scheduleUploadItemRemoval(itemEl, delay = 2200) {
   setTimeout(() => {
     if (itemEl.dataset.status === "active")
@@ -6546,6 +6616,15 @@ async function uploadOneFile(
   };
 
   try {
+    const analysisPromise = Promise.all([
+      getOrComputeUploadHash(file),
+      isPhotoFile(file)
+        ? getPhotoInsights(file).catch((error) => {
+            console.warn("Não foi possível analisar a foto", file.name, error);
+            return null;
+          })
+        : Promise.resolve(null),
+    ]);
     const metadata = await driveManager.uploadFile(
       accountSlot,
       file,
@@ -6567,9 +6646,10 @@ async function uploadOneFile(
         },
       },
     );
-    if (cancelled) return;
-    const contentHash = uploadHashes.get(file) || "";
-    const photoInsights = photoMetadataCache.get(file) || {
+    if (cancelled) return false;
+    status.textContent = "Finalizando metadados...";
+    const [contentHash, photoAnalysis] = await analysisPromise;
+    const photoInsights = photoAnalysis || {
       capturedAt: "",
       dateSource: "",
       isScreenshot: false,
@@ -6636,17 +6716,24 @@ async function uploadOneFile(
     itemEl.classList.add("upload-complete");
     itemEl.dataset.status = "complete";
     scheduleUploadItemRemoval(itemEl);
+    return true;
   } catch (error) {
-    if (cancelled || error?.name === "AbortError") return;
+    if (cancelled || error?.name === "AbortError") return false;
     itemEl.classList.add("upload-error");
     itemEl.dataset.status = "error";
-    status.innerHTML = `${esc(error.message)} <button class="upload-retry">Tentar novamente</button>`;
+    const message = friendlyDriveError(
+      error,
+      accountSlot,
+      driveManager.getAccount(accountSlot)?.email,
+      "enviar o arquivo",
+    );
+    status.innerHTML = `${esc(message)} <button class="upload-retry" type="button">Tentar novamente</button>`;
     status.style.color = "var(--danger)";
     status.querySelector(".upload-retry").onclick = () => {
       itemEl.remove();
       uploadOneFile(file, accountSlot, driveParentId, targetFolderId);
     };
-    console.error(error);
+    return false;
   } finally {
     activeUploads.delete(uploadId);
     updateActivityCenter();
@@ -7344,15 +7431,16 @@ async function importFromUrl() {
     });
     if (!confirmed) return;
     showActivityCenter();
-    await uploadOneFile(
+    const uploaded = await uploadOneFile(
       source,
       destination.accountSlot,
       destination.driveParentId,
       destination.folderId,
     );
-    addHistory(
-      `URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`,
-    );
+    if (uploaded)
+      addHistory(
+        `URL importada para ${destination.accountSlot.toUpperCase()}: ${name}`,
+      );
   } catch (e) {
     showToast("Erro: " + e.message, "error");
   }
@@ -7430,6 +7518,7 @@ async function importBackupJson(file) {
           name: folder.name || "Pasta",
           parentId: folder.parentId || null,
           coverFileId: folder.coverFileId || null,
+          tags: normalizeTagEntries(folder.tags),
           accountSlot: folder.accountSlot || "",
           driveFolderId: folder.driveFolderId || "",
           createdAt: folder.createdAt || serverTimestamp(),
@@ -8173,37 +8262,60 @@ function mergeTagEntries(...values) {
 
 function getTagCatalog({ includeTrash = false } = {}) {
   const catalog = new Map();
+  const addRecord = (record, kind) => {
+    const explicitColors = new Set(
+      (Array.isArray(record.tags) ? record.tags : [])
+        .filter(
+          (tag) => tag && typeof tag === "object" && isTagColor(tag.color),
+        )
+        .map((tag) => tagKey(tag.name)),
+    );
+    const seen = new Set();
+    normalizeTagEntries(record.tags).forEach((tag) => {
+      if (seen.has(tag.key)) return;
+      seen.add(tag.key);
+      const current = catalog.get(tag.key);
+      const explicit = explicitColors.has(tag.key);
+      if (!current) {
+        catalog.set(tag.key, {
+          ...tag,
+          count: 1,
+          fileCount: kind === "file" ? 1 : 0,
+          folderCount: kind === "folder" ? 1 : 0,
+          explicit,
+        });
+      } else {
+        current.count += 1;
+        if (kind === "file") current.fileCount += 1;
+        else current.folderCount += 1;
+        if (explicit && !current.explicit) {
+          current.name = tag.name;
+          current.color = tag.color;
+          current.explicit = true;
+        }
+      }
+    });
+  };
   files
     .filter((file) => includeTrash || isActiveFile(file))
-    .forEach((file) => {
-      const explicitColors = new Set(
-        (Array.isArray(file.tags) ? file.tags : [])
-          .filter(
-            (tag) => tag && typeof tag === "object" && isTagColor(tag.color),
-          )
-          .map((tag) => tagKey(tag.name)),
-      );
-      const seenInFile = new Set();
-      normalizeTagEntries(file.tags).forEach((tag) => {
-        if (seenInFile.has(tag.key)) return;
-        seenInFile.add(tag.key);
-        const current = catalog.get(tag.key);
-        const explicit = explicitColors.has(tag.key);
-        if (!current) {
-          catalog.set(tag.key, { ...tag, count: 1, explicit });
-        } else {
-          current.count += 1;
-          if (explicit && !current.explicit) {
-            current.name = tag.name;
-            current.color = tag.color;
-            current.explicit = true;
-          }
-        }
-      });
-    });
+    .forEach((file) => addRecord(file, "file"));
+  folders.forEach((folder) => addRecord(folder, "folder"));
   return [...catalog.values()].sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"),
   );
+}
+
+function tagUsageText(tag) {
+  return [
+    tag.fileCount
+      ? `${tag.fileCount} arquivo${tag.fileCount === 1 ? "" : "s"}`
+      : "",
+    tag.folderCount
+      ? `${tag.folderCount} pasta${tag.folderCount === 1 ? "" : "s"}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function tagTextColor(color) {

@@ -283,6 +283,11 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     parentId: null,
     createdAt: "2026-01-01T00:00:00.000Z",
   });
+  await store.setDoc(store.doc(db, "vault_folders", "qa-other-folder"), {
+    name: "Outro mangá",
+    parentId: null,
+    createdAt: "2026-01-02T00:00:00.000Z",
+  });
   await store.setDoc(store.doc(db, "vault_files", "qa-document"), {
     name: "Documento de apoio.pdf",
     fileType: "document",
@@ -292,6 +297,56 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     folderId: null,
   });
   await new Promise((r) => setTimeout(r, 80));
+  const folderCard = [...document.querySelectorAll("#folderChildrenGrid .folder-card")].find(
+    (item) => item.querySelector(".folder-card-name")?.textContent === "Pasta fixada",
+  );
+  assert.ok(folderCard);
+  folderCard.querySelector(".folder-card-menu-btn").click();
+  document.getElementById("folderActionTags").click();
+  assert.equal(document.getElementById("tagModalTitle").textContent, "Etiquetas da pasta");
+  const authorInput = document.getElementById("tagNameInput");
+  authorInput.value = "Autor: Eiichiro Oda";
+  authorInput.dispatchEvent(new w.Event("input", { bubbles: true }));
+  document.getElementById("createTagBtn").click();
+  document.getElementById("saveTags").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const folder = (await store.allRecords(db)).find((record) => record.id === "qa-folder");
+    if (folder?.data.tags?.length) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  const taggedFolder = (await store.allRecords(db)).find(
+    (record) => record.id === "qa-folder",
+  ).data;
+  assert.equal(taggedFolder.tags[0].name, "Autor: Eiichiro Oda");
+  assert.equal(
+    document.querySelector('[data-search-tag="autor: eiichiro oda"] .search-tag-usage').textContent,
+    "1 pasta",
+  );
+  document.querySelector('#folderChildrenGrid [data-card-tag="autor: eiichiro oda"]').click();
+  assert.equal(document.querySelectorAll("#folderChildrenGrid .folder-card").length, 1);
+  document.getElementById("clearSearchTags").click();
+  document.getElementById("viewFolders").click();
+  document.querySelector('[data-search-tag="autor: eiichiro oda"]').click();
+  assert.equal(document.querySelectorAll("#fileGrid .folder-card").length, 1);
+  document.getElementById("clearSearchTags").click();
+  document.getElementById("viewGrid").click();
+  document.getElementById("tagManagerBtn").click();
+  assert.match(document.getElementById("tagManagerStats").textContent, /1 pasta/);
+  document.querySelector('[data-manage-tag="autor: eiichiro oda"]').click();
+  const authorManagerName = document.getElementById("tagManagerNameInput");
+  authorManagerName.value = "Autor: Oda";
+  authorManagerName.dispatchEvent(new w.Event("input", { bubbles: true }));
+  document.getElementById("saveManagedTag").click();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const folder = (await store.allRecords(db)).find((record) => record.id === "qa-folder");
+    if (folder?.data.tags?.[0]?.name === "Autor: Oda") break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.equal(
+    (await store.allRecords(db)).find((record) => record.id === "qa-folder").data.tags[0].name,
+    "Autor: Oda",
+  );
+  document.getElementById("closeTagManagerFooter").click();
   document.querySelector('.folder-pin[aria-label*="Pasta fixada"]').click();
   assert.equal(document.getElementById("pinnedFoldersSection").hidden, false);
   assert.match(w.localStorage.getItem("vault_pinned_folders_v1"), /qa-folder/);

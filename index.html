@@ -1441,7 +1441,7 @@
               id="tagNameInput"
               type="text"
               maxlength="32"
-              placeholder="Ex.: Viagem, Trabalho, Documentos"
+              placeholder="Ex.: Autor: Eiichiro Oda"
               autocomplete="off"
             />
             <button class="modal-btn confirm" id="createTagBtn" type="button">
@@ -1537,7 +1537,7 @@
               Central de etiquetas
             </h2>
             <p class="tag-modal-context">
-              Alterações são aplicadas a todos os arquivos que usam a etiqueta.
+              Alterações são aplicadas a todos os arquivos e pastas que usam a etiqueta.
             </p>
           </div>
           <button
@@ -1553,7 +1553,7 @@
         <div class="tag-manager-toolbar">
           <div class="tag-manager-summary">
             <strong id="tagManagerStats">0 etiquetas</strong>
-            <span>Novas etiquetas são criadas ao etiquetar um arquivo.</span>
+            <span>Novas etiquetas são criadas ao etiquetar um arquivo ou pasta.</span>
           </div>
           <label class="sr-only" for="tagManagerSearch">Buscar etiqueta</label>
           <input
@@ -1898,6 +1898,13 @@
             type="button"
           >
             Renomear
+          </button>
+          <button
+            class="folder-action-option"
+            id="folderActionTags"
+            type="button"
+          >
+            Etiquetas
           </button>
           <button
             class="folder-action-option danger"
