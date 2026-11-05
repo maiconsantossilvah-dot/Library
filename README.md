@@ -28,6 +28,8 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 ## Navegação no computador
 
 - **Início** resume o acervo; **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual.
+- Na tela **Início**, **Redescobrir** traz uma foto ou vídeo diferente quando não há uma memória desta data. **Surpreenda-me** abre outro momento diretamente no visualizador.
+- **Para organizar** mostra, com contagens atualizadas, arquivos sem etiquetas, capturas, possíveis duplicados e vídeos grandes. Cada cartão abre o filtro correspondente na Biblioteca.
 - Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).

@@ -4659,6 +4659,253 @@ button.tag-chip:hover {
   font: 500 clamp(20px, 2.2vw, 30px)/1.1 var(--font-display);
 }
 
+/* Redescoberta e cuidados rápidos da Home. */
+.vault-reimagined .memory-spotlight {
+  min-height: 252px;
+  border-radius: 14px;
+  background: var(--bg2);
+}
+
+.vault-reimagined .memory-visual {
+  position: relative;
+  display: grid;
+  min-height: 252px;
+  place-items: center;
+  background:
+    radial-gradient(
+      circle at 22% 18%,
+      rgba(201, 99, 66, 0.18),
+      transparent 35%
+    ),
+    var(--bg3);
+}
+
+.vault-reimagined .memory-placeholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: var(--text3);
+}
+
+.vault-reimagined .memory-placeholder svg {
+  width: 42px;
+  height: 42px;
+}
+
+.vault-reimagined .memory-video-badge {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  translate: -50% -50%;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 50%;
+  background: rgba(20, 31, 27, 0.62);
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+
+.vault-reimagined .memory-empty-copy {
+  grid-column: 1 / -1;
+  min-height: 250px;
+}
+
+.vault-reimagined .memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vault-reimagined .memory-actions button,
+.vault-reimagined .surprise-action {
+  min-height: 38px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 0 13px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: 650 11px/1 var(--font-body);
+}
+
+.vault-reimagined .memory-actions button:first-child {
+  border-color: transparent;
+  background: var(--accent2);
+  color: #fff;
+}
+
+.vault-reimagined .memory-actions button:hover,
+.vault-reimagined .surprise-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.vault-reimagined .dashboard-care-section {
+  min-width: 0;
+}
+
+.vault-reimagined .organize-panel {
+  overflow: visible;
+}
+
+.vault-reimagined .organize-panel-head {
+  align-items: flex-end;
+  margin-bottom: 6px;
+}
+
+.vault-reimagined .organize-panel-head h2 {
+  margin: 5px 0 0;
+  color: var(--text);
+  font: 500 clamp(22px, 2.3vw, 31px)/1.08 var(--font-display);
+}
+
+.vault-reimagined .surprise-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent2);
+}
+
+.vault-reimagined .surprise-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.vault-reimagined .surprise-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.vault-reimagined .organize-intro {
+  margin: 0 0 16px;
+  color: var(--text2);
+  font: 500 12px/1.45 var(--font-body);
+}
+
+.vault-reimagined .organize-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vault-reimagined .organize-action {
+  display: grid;
+  min-width: 0;
+  min-height: 90px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 13px;
+  background: var(--bg2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.vault-reimagined .organize-action:hover {
+  transform: translateY(-2px);
+  border-color: #afc6b7;
+  box-shadow: 0 10px 22px rgba(40, 58, 47, 0.1);
+}
+
+.vault-reimagined .organize-action-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  grid-row: 1 / -1;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(201, 99, 66, 0.12);
+  color: var(--accent);
+}
+
+.vault-reimagined .organize-action-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.vault-reimagined .organize-action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.vault-reimagined .organize-action-copy strong,
+.vault-reimagined .organize-action-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-reimagined .organize-action-copy strong {
+  font: 650 12px/1.2 var(--font-body);
+}
+
+.vault-reimagined .organize-action-copy span {
+  color: var(--text3);
+  font: 500 9px/1.2 var(--font-mono);
+}
+
+.vault-reimagined .organize-action-count {
+  align-self: start;
+  color: var(--accent);
+  font: 500 25px/1 var(--font-display);
+}
+
+.vault-reimagined .organize-action-arrow {
+  display: grid;
+  grid-column: 3;
+  place-items: center;
+  color: var(--text3);
+}
+
+.vault-reimagined .organize-action-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+
+.vault-reimagined .organize-action.is-complete .organize-action-icon {
+  background: rgba(48, 110, 90, 0.12);
+  color: var(--accent2);
+}
+
+.vault-reimagined .organize-action.is-complete .organize-action-count {
+  color: var(--text3);
+}
+
+.vault-reimagined[data-theme="dark"] .memory-spotlight,
+.vault-reimagined[data-theme="dark"] .organize-action {
+  border-color: #3a4a40;
+  background: #202d26;
+}
+
+.vault-reimagined[data-theme="dark"] .memory-actions button,
+.vault-reimagined[data-theme="dark"] .surprise-action {
+  background: #26372e;
+}
+
+.vault-reimagined[data-theme="dark"] .memory-actions button:first-child {
+  background: #4c8a72;
+}
+
+@media (max-width: 1100px) {
+  .vault-reimagined .organize-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .vault-reimagined .continue-file-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
@@ -4777,6 +5024,23 @@ button.tag-chip:hover {
 }
 
 @media (max-width: 760px) {
+  .vault-reimagined .organize-panel-head {
+    align-items: flex-start;
+  }
+
+  .vault-reimagined .surprise-action {
+    min-height: 36px;
+    padding-inline: 10px;
+  }
+
+  .vault-reimagined .organize-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-reimagined .organize-action {
+    min-height: 78px;
+  }
+
   .vault-reimagined .continue-file-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

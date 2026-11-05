@@ -148,6 +148,7 @@ let descendantFolderCountByFolder = new Map();
 let duplicateFileIds = new Set();
 let dashboardRenderFrame = 0;
 let dashboardRenderTimer = null;
+let dashboardDiscoveryFileId = "";
 let searchRenderTimer = null;
 const navState = {
   section: "home",
@@ -7874,6 +7875,7 @@ function updateDashboard() {
     : "Comece guardando fotos, vídeos e documentos que importam.";
   renderHistory();
   renderPhotoDashboard(active);
+  renderDashboardOrganize(active);
   renderDashboardHighlights(active);
   renderRecentlyViewed(active);
   hydrateDriveThumbnails(dashboard);
@@ -7948,10 +7950,45 @@ function renderRecentlyViewed(active) {
   });
 }
 
+function getDashboardMedia(active) {
+  return active.filter(
+    (file) => file.fileType === "image" || file.fileType === "video",
+  );
+}
+
+function pickDashboardDiscovery(active, rotate = false) {
+  const media = getDashboardMedia(active);
+  if (!media.length) {
+    dashboardDiscoveryFileId = "";
+    return null;
+  }
+  const currentIndex = media.findIndex(
+    (file) => file.id === dashboardDiscoveryFileId,
+  );
+  if (currentIndex >= 0 && !rotate) return media[currentIndex];
+  const dayNumber = Math.floor(Date.now() / 86_400_000);
+  const nextIndex =
+    currentIndex >= 0
+      ? (currentIndex + 1) % media.length
+      : dayNumber % media.length;
+  const discovery = media[nextIndex];
+  dashboardDiscoveryFileId = discovery.id;
+  return discovery;
+}
+
+function openDashboardDiscovery(active, rotate = false) {
+  const file = pickDashboardDiscovery(active, rotate);
+  if (!file) return;
+  lightboxFiles = getDashboardMedia(active);
+  openLightbox(file);
+}
+
 function renderPhotoDashboard(active) {
   const memoriesEl = $("dashMemories");
   const albumsEl = $("dashAlbumSuggestions");
   if (!memoriesEl || !albumsEl) return;
+  const memoryEyebrow = $("dashMemoryEyebrow");
+  const memoryKicker = $("dashMemoryKicker");
   const today = new Date();
   const memories = active
     .filter((file) => file.fileType === "image" && file.eventDate)
@@ -7966,9 +8003,11 @@ function renderPhotoDashboard(active) {
     .slice(0, 3);
   const memory = memories[0];
   if (memory) {
+    memoryEyebrow.textContent = "NESTE DIA";
+    memoryKicker.textContent = "MEMÓRIAS";
     const thumb = dashboardThumb(memory, 900, 620);
     memoriesEl.innerHTML = `
-      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}" alt="${esc(memory.name)}" decoding="async" />` : `<span data-drive-thumb-id="${esc(memory.id)}"></span>`}</div>
+      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}" alt="${esc(memory.name)}" decoding="async" />` : `<span class="memory-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}">${icon("Image")}</span>`}</div>
       <div class="memory-copy"><em>${fileDate(memory).getFullYear()} · ${memories.length} memoria(s) hoje</em><strong>${esc(memory.name)}</strong><span>Uma lembrança registrada neste mesmo dia, em outro ano.</span></div>`;
     memoriesEl.onclick = () => {
       lightboxFiles = [memory];
@@ -7976,7 +8015,30 @@ function renderPhotoDashboard(active) {
     };
     memoriesEl.style.cursor = "pointer";
   } else {
-    memoriesEl.innerHTML = `<div class="memory-copy"><em>SEM MEMÓRIAS HOJE</em><strong>Seu próximo momento começa agora.</strong><span>Fotos com data de captura aparecerão aqui quando a data voltar a chegar.</span></div>`;
+    const discovery = pickDashboardDiscovery(active);
+    memoryEyebrow.textContent = "REDESCOBRIR";
+    memoryKicker.textContent = "DO SEU ACERVO";
+    if (discovery) {
+      const thumb = dashboardThumb(discovery, 900, 620);
+      const context = [
+        monthLabel(discovery),
+        getFolderPathLabel(discovery.folderId) || "Todos os arquivos",
+      ].filter(Boolean);
+      memoriesEl.innerHTML = `
+        <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(discovery) ? esc(discovery.id) : ""}" alt="${esc(discovery.name)}" decoding="async" />` : `<span class="memory-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(discovery) ? esc(discovery.id) : ""}">${icon(discovery.fileType === "video" ? "Film" : "Image")}</span>`}${discovery.fileType === "video" ? `<span class="memory-video-badge">${icon("Play")}</span>` : ""}</div>
+        <div class="memory-copy"><em>UM MOMENTO DO SEU ACERVO</em><strong>${esc(discovery.name)}</strong><span>${esc(context.join(" · "))}</span><div class="memory-actions"><button type="button" data-discovery-open>Abrir momento</button><button type="button" data-discovery-next>Outro momento</button></div></div>`;
+      memoriesEl.querySelector("[data-discovery-open]").onclick = () =>
+        openDashboardDiscovery(active);
+      memoriesEl.querySelector("[data-discovery-next]").onclick = () => {
+        pickDashboardDiscovery(active, true);
+        renderPhotoDashboard(active);
+        hydrateDriveThumbnails(memoriesEl);
+      };
+    } else {
+      memoriesEl.innerHTML = `<div class="memory-copy memory-empty-copy"><em>SEU ACERVO COMEÇA AQUI</em><strong>Guarde o primeiro momento.</strong><span>Quando houver fotos ou vídeos, o VAULT trará um deles de volta para você.</span><div class="memory-actions"><button type="button" data-discovery-upload>Adicionar arquivos</button></div></div>`;
+      memoriesEl.querySelector("[data-discovery-upload]").onclick =
+        requestUpload;
+    }
     memoriesEl.onclick = null;
     memoriesEl.style.cursor = "default";
   }
@@ -8030,6 +8092,78 @@ function renderPhotoDashboard(active) {
       else openSuggestedAlbum(button.dataset.albumKey);
     };
   });
+}
+
+function renderDashboardOrganize(active) {
+  const container = $("dashOrganizeActions");
+  const summary = $("dashOrganizeSummary");
+  const surprise = $("dashboardSurpriseBtn");
+  if (!container || !summary || !surprise) return;
+  const tasks = [
+    {
+      scope: "untagged",
+      icon: "Tags",
+      label: "Sem etiquetas",
+      detail: "Identifique para encontrar depois",
+      count: active.filter((file) => normalizeTags(file.tags).length === 0)
+        .length,
+    },
+    {
+      scope: "screenshots",
+      icon: "Image",
+      label: "Capturas",
+      detail: "Revise imagens temporárias",
+      count: active.filter((file) => file.isScreenshot).length,
+    },
+    {
+      scope: "duplicates",
+      icon: "Copy",
+      label: "Possíveis duplicados",
+      detail: "Compare antes de remover",
+      count: active.filter((file) => duplicateFileIds.has(file.id)).length,
+    },
+    {
+      scope: "largeVideos",
+      icon: "Film",
+      label: "Vídeos grandes",
+      detail: "Veja o que ocupa mais espaço",
+      count: active.filter(
+        (file) =>
+          file.fileType === "video" && (file.size || 0) > 100 * 1024 * 1024,
+      ).length,
+    },
+  ];
+  const pendingGroups = tasks.filter((task) => task.count > 0).length;
+  summary.textContent = pendingGroups
+    ? `${pendingGroups} cuidado${pendingGroups === 1 ? " rápido" : "s rápidos"} para deixar sua biblioteca mais fácil de explorar.`
+    : "Tudo em ordem por aqui. Continue aproveitando seu acervo.";
+  container.innerHTML = tasks
+    .map(
+      (
+        task,
+      ) => `<button class="organize-action${task.count ? "" : " is-complete"}" type="button" data-organize-scope="${task.scope}">
+        <span class="organize-action-icon">${icon(task.count ? task.icon : "Check")}</span>
+        <span class="organize-action-copy"><strong>${esc(task.label)}</strong><span>${esc(task.count ? task.detail : "Tudo em ordem")}</span></span>
+        <span class="organize-action-count" aria-label="${task.count} arquivo${task.count === 1 ? "" : "s"}">${task.count}</span>
+        <span class="organize-action-arrow">${icon("ArrowRight")}</span>
+      </button>`,
+    )
+    .join("");
+  container.querySelectorAll("[data-organize-scope]").forEach((button) => {
+    button.onclick = () =>
+      openLibraryView({
+        folderId: ROOT_ID,
+        contentScope: button.dataset.organizeScope,
+        viewMode: "grid",
+        resetAdvancedFilters: true,
+      });
+  });
+  const hasMedia = getDashboardMedia(active).length > 0;
+  surprise.disabled = !hasMedia;
+  surprise.title = hasMedia
+    ? "Abrir um momento aleatório do acervo"
+    : "Adicione fotos ou vídeos para usar esta ação";
+  surprise.onclick = () => openDashboardDiscovery(active, true);
 }
 
 function dashboardThumb(file, width, height) {

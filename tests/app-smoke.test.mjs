@@ -485,6 +485,26 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     false,
   );
   assert.ok(document.querySelectorAll(".continue-file-item").length >= 2);
+  assert.match(
+    document.getElementById("dashOrganizeSummary").textContent,
+    /cuidado rápido/,
+  );
+  const untaggedAction = document.querySelector(
+    '[data-organize-scope="untagged"]',
+  );
+  assert.ok(untaggedAction);
+  assert.equal(
+    untaggedAction.querySelector(".organize-action-count").textContent,
+    "2",
+  );
+  assert.equal(document.getElementById("dashboardSurpriseBtn").disabled, false);
+  untaggedAction.click();
+  assert.equal(document.body.dataset.section, "files");
+  assert.equal(
+    JSON.parse(w.localStorage.getItem("vault_navigation_v1")).contentScope,
+    "untagged",
+  );
+  document.getElementById("navHome").click();
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),
   );

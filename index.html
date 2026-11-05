@@ -969,8 +969,10 @@
               <section class="dashboard-feature-grid">
                 <article class="home-panel memory-spotlight-panel">
                   <div class="home-panel-head">
-                    <span class="eyebrow">NESTE DIA</span
-                    ><span class="panel-kicker">MEMÓRIAS</span>
+                    <span class="eyebrow" id="dashMemoryEyebrow">NESTE DIA</span
+                    ><span class="panel-kicker" id="dashMemoryKicker"
+                      >MEMÓRIAS</span
+                    >
                   </div>
                   <div id="dashMemories" class="memory-spotlight">
                     Sem memórias nesta data
@@ -990,6 +992,36 @@
                   <div id="dashHighlights" class="home-highlight-list">
                     Nenhum destaque ainda
                   </div>
+                </article>
+              </section>
+
+              <section
+                class="dashboard-care-section"
+                aria-label="Sugestões para organizar o acervo"
+              >
+                <article class="home-panel organize-panel">
+                  <div class="home-panel-head organize-panel-head">
+                    <div>
+                      <span class="eyebrow">PARA ORGANIZAR</span>
+                      <h2>Cuide do acervo aos poucos</h2>
+                    </div>
+                    <button
+                      class="surprise-action"
+                      id="dashboardSurpriseBtn"
+                      type="button"
+                    >
+                      <span data-icon="Sparkles" aria-hidden="true"></span>
+                      Surpreenda-me
+                    </button>
+                  </div>
+                  <p class="organize-intro" id="dashOrganizeSummary">
+                    Analisando o que pode ser organizado…
+                  </p>
+                  <div
+                    class="organize-actions"
+                    id="dashOrganizeActions"
+                    aria-live="polite"
+                  ></div>
                 </article>
               </section>
 
