@@ -186,6 +186,7 @@ const PHOTO_EXTENSION_PATTERN =
 let cloudName = "";
 let uploadPreset = "";
 let googleClientId = "";
+let persistentAuthApiUrl = "";
 let driveManager = null;
 let currentConfig = null;
 let pendingUploadAccountSlot = "";
@@ -534,6 +535,7 @@ function prefillConfig(cfg) {
   $("cfg_cloudName").value = cfg.cloudName || "";
   $("cfg_uploadPreset").value = cfg.uploadPreset || "";
   $("cfg_googleClientId").value = cfg.googleClientId || "";
+  $("cfg_persistentAuthApiUrl").value = cfg.persistentAuthApiUrl || "";
   renderDriveAccountSlots();
 }
 
@@ -550,6 +552,7 @@ function normalizeDriveAccounts(accounts = []) {
       lastConnectedAt: account.lastConnectedAt || "",
       lastCheckedAt: account.lastCheckedAt || "",
       quota: account.quota || null,
+      persistentId: account.persistentId || "",
     };
   });
 }
@@ -561,6 +564,9 @@ function configFromForm() {
   return {
     ...(currentConfig || savedCfg || {}),
     googleClientId: $("cfg_googleClientId").value.trim(),
+    persistentAuthApiUrl: $("cfg_persistentAuthApiUrl")
+      .value.trim()
+      .replace(/\/$/, ""),
     driveAccounts: previousAccounts,
     cloudName: $("cfg_cloudName").value.trim(),
     uploadPreset: $("cfg_uploadPreset").value.trim(),
@@ -814,6 +820,7 @@ async function initApp(cfg) {
     cloudName = cfg.cloudName;
     uploadPreset = cfg.uploadPreset;
     googleClientId = cfg.googleClientId || "";
+    persistentAuthApiUrl = cfg.persistentAuthApiUrl || "";
     currentConfig = {
       ...cfg,
       driveAccounts: normalizeDriveAccounts(cfg.driveAccounts),
@@ -821,6 +828,7 @@ async function initApp(cfg) {
     if (!driveManager) {
       driveManager = new GoogleDriveManager({
         clientId: googleClientId,
+        authApiUrl: persistentAuthApiUrl,
         accounts: currentConfig.driveAccounts,
         onAccountsChange: persistDriveAccounts,
         onSessionInvalid: handleDriveSessionInvalid,
@@ -828,8 +836,20 @@ async function initApp(cfg) {
     } else {
       driveManager.configure({
         clientId: googleClientId,
+        authApiUrl: persistentAuthApiUrl,
         accounts: currentConfig.driveAccounts,
       });
+    }
+
+    if (persistentAuthApiUrl) {
+      try {
+        await driveManager.restorePersistentConnections();
+      } catch (error) {
+        console.warn(
+          "Autenticação persistente temporariamente indisponível",
+          error,
+        );
+      }
     }
 
     configModal.style.display = "none";
@@ -872,11 +892,24 @@ $("saveConfig").onclick = async () => {
     showToast("Preencha os campos obrigatorios", "error");
     return;
   }
+  if (cfg.persistentAuthApiUrl) {
+    try {
+      const api = new URL(cfg.persistentAuthApiUrl);
+      const local = ["localhost", "127.0.0.1"].includes(api.hostname);
+      if (api.protocol !== "https:" && !(local && api.protocol === "http:"))
+        throw new Error("HTTPS obrigatório");
+    } catch {
+      showConfigError(
+        "Informe uma URL HTTPS válida para a API de conexão persistente.",
+      );
+      return;
+    }
+  }
   showConfigError("");
   saveConfig(cfg);
   const connected = await initApp(cfg);
   if (connected && getLegacyConfig()) runLegacyMigration();
-  if (connected && cfg.googleClientId) {
+  if (connected && (cfg.persistentAuthApiUrl || cfg.googleClientId)) {
     openAccountsModal(accountConnectBtn);
     showToast("Configuracao salva. Agora revise Ac1 a Ac4.", "success");
   }
@@ -980,11 +1013,11 @@ function accountState(slot) {
       Number(slot.slice(-1)) - 1
     ];
   const runtime = accountRuntime(slot);
-  if (!currentConfig?.googleClientId)
+  if (!currentConfig?.persistentAuthApiUrl && !currentConfig?.googleClientId)
     return {
       key: "not_configured",
       label: "Configuração pendente",
-      message: "Salve o OAuth Client ID na configuração avançada.",
+      message: "Configure a API persistente ou o OAuth Client ID avançado.",
     };
   if (runtime.busy)
     return {
@@ -1007,9 +1040,14 @@ function accountState(slot) {
   if (driveManager?.isConnected(slot))
     return {
       key: "connected",
-      label: "Disponível nesta sessão",
+      label: account?.persistentAvailable
+        ? "Conexão persistente"
+        : "Disponível nesta sessão",
       message:
-        runtime.message || "Arquivos e pastas desta conta estão disponíveis.",
+        runtime.message ||
+        (account?.persistentAvailable
+          ? "O acesso será renovado automaticamente quando necessário."
+          : "Arquivos e pastas desta conta estão disponíveis."),
     };
   if (account?.email)
     return {
@@ -1089,7 +1127,7 @@ function renderAccountCenter() {
       accountState(account.slot).key,
     ),
   ).length;
-  accountsSummary.textContent = `${connectedCount} de 4 disponíveis nesta sessão${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
+  accountsSummary.textContent = `${connectedCount} de 4 contas disponíveis${persistentAuthApiUrl ? " com renovação automática" : " nesta sessão"}${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
   accountsGrid.innerHTML = visibleAccounts
     .map((account) => {
       const state = accountState(account.slot);
@@ -1122,6 +1160,7 @@ function renderAccountCenter() {
         <button class="account-view-action" type="button" ${canOpen ? "" : "disabled"}>Ver arquivos</button>
         <button class="account-open-drive" type="button" ${canOpen ? "" : "disabled"}>Abrir VAULT no Drive</button>
         <button class="account-check-action" type="button" ${canOpen ? "" : "disabled"}>Verificar</button>
+        ${account.persistentId ? '<button class="account-disconnect-action" type="button">Desconectar</button>' : ""}
       </div>
     </article>`;
     })
@@ -1146,12 +1185,19 @@ function bindAccountCardActions() {
         previousEmail.toLowerCase() !== account.email.toLowerCase() &&
         driveManager.isConnected(slot)
       ) {
-        driveManager.disconnect(slot);
+        await driveManager.disconnect(slot);
         const runtime = accountRuntime(slot);
         runtime.state = "attention";
         runtime.message = account.email
           ? `O email de ${slotTag(slot)} foi alterado. Conecte ${account.email} para confirmar a nova conta.`
           : `O email de ${slotTag(slot)} foi removido. Conecte novamente para identificar a conta.`;
+      }
+      if (driveManager.isConnected(slot)) {
+        await driveManager
+          .updatePersistentAccount(slot)
+          .catch((error) =>
+            console.warn("Nome persistente não atualizado", error),
+          );
       }
       await persistDriveAccounts(driveManager.getAccounts());
     };
@@ -1174,13 +1220,39 @@ function bindAccountCardActions() {
         verifyRecords: true,
         trigger: event.currentTarget,
       });
+    const disconnectButton = card.querySelector(".account-disconnect-action");
+    if (disconnectButton) {
+      disconnectButton.onclick = async () => {
+        const confirmed = await openConfirmDialog({
+          title: `Desconectar ${slotTag(slot)}`,
+          message:
+            "O acesso persistente será revogado. Os arquivos no Google Drive não serão apagados.",
+          confirmText: "Desconectar",
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          await driveManager.disconnect(slot);
+          const runtime = accountRuntime(slot);
+          runtime.state = "attention";
+          runtime.message = `${slotTag(slot)} foi desconectada. Os arquivos permanecem no Google Drive.`;
+          await persistDriveAccounts(driveManager.getAccounts());
+          showToast(`${slotTag(slot)} desconectada`, "success");
+        } catch (error) {
+          showToast(friendlyDriveError(error, slot, account?.email), "error");
+        }
+      };
+    }
   });
 }
 
 function openAccountsModal(returnFocus = document.activeElement) {
-  if (!currentConfig || !googleClientId) {
+  if (!currentConfig || (!persistentAuthApiUrl && !googleClientId)) {
     openConfigModal(true);
-    showToast("Salve o OAuth Client ID do Google Drive primeiro.", "error");
+    showToast(
+      "Configure a conexão persistente do Google Drive primeiro.",
+      "error",
+    );
     return;
   }
   accountModalReturnFocus = returnFocus;
@@ -1232,11 +1304,15 @@ function friendlyDriveError(
 async function connectDriveSlot(slot, trigger = document.activeElement) {
   if (
     !driveManager ||
-    !googleClientId ||
-    googleClientId !== $("cfg_googleClientId").value.trim()
+    (!persistentAuthApiUrl && !googleClientId) ||
+    (persistentAuthApiUrl &&
+      persistentAuthApiUrl !==
+        $("cfg_persistentAuthApiUrl").value.trim().replace(/\/$/, "")) ||
+    (!persistentAuthApiUrl &&
+      googleClientId !== $("cfg_googleClientId").value.trim())
   ) {
     showToast(
-      "Salve a configuração e o OAuth Client ID antes de conectar as contas.",
+      "Salve a configuração de conexão antes de conectar as contas.",
       "error",
     );
     openConfigModal(true);
@@ -1255,7 +1331,9 @@ async function connectDriveSlot(slot, trigger = document.activeElement) {
     showToast(`Abrindo login de ${slotTag(slot)}...`);
     const connectedAccount = await driveManager.connect(slot, expectedEmail);
     runtime.state = "connected";
-    runtime.message = `${slotTag(slot)} está disponível nesta sessão.`;
+    runtime.message = driveManager.usesPersistentAuth()
+      ? `${slotTag(slot)} continuará conectada e será renovada automaticamente.`
+      : `${slotTag(slot)} está disponível nesta sessão.`;
     await persistDriveAccounts(driveManager.getAccounts());
     await refreshDriveAccountHealth(slot, { silent: true });
     await syncAccount(slot).catch((error) => showToast(error.message, "error"));
@@ -2304,9 +2382,7 @@ function updateEmptyState(itemCount) {
   emptyState
     .querySelectorAll("[data-upload], #emptyNewFolderBtn")
     .forEach(
-      (el) =>
-        (el.hidden =
-          filtered || navState.contentScope === "trash"),
+      (el) => (el.hidden = filtered || navState.contentScope === "trash"),
     );
 }
 
@@ -3138,8 +3214,9 @@ async function loadDriveThumbnail(file, force = false) {
           file.emptyInDrive = file.fileType === "image" && actualSize === 0;
           if (actualSize !== Number(file.size || 0)) {
             file.size = actualSize;
-            updateDoc(doc(db, "vault_files", file.id), { size: actualSize })
-              .catch((error) => console.warn("Tamanho não atualizado", error));
+            updateDoc(doc(db, "vault_files", file.id), {
+              size: actualSize,
+            }).catch((error) => console.warn("Tamanho não atualizado", error));
           }
         }
       }
@@ -6360,7 +6437,7 @@ mangaStage.addEventListener("scroll", updateMangaIndexFromScroll);
 
 // ??? Upload ???????????????????????????????????????????????
 function requestUpload() {
-  if (!googleClientId) {
+  if (!persistentAuthApiUrl && !googleClientId) {
     openConfigModal(true);
     showToast("Configure o Google Drive para enviar arquivos.");
     return;
@@ -7882,7 +7959,8 @@ function updateDashboard() {
 }
 
 $("setupDriveBtn").onclick = () => {
-  if (googleClientId) openAccountsModal($("setupDriveBtn"));
+  if (persistentAuthApiUrl || googleClientId)
+    openAccountsModal($("setupDriveBtn"));
   else openConfigModal(true);
 };
 $("setupUploadBtn").onclick = requestUpload;

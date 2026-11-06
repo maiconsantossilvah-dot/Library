@@ -1,3 +1,5 @@
+import { PersistentDriveCredentialProvider } from "./drive-credential-provider.js";
+
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const DRIVE_SCOPE = [
@@ -57,11 +59,16 @@ async function parseResponse(response) {
 export class GoogleDriveManager {
   constructor({
     clientId = "",
+    authApiUrl = "",
     accounts = [],
     onAccountsChange,
     onSessionInvalid,
   } = {}) {
     this.clientId = clientId;
+    this.authApiUrl = authApiUrl;
+    this.credentialProvider = authApiUrl
+      ? new PersistentDriveCredentialProvider({ apiBase: authApiUrl })
+      : null;
     this.accounts = Array.from({ length: 4 }, (_, index) => {
       const slot = `ac${index + 1}`;
       const saved =
@@ -76,15 +83,26 @@ export class GoogleDriveManager {
         lastConnectedAt: saved.lastConnectedAt || "",
         lastCheckedAt: saved.lastCheckedAt || "",
         quota: saved.quota || null,
+        persistentId: saved.persistentId || "",
+        persistentAvailable: false,
       };
     });
     this.onAccountsChange = onAccountsChange;
     this.onSessionInvalid = onSessionInvalid;
     this.sessions = new Map();
+    this.refreshPromises = new Map();
   }
 
-  configure({ clientId = "", accounts = [] } = {}) {
+  configure({ clientId = "", authApiUrl = "", accounts = [] } = {}) {
     this.clientId = clientId;
+    if (authApiUrl !== this.authApiUrl) {
+      this.authApiUrl = authApiUrl;
+      this.credentialProvider = authApiUrl
+        ? new PersistentDriveCredentialProvider({ apiBase: authApiUrl })
+        : null;
+      this.sessions.clear();
+      this.refreshPromises.clear();
+    }
     const previous = new Map(
       this.accounts.map((account) => [account.slot, account]),
     );
@@ -104,6 +122,8 @@ export class GoogleDriveManager {
           incoming.lastConnectedAt ?? saved.lastConnectedAt ?? "",
         lastCheckedAt: incoming.lastCheckedAt ?? saved.lastCheckedAt ?? "",
         quota: incoming.quota ?? saved.quota ?? null,
+        persistentId: incoming.persistentId ?? saved.persistentId ?? "",
+        persistentAvailable: false,
       };
     });
   }
@@ -121,12 +141,65 @@ export class GoogleDriveManager {
   }
 
   isConnected(slot) {
-    const session = this.sessions.get(normalizeSlot(slot));
-    return !!session && session.expiresAt > Date.now() + 60_000;
+    const normalized = normalizeSlot(slot);
+    const account = this.getAccount(normalized);
+    const session = this.sessions.get(normalized);
+    return (
+      !!account?.persistentAvailable ||
+      (!!session && session.expiresAt > Date.now() + 60_000)
+    );
+  }
+
+  usesPersistentAuth() {
+    return !!this.credentialProvider;
+  }
+
+  async restorePersistentConnections() {
+    if (!this.credentialProvider) return false;
+    const session = await this.credentialProvider.getSession();
+    if (!session.authenticated) {
+      this.accounts.forEach((account) => (account.persistentAvailable = false));
+      return false;
+    }
+    const remoteAccounts = await this.credentialProvider.listAccounts();
+    const bySlot = new Map(
+      remoteAccounts
+        .filter((account) => /^ac[1-4]$/.test(account.legacySlot || ""))
+        .map((account) => [account.legacySlot, account]),
+    );
+    this.accounts.forEach((account) => {
+      const remote = bySlot.get(account.slot);
+      account.persistentAvailable = !!remote && !remote.revokedAt;
+      if (!remote) return;
+      account.persistentId = remote.id;
+      account.email = remote.email || account.email;
+      account.friendlyName = remote.friendlyName || account.friendlyName;
+      account.lastConnectedAt = remote.updatedAt
+        ? new Date(remote.updatedAt).toISOString()
+        : account.lastConnectedAt;
+    });
+    await this.notifyAccountsChanged();
+    return true;
   }
 
   async connect(slot, expectedEmail = "") {
     const normalized = normalizeSlot(slot);
+    if (this.credentialProvider) {
+      const remote = await this.credentialProvider.connectAccount({
+        legacySlot: normalized,
+        expectedEmail,
+      });
+      const account = this.getAccount(normalized);
+      account.persistentId = remote.id;
+      account.persistentAvailable = true;
+      account.email = remote.email;
+      account.friendlyName = remote.friendlyName || account.friendlyName;
+      account.lastConnectedAt = new Date().toISOString();
+      this.sessions.delete(normalized);
+      await this.getValidSession(normalized);
+      await this.notifyAccountsChanged();
+      return { ...account, connected: true, persistent: true };
+    }
     if (!this.clientId)
       throw new Error("Informe e salve o OAuth Client ID do Google");
     await loadGoogleIdentity();
@@ -188,29 +261,78 @@ export class GoogleDriveManager {
     return { ...account, connected: true };
   }
 
-  disconnect(slot) {
+  async disconnect(slot) {
     const normalized = normalizeSlot(slot);
+    const account = this.getAccount(normalized);
+    if (this.credentialProvider && account?.persistentId) {
+      await this.credentialProvider.disconnectAccount(account.persistentId);
+      account.persistentId = "";
+      account.persistentAvailable = false;
+    }
     const session = this.sessions.get(normalized);
     this.sessions.delete(normalized);
     if (session?.accessToken && globalThis.google?.accounts?.oauth2) {
       google.accounts.oauth2.revoke(session.accessToken, () => {});
     }
+    await this.notifyAccountsChanged();
   }
 
-  requireSession(slot) {
+  async updatePersistentAccount(slot) {
+    const normalized = normalizeSlot(slot);
+    const account = this.getAccount(normalized);
+    if (!this.credentialProvider || !account?.persistentId) return null;
+    const remote = await this.credentialProvider.updateAccount(
+      account.persistentId,
+      {
+        friendlyName: account.friendlyName || "",
+        legacySlot: normalized,
+      },
+    );
+    account.friendlyName = remote.friendlyName || "";
+    return remote;
+  }
+
+  async getValidSession(slot, { forceRefresh = false } = {}) {
     const normalized = normalizeSlot(slot);
     const session = this.sessions.get(normalized);
-    if (!session || session.expiresAt <= Date.now() + 60_000) {
-      this.sessions.delete(normalized);
-      throw new Error(
-        `Conecte ${normalized.toUpperCase()} ao Google Drive para continuar`,
-      );
+    if (!forceRefresh && session && session.expiresAt > Date.now() + 60_000) {
+      return session;
     }
-    return session;
+    this.sessions.delete(normalized);
+    const account = this.getAccount(normalized);
+    if (this.credentialProvider && account?.persistentId) {
+      if (!this.refreshPromises.has(normalized)) {
+        const refresh = this.credentialProvider
+          .getAccessToken(account.persistentId)
+          .then((token) => {
+            const next = {
+              accessToken: token.accessToken,
+              expiresAt: Number(token.expiresAt),
+              email: account.email,
+            };
+            this.sessions.set(normalized, next);
+            account.persistentAvailable = true;
+            return next;
+          })
+          .catch((error) => {
+            if (error.code === "reconnect_required") {
+              account.persistentAvailable = false;
+              this.onSessionInvalid?.(normalized, error);
+            }
+            throw error;
+          })
+          .finally(() => this.refreshPromises.delete(normalized));
+        this.refreshPromises.set(normalized, refresh);
+      }
+      return this.refreshPromises.get(normalized);
+    }
+    throw new Error(
+      `Conecte ${normalized.toUpperCase()} ao Google Drive para continuar`,
+    );
   }
 
-  async request(slot, url, options = {}) {
-    const session = this.requireSession(slot);
+  async request(slot, url, options = {}, allowRetry = true) {
+    const session = await this.getValidSession(slot);
     const headers = new Headers(options.headers || {});
     headers.set("Authorization", `Bearer ${session.accessToken}`);
     const response = await fetch(url, { ...options, headers });
@@ -219,6 +341,10 @@ export class GoogleDriveManager {
       if (response.status === 401) {
         const normalized = normalizeSlot(slot);
         this.sessions.delete(normalized);
+        if (allowRetry && this.getAccount(normalized)?.persistentAvailable) {
+          await this.getValidSession(normalized, { forceRefresh: true });
+          return this.request(normalized, url, options, false);
+        }
         this.onSessionInvalid?.(normalized, payload);
       }
       throw new Error(
@@ -389,32 +515,38 @@ export class GoogleDriveManager {
     return `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}${authUser}`;
   }
 
-  getBlob(slot, fileId) {
-    const session = this.requireSession(slot);
-    return fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    }).then(async (response) => {
-      if (!response.ok) {
-        const payload = await parseResponse(response);
-        if (response.status === 401) {
-          const normalized = normalizeSlot(slot);
-          this.sessions.delete(normalized);
-          this.onSessionInvalid?.(normalized, payload);
+  async getBlob(slot, fileId, allowRetry = true) {
+    const normalized = normalizeSlot(slot);
+    const session = await this.getValidSession(normalized);
+    const response = await fetch(
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
+      {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      },
+    );
+    if (!response.ok) {
+      const payload = await parseResponse(response);
+      if (response.status === 401) {
+        this.sessions.delete(normalized);
+        if (allowRetry && this.getAccount(normalized)?.persistentAvailable) {
+          await this.getValidSession(normalized, { forceRefresh: true });
+          return this.getBlob(normalized, fileId, false);
         }
-        throw new Error(
-          driveErrorMessage(
-            payload,
-            "Nao foi possivel baixar o arquivo do Drive",
-          ),
-        );
+        this.onSessionInvalid?.(normalized, payload);
       }
-      return response.blob();
-    });
+      throw new Error(
+        driveErrorMessage(
+          payload,
+          "Nao foi possivel baixar o arquivo do Drive",
+        ),
+      );
+    }
+    return response.blob();
   }
 
   async uploadFile(slot, file, parentId, { onProgress, onXhr } = {}) {
     const normalized = normalizeSlot(slot);
-    const session = this.requireSession(normalized);
+    const session = await this.getValidSession(normalized);
     if (!file.size)
       throw new Error(
         "O arquivo está vazio (0 B). Verifique o original no computador antes de enviar.",
@@ -470,7 +602,9 @@ export class GoogleDriveManager {
       { onProgress, onXhr },
     );
     if (!uploaded?.id)
-      throw new Error("O Drive não confirmou o arquivo enviado. Tente novamente.");
+      throw new Error(
+        "O Drive não confirmou o arquivo enviado. Tente novamente.",
+      );
     if (uploaded.size === undefined || Number(uploaded.size) !== file.size) {
       const confirmed = await this.getMetadata(normalized, uploaded.id);
       if (Number(confirmed.size) !== file.size)

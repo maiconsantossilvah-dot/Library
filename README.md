@@ -1,10 +1,10 @@
 # VAULT — biblioteca pessoal e mural visual
 
-Aplicativo estático, sem backend próprio: HTML, CSS, JavaScript e ícones **Lucide**. Os arquivos ficam no Google Drive; metadados, pastas e murais usam IndexedDB com sincronização direta para o Drive.
+Aplicativo de biblioteca pessoal em HTML, CSS, JavaScript e ícones **Lucide**. Os arquivos ficam no Google Drive; metadados, pastas e murais usam IndexedDB com sincronização direta para o Drive. O frontend permanece estático no GitHub Pages e pode usar um Cloudflare Worker gratuito para manter as Contas Google conectadas.
 
 ## Executar e gerar a versão estática
 
-A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build e sem backend**. O Lucide já está incluído em `vendor/`; publique `vendor/`, `modules/`, `styles/`, `assets/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
+A raiz pode ser publicada diretamente no GitHub Pages ou em outro servidor estático HTTPS, **sem build**. O backend persistente é opcional; o login OAuth antigo continua funcionando somente no navegador. O Lucide já está incluído em `vendor/`; publique `vendor/`, `modules/`, `styles/`, `assets/` e os demais arquivos do aplicativo. Não abra o HTML por `file://`.
 
 Para testar a raiz localmente, com Node.js 22 ou superior: `npm run dev:source`. Para desenvolver com o build otimizado:
 
@@ -74,10 +74,18 @@ Isso não é colaboração em tempo real nem um CRDT: edições concorrentes no 
 
 ## Configurar Google Drive
 
+### Conexão persistente recomendada
+
+O frontend pode continuar no GitHub Pages e usar Cloudflare Worker + D1 no plano gratuito. O Worker guarda refresh tokens com AES-256-GCM e entrega somente access tokens curtos ao navegador. Cada dispositivo usa uma chave não exportável para assinar suas chamadas; não depende de cookies de terceiros entre `github.io` e `workers.dev`.
+
+Siga o guia completo em [`docs/AUTENTICACAO-PERSISTENTE.md`](docs/AUTENTICACAO-PERSISTENTE.md).
+
+### Fallback somente no navegador
+
 1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), ative a Drive API e configure consentimento OAuth.
 2. Crie um cliente OAuth do tipo aplicativo Web. Cadastre a origem local ou publicada em **Origens JavaScript autorizadas**. Em modo de teste, cadastre os emails permitidos.
 3. Em Configurações do VAULT, informe o Client ID terminado em `.apps.googleusercontent.com` e salve.
-4. Na Central de contas, conecte até quatro contas. Os tokens ficam somente em memória; reconecte depois de reabrir o app ou expirar a sessão.
+4. Na Central de contas, conecte até quatro contas. Os tokens ficam somente em memória; neste modo legado, reconecte depois de reabrir o app ou expirar a sessão.
 
 O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limita o acesso aos arquivos disponibilizados ao aplicativo. Não é necessário criar Firebase nem fornecer um client secret. Os índices usam [propriedades privadas do Drive](https://developers.google.com/workspace/drive/api/guides/properties).
 
@@ -113,13 +121,15 @@ styles/legacy.css         estilos antigos isolados para migração gradual
 modules/interface.js      diálogos, foco, navegação móvel e acessibilidade
 modules/icons.js          conjunto Lucide compartilhado
 modules/local-store.js    IndexedDB, revisões e sincronização
-modules/google-drive.js   OAuth e Drive API
+modules/google-drive.js   sessões, renovação e Drive API
+modules/drive-credential-provider.js sessão persistente assinada com o Worker
 modules/mural.js           interface, notas e conexões dos murais
 modules/board-model.js     geometria, conexões e enquadramento
 modules/legacy-import.js  migração opcional e somente leitura
 modules/pwa.js             atualização explícita do aplicativo
 scripts/                  build e servidor estático de desenvolvimento
 tests/                    persistência, conflitos, mural e acessibilidade
+backend/                  Worker, migrations D1 e testes de autenticação
 ```
 
 O PWA busca HTML pela rede com fallback offline, preserva assets versionados e oferece **Atualizar aplicativo**. A atualização espera operações ativas terminarem. O shell offline não torna fotos, vídeos e integrações externas automaticamente disponíveis offline.

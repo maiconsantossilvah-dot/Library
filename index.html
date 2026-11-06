@@ -1287,7 +1287,7 @@
         </p>
         <div class="config-fields">
           <section class="config-step local-first-intro">
-            <p class="cfg-section-label">Seu acervo, sem servidor próprio</p>
+            <p class="cfg-section-label">Seu acervo, com controle local</p>
             <p>
               Os metadados ficam neste navegador e são sincronizados com seu
               Google Drive quando a conta está conectada. Os arquivos continuam
@@ -1335,18 +1335,37 @@
             </details>
           </section>
           <section class="config-step drive-config-step">
-            <p class="cfg-section-label">
-              Google Drive · necessário para enviar arquivos
-            </p>
-            <label class="field-label" for="cfg_googleClientId"
-              >OAuth Client ID
+            <p class="cfg-section-label">Google Drive · conexão persistente</p>
+            <label class="field-label" for="cfg_persistentAuthApiUrl"
+              >URL da API privada do VAULT
               <input
                 class="modal-input"
-                id="cfg_googleClientId"
-                placeholder="000000000000-xxx.apps.googleusercontent.com"
+                id="cfg_persistentAuthApiUrl"
+                type="url"
+                placeholder="https://vault-auth.seu-subdominio.workers.dev"
                 autocomplete="off"
               />
             </label>
+            <p>
+              A API gratuita renova o acesso sem guardar tokens do Google neste
+              navegador. A URL não é uma credencial secreta.
+            </p>
+            <details>
+              <summary>Login antigo somente no navegador</summary>
+              <p>
+                Use apenas como fallback. Este modo precisa ser reconectado
+                quando o token expira ou o navegador é fechado.
+              </p>
+              <label class="field-label" for="cfg_googleClientId"
+                >OAuth Client ID
+                <input
+                  class="modal-input"
+                  id="cfg_googleClientId"
+                  placeholder="000000000000-xxx.apps.googleusercontent.com"
+                  autocomplete="off"
+                />
+              </label>
+            </details>
             <div class="config-account-link">
               <span
                 >Emails, nomes e estado das contas ficam na Central de
@@ -1404,15 +1423,15 @@
           </button>
         </div>
         <p class="config-help">
-          Drive:
+          Conexão persistente:
           <a
             href="https://console.cloud.google.com/apis/credentials"
             target="_blank"
             rel="noopener noreferrer"
             >Google Cloud Console</a
           >
-          > ative a Google Drive API > crie um Cliente OAuth para aplicativo Web
-          e cadastre a URL deste VAULT como origem JavaScript autorizada.
+          > ative a Google Drive API e configure o Worker conforme a
+          documentação do projeto. O Client Secret fica somente no Worker.
         </p>
       </div>
     </div>
@@ -1569,7 +1588,8 @@
               Central de etiquetas
             </h2>
             <p class="tag-modal-context">
-              Alterações são aplicadas a todos os arquivos e pastas que usam a etiqueta.
+              Alterações são aplicadas a todos os arquivos e pastas que usam a
+              etiqueta.
             </p>
           </div>
           <button
@@ -1585,7 +1605,10 @@
         <div class="tag-manager-toolbar">
           <div class="tag-manager-summary">
             <strong id="tagManagerStats">0 etiquetas</strong>
-            <span>Novas etiquetas são criadas ao etiquetar um arquivo ou pasta.</span>
+            <span
+              >Novas etiquetas são criadas ao etiquetar um arquivo ou
+              pasta.</span
+            >
           </div>
           <label class="sr-only" for="tagManagerSearch">Buscar etiqueta</label>
           <input

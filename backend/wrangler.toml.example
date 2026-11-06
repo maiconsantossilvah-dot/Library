@@ -1,0 +1,18 @@
+name = "vault-auth"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+FRONTEND_ORIGIN = "https://SEU-USUARIO.github.io"
+OAUTH_REDIRECT_URI = "https://vault-auth.SEU-SUBDOMINIO.workers.dev/api/oauth/callback"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vault-auth"
+database_id = "COLE-O-ID-DO-D1-AQUI"
+
+# Configure com `wrangler secret put`, nunca neste arquivo:
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# TOKEN_ENCRYPTION_KEY
+# VAULT_OWNER_GOOGLE_SUB (recomendado) ou VAULT_OWNER_EMAIL (bootstrap)
