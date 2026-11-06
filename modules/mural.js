@@ -176,6 +176,11 @@ export function createMural(api) {
   }
   async function createBoard() {
     await init();
+    const accounts = api.getAccounts();
+    if (!accounts.length) {
+      api.toast("Adicione uma Conta Google antes de criar um mural.", "error");
+      return;
+    }
     const values = await api.askFields({
       title: "Novo mural",
       fields: [
@@ -190,8 +195,8 @@ export function createMural(api) {
           name: "accountSlot",
           label: "Conta para sincronizar os metadados",
           type: "select",
-          value: "ac1",
-          options: api.getAccounts().map((a) => ({
+          value: accounts[0].slot,
+          options: accounts.map((a) => ({
             value: a.slot,
             label:
               (a.friendlyName || a.email || a.slot.toUpperCase()) +

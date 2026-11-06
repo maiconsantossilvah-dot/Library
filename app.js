@@ -38,6 +38,7 @@ import {
 import { readPhotoMetadata } from "./modules/photo-metadata.js";
 import {
   GoogleDriveManager,
+  isDriveAccountSlot,
   isGoogleDriveRecord,
   drivePreviewUrl,
   driveViewUrl,
@@ -296,6 +297,7 @@ const accountsGrid = $("accountsGrid");
 const accountsSummary = $("accountsSummary");
 const accountsSearch = $("accountsSearch");
 const accountsFilter = $("accountsFilter");
+const addDriveAccountBtn = $("addDriveAccountBtn");
 const accountsEmpty = $("accountsEmpty");
 const accountsLiveRegion = $("accountsLiveRegion");
 const accountReviewBanner = $("accountReviewBanner");
@@ -517,7 +519,7 @@ queueMicrotask(async () => {
   else refreshLegacyNotice();
   if (!savedCfg) openConfigModal(false);
   qualitySelect.value = thumbQuality;
-  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView)
+  accountViewSelect.value = isDriveAccountSlot(activeAccountView)
     ? activeAccountView
     : "all";
   activeAccountView = accountViewSelect.value;
@@ -543,11 +545,13 @@ function prefillConfig(cfg) {
 }
 
 function normalizeDriveAccounts(accounts = []) {
-  return Array.from({ length: 4 }, (_, index) => {
-    const slot = `ac${index + 1}`;
-    const account =
-      accounts.find((item) => item?.slot === slot) || accounts[index] || {};
-    return {
+  const bySlot = new Map();
+  accounts.forEach((account, index) => {
+    if (!account || typeof account !== "object") return;
+    const slot = isDriveAccountSlot(account.slot)
+      ? account.slot.toLowerCase()
+      : `ac${index + 1}`;
+    const normalized = {
       slot,
       email: account.email || "",
       friendlyName: account.friendlyName || "",
@@ -556,14 +560,47 @@ function normalizeDriveAccounts(accounts = []) {
       lastCheckedAt: account.lastCheckedAt || "",
       quota: account.quota || null,
       persistentId: account.persistentId || "",
+      draft: !!account.draft,
     };
+    if (
+      !normalized.draft &&
+      !normalized.email &&
+      !normalized.friendlyName &&
+      !normalized.rootFolderId &&
+      !normalized.lastConnectedAt &&
+      !normalized.lastCheckedAt &&
+      !normalized.quota &&
+      !normalized.persistentId
+    )
+      return;
+    bySlot.set(slot, normalized);
+  });
+  return [...bySlot.values()].sort((left, right) => {
+    const leftNumber = BigInt(left.slot.slice(2));
+    const rightNumber = BigInt(right.slot.slice(2));
+    return leftNumber < rightNumber ? -1 : leftNumber > rightNumber ? 1 : 0;
   });
 }
 
+function accountSequenceFrom(accounts = [], savedSequence = 0) {
+  let highest = 0n;
+  try {
+    highest = BigInt(savedSequence || 0);
+  } catch {}
+  accounts.forEach((account, index) => {
+    const slot = isDriveAccountSlot(account?.slot)
+      ? account.slot.toLowerCase()
+      : `ac${index + 1}`;
+    const sequence = BigInt(slot.slice(2));
+    if (sequence > highest) highest = sequence;
+  });
+  return highest.toString();
+}
+
 function configFromForm() {
-  const previousAccounts = normalizeDriveAccounts(
-    currentConfig?.driveAccounts || savedCfg?.driveAccounts || [],
-  );
+  const rawAccounts =
+    currentConfig?.driveAccounts || savedCfg?.driveAccounts || [];
+  const previousAccounts = normalizeDriveAccounts(rawAccounts);
   return {
     ...(currentConfig || savedCfg || {}),
     googleClientId: $("cfg_googleClientId").value.trim(),
@@ -571,6 +608,10 @@ function configFromForm() {
       .value.trim()
       .replace(/\/$/, ""),
     driveAccounts: previousAccounts,
+    driveAccountSequence: accountSequenceFrom(
+      rawAccounts,
+      currentConfig?.driveAccountSequence || savedCfg?.driveAccountSequence,
+    ),
     cloudName: $("cfg_cloudName").value.trim(),
     uploadPreset: $("cfg_uploadPreset").value.trim(),
   };
@@ -613,11 +654,12 @@ function updateConnectionStatus() {
   if (!connectionStatus) return;
   const online = navigator.onLine;
   connectionStatus.dataset.state = online ? "online" : "offline";
-  const connected =
-    driveManager?.getAccounts().filter((account) => account.connected).length ||
-    0;
+  const accounts = driveManager?.getAccounts() || [];
+  const connected = accounts.filter((account) => account.connected).length;
   connectionStatus.textContent = online
-    ? `Online · ${connected}/4 Drive`
+    ? accounts.length
+      ? `Online · ${connected}/${accounts.length} Drive`
+      : "Online · adicione uma conta"
     : "Sem conexão";
   refreshSyncStatus();
 }
@@ -829,12 +871,17 @@ async function initApp(cfg) {
       ...cfg,
       persistentAuthApiUrl,
       driveAccounts: normalizeDriveAccounts(cfg.driveAccounts),
+      driveAccountSequence: accountSequenceFrom(
+        cfg.driveAccounts,
+        cfg.driveAccountSequence,
+      ),
     };
     if (!driveManager) {
       driveManager = new GoogleDriveManager({
         clientId: googleClientId,
         authApiUrl: persistentAuthApiUrl,
         accounts: currentConfig.driveAccounts,
+        accountSequence: currentConfig.driveAccountSequence,
         onAccountsChange: persistDriveAccounts,
         onSessionInvalid: handleDriveSessionInvalid,
       });
@@ -843,6 +890,7 @@ async function initApp(cfg) {
         clientId: googleClientId,
         authApiUrl: persistentAuthApiUrl,
         accounts: currentConfig.driveAccounts,
+        accountSequence: currentConfig.driveAccountSequence,
       });
     }
 
@@ -916,7 +964,7 @@ $("saveConfig").onclick = async () => {
   if (connected && getLegacyConfig()) runLegacyMigration();
   if (connected && (cfg.persistentAuthApiUrl || cfg.googleClientId)) {
     openAccountsModal(accountConnectBtn);
-    showToast("Configuracao salva. Agora revise Ac1 a Ac4.", "success");
+    showToast("Configuração salva. Agora revise suas contas.", "success");
   }
 };
 
@@ -924,6 +972,12 @@ async function persistDriveAccounts(accounts) {
   currentConfig = {
     ...(currentConfig || configFromForm()),
     driveAccounts: normalizeDriveAccounts(accounts),
+    driveAccountSequence:
+      driveManager?.getAccountSequence?.() ||
+      accountSequenceFrom(
+        accounts,
+        currentConfig?.driveAccountSequence || savedCfg?.driveAccountSequence,
+      ),
   };
   saveConfig(currentConfig);
   renderAccountControls();
@@ -937,9 +991,9 @@ async function persistDriveAccounts(accounts) {
 function accountLabel(slot, includeEmail = true) {
   const account =
     driveManager?.getAccount(slot) ||
-    normalizeDriveAccounts(currentConfig?.driveAccounts)[
-      Number(slot?.slice(-1) || 1) - 1
-    ];
+    normalizeDriveAccounts(currentConfig?.driveAccounts).find(
+      (item) => item.slot === String(slot || "").toLowerCase(),
+    );
   const tag = slotTag(slot);
   const identity =
     account?.friendlyName || (includeEmail ? account?.email : "");
@@ -949,9 +1003,9 @@ function accountLabel(slot, includeEmail = true) {
 function accountFullLabel(slot) {
   const account =
     driveManager?.getAccount(slot) ||
-    normalizeDriveAccounts(currentConfig?.driveAccounts)[
-      Number(slot?.slice(-1) || 1) - 1
-    ];
+    normalizeDriveAccounts(currentConfig?.driveAccounts).find(
+      (item) => item.slot === String(slot || "").toLowerCase(),
+    );
   const parts = [slotTag(slot), account?.friendlyName, account?.email].filter(
     Boolean,
   );
@@ -960,7 +1014,9 @@ function accountFullLabel(slot) {
 
 function slotTag(slot) {
   const value = String(slot || "").toLowerCase();
-  return /^ac[1-4]$/.test(value) ? `Ac${value.slice(-1)}` : value.toUpperCase();
+  return isDriveAccountSlot(value)
+    ? `Ac${value.slice(2)}`
+    : value.toUpperCase();
 }
 
 function renderAccountControls() {
@@ -975,9 +1031,15 @@ function renderAccountControls() {
         `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : ""}</option>`,
     ),
   ].join("");
-  accountViewSelect.value = /^ac[1-4]$/.test(activeAccountView)
+  const requestedView = isDriveAccountSlot(activeAccountView)
     ? activeAccountView
     : "all";
+  accountViewSelect.value = accounts.some(
+    (account) => account.slot === requestedView,
+  )
+    ? requestedView
+    : "all";
+  activeAccountView = accountViewSelect.value;
   accountConnectBtn.textContent =
     activeAccountView === "all"
       ? "Central de contas"
@@ -1014,9 +1076,9 @@ function handleDriveSessionInvalid(slot) {
 function accountState(slot) {
   const account =
     driveManager?.getAccount(slot) ||
-    normalizeDriveAccounts(currentConfig?.driveAccounts)[
-      Number(slot.slice(-1)) - 1
-    ];
+    normalizeDriveAccounts(currentConfig?.driveAccounts).find(
+      (item) => item.slot === String(slot || "").toLowerCase(),
+    );
   const runtime = accountRuntime(slot);
   if (!currentConfig?.persistentAuthApiUrl && !currentConfig?.googleClientId)
     return {
@@ -1132,7 +1194,9 @@ function renderAccountCenter() {
       accountState(account.slot).key,
     ),
   ).length;
-  accountsSummary.textContent = `${connectedCount} de 4 contas disponíveis${persistentAuthApiUrl ? " com renovação automática" : " nesta sessão"}${attentionCount ? ` · ${attentionCount} precisam de atenção` : ""}.`;
+  accountsSummary.textContent = accounts.length
+    ? `${connectedCount} de ${accounts.length} ${accounts.length === 1 ? "conta disponível" : "contas disponíveis"}${persistentAuthApiUrl ? " com renovação automática" : " nesta sessão"}${attentionCount ? ` · ${attentionCount} ${attentionCount === 1 ? "precisa" : "precisam"} de atenção` : ""}.`
+    : "Nenhuma conta adicionada. Conecte quantas Contas Google precisar.";
   accountsGrid.innerHTML = visibleAccounts
     .map((account) => {
       const state = accountState(account.slot);
@@ -1145,6 +1209,7 @@ function renderAccountCenter() {
           : account.email
             ? "Reconectar"
             : "Conectar";
+      const canRemove = !canOpen && !account.persistentId && stats.count === 0;
       return `<article class="drive-account-card" data-slot="${account.slot}" data-state="${state.key}" data-busy="${accountRuntime(account.slot).busy}" aria-busy="${accountRuntime(account.slot).busy}">
       <div class="account-card-heading">
         <span class="account-badge">${slotTag(account.slot)}</span>
@@ -1166,11 +1231,22 @@ function renderAccountCenter() {
         <button class="account-open-drive" type="button" ${canOpen ? "" : "disabled"}>Abrir VAULT no Drive</button>
         <button class="account-check-action" type="button" ${canOpen ? "" : "disabled"}>Verificar</button>
         ${account.persistentId ? '<button class="account-disconnect-action" type="button">Desconectar</button>' : ""}
+        ${canRemove ? '<button class="account-remove-action" type="button">Remover</button>' : ""}
       </div>
     </article>`;
     })
     .join("");
   accountsEmpty.hidden = visibleAccounts.length > 0;
+  if (!visibleAccounts.length) {
+    accountsEmpty.innerHTML = accounts.length
+      ? "<strong>Nenhuma conta encontrada</strong><span>Altere a busca ou os filtros para ver suas contas.</span>"
+      : '<strong>Conecte sua primeira conta</strong><span>A Central cresce com você e não possui limite de contas.</span><button class="modal-btn confirm accounts-empty-add" type="button">Adicionar conta</button>';
+    accountsEmpty
+      .querySelector(".accounts-empty-add")
+      ?.addEventListener("click", (event) =>
+        addDriveAccount(event.currentTarget),
+      );
+  }
   bindAccountCardActions();
   updateConnectionStatus();
 }
@@ -1248,7 +1324,49 @@ function bindAccountCardActions() {
         }
       };
     }
+    const removeButton = card.querySelector(".account-remove-action");
+    if (removeButton) {
+      removeButton.onclick = async () => {
+        const confirmed = await openConfirmDialog({
+          title: `Remover ${slotTag(slot)} da Central`,
+          message:
+            "Este espaço vazio será removido da Central. Nenhum arquivo do Google Drive será apagado.",
+          confirmText: "Remover",
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          await driveManager.removeAccount(slot);
+          driveAccountRuntime.delete(slot);
+          if (activeAccountView === slot) activeAccountView = "all";
+          renderAccountControls();
+          renderAccountCenter();
+          showToast(`${slotTag(slot)} removida da Central`, "success");
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      };
+    }
   });
+}
+
+async function addDriveAccount(trigger = document.activeElement) {
+  if (!driveManager) {
+    openConfigModal(true);
+    return;
+  }
+  try {
+    const account = await driveManager.addAccount();
+    renderAccountControls();
+    renderAccountCenter();
+    announceAccount(`${slotTag(account.slot)} adicionada. Abrindo o Google.`);
+    const connectButton = accountsGrid?.querySelector(
+      `[data-slot="${account.slot}"] .account-primary-action`,
+    );
+    await connectDriveSlot(account.slot, connectButton || trigger);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function openAccountsModal(returnFocus = document.activeElement) {
@@ -1291,7 +1409,7 @@ function friendlyDriveError(
   const code = String(error?.code || "");
   const tag = slot ? slotTag(slot) : "a conta";
   const wrongAccount = raw.match(
-    /A conta escolhida foi ([^,]+), mas (AC[1-4]) esta configurada como (.+)$/i,
+    /A conta escolhida foi ([^,]+), mas (AC[1-9]\d*) esta configurada como (.+)$/i,
   );
   if (wrongAccount)
     return `Você escolheu ${wrongAccount[1]}, mas ${slotTag(wrongAccount[2].toLowerCase())} está configurada para ${wrongAccount[3]}. Escolha a conta correta ou altere o email de ${slotTag(wrongAccount[2].toLowerCase())}.`;
@@ -1470,9 +1588,9 @@ async function openDriveRoot(slot, trigger) {
 }
 
 function problemAccountSlots() {
-  return ["ac1", "ac2", "ac3", "ac4"].filter(
-    (slot) => accountState(slot).key !== "connected",
-  );
+  return (driveManager?.getAccounts() || [])
+    .map((account) => account.slot)
+    .filter((slot) => accountState(slot).key !== "connected");
 }
 
 function startAccountReview() {
@@ -1524,6 +1642,9 @@ accountsFilter?.addEventListener("change", () => {
   renderAccountCenter();
 });
 $("reviewAccountsBtn")?.addEventListener("click", startAccountReview);
+addDriveAccountBtn?.addEventListener("click", (event) =>
+  addDriveAccount(event.currentTarget),
+);
 accountReviewAction?.addEventListener("click", (event) => {
   const slot = accountReviewQueue[0];
   if (!slot) return;
@@ -1713,11 +1834,11 @@ function getFolderChildren(parentId = ROOT_ID) {
 
 function recordAccountSlot(record) {
   const explicit = String(record?.accountSlot || "").toLowerCase();
-  if (/^ac[1-4]$/.test(explicit)) return explicit;
+  if (isDriveAccountSlot(explicit)) return explicit;
   const parentSlot = record?.folderId
     ? String(getFolder(record.folderId)?.accountSlot || "").toLowerCase()
     : "";
-  return /^ac[1-4]$/.test(parentSlot) ? parentSlot : "legacy";
+  return isDriveAccountSlot(parentSlot) ? parentSlot : "legacy";
 }
 
 function matchesAccountView(record) {
@@ -4303,7 +4424,11 @@ function openFolderCreateDialog(parentId = navState.folderId) {
       : "Crie uma pasta principal para o seu acervo.";
   const inheritedSlot = parent ? recordAccountSlot(parent) : "";
   folderAccountField.hidden = !!parent;
-  folderAccountSelect.innerHTML = ["ac1", "ac2", "ac3", "ac4"]
+  const accountSlots = (driveManager?.getAccounts() || []).map(
+    (account) => account.slot,
+  );
+  if (!accountSlots.length) accountSlots.push("ac1");
+  folderAccountSelect.innerHTML = accountSlots
     .map(
       (slot) =>
         `<option value="${slot}">${esc(accountLabel(slot))}${driveManager?.isConnected(slot) ? " ✓" : ""}</option>`,
@@ -4314,7 +4439,7 @@ function openFolderCreateDialog(parentId = navState.folderId) {
       ? inheritedSlot
       : activeAccountView !== "all"
         ? activeAccountView
-        : "ac1";
+        : accountSlots[0];
   folderNameInput.value = "";
   updateFolderDestinationPreview();
   folderModal.classList.add("active");
@@ -4350,7 +4475,8 @@ async function copyFileToAnotherAccount(file) {
     openAccountsModal();
     return;
   }
-  const targetOptions = ["ac1", "ac2", "ac3", "ac4"]
+  const targetOptions = (driveManager?.getAccounts() || [])
+    .map((account) => account.slot)
     .filter((slot) => slot !== sourceSlot)
     .map((slot) => ({
       value: slot,
@@ -4663,7 +4789,7 @@ async function ensureFolderOnDrive(folder, targetSlot = "") {
   if (!folder) throw new Error("Pasta nao encontrada");
   let accountSlot = recordAccountSlot(folder);
   if (accountSlot === "legacy") accountSlot = targetSlot;
-  if (!/^ac[1-4]$/.test(accountSlot))
+  if (!isDriveAccountSlot(accountSlot))
     throw new Error("Escolha a conta do Drive para esta pasta");
   if (targetSlot && accountSlot !== targetSlot)
     throw new Error(`A pasta pertence a ${accountSlot.toUpperCase()}`);
@@ -7908,7 +8034,7 @@ function updateStorageUI() {
   storageBar.style.width = pct.toFixed(2) + "%";
   storageText.textContent = hasQuota
     ? `${fmtSize(total)} de ${fmtSize(MAX)} no Google${activeAccountView === "all" ? "" : ` · ${slotTag(activeAccountView)}`}`
-    : `${fmtSize(acervoTotal)} no acervo${activeAccountView === "all" ? " das 4 contas" : ` · ${slotTag(activeAccountView)}`}`;
+    : `${fmtSize(acervoTotal)} no acervo${activeAccountView === "all" ? ` de ${visibleAccounts.length} ${visibleAccounts.length === 1 ? "conta" : "contas"}` : ` · ${slotTag(activeAccountView)}`}`;
 }
 
 function scheduleDashboardUpdate() {

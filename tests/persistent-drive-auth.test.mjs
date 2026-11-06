@@ -121,3 +121,51 @@ test("restauração associa contas persistentes aos slots legados", async () => 
   assert.equal(manager.getAccount("ac1").email, "persistente@example.com");
   assert.equal(manager.getAccount("ac1").friendlyName, "Fotos pessoais");
 });
+
+test("contas crescem além de Ac4 sem recriar cartões legados vazios", async () => {
+  const changes = [];
+  const manager = new GoogleDriveManager({
+    accounts: [
+      { slot: "ac1", email: "principal@example.com" },
+      { slot: "ac2" },
+      { slot: "ac3" },
+      { slot: "ac4" },
+    ],
+    onAccountsChange: async (accounts) => changes.push(accounts),
+  });
+
+  assert.deepEqual(
+    manager.getAccounts().map((account) => account.slot),
+    ["ac1"],
+  );
+  const fifth = await manager.addAccount();
+  const sixth = await manager.addAccount();
+  assert.equal(fifth.slot, "ac5");
+  assert.equal(sixth.slot, "ac6");
+  assert.equal(manager.getAccountSequence(), "6");
+  assert.equal(changes.length, 2);
+});
+
+test("restauração inclui contas dinâmicas existentes apenas no backend", async () => {
+  const manager = new GoogleDriveManager({
+    accounts: [{ slot: "ac1", email: "principal@example.com" }],
+  });
+  manager.credentialProvider = {
+    getSession: async () => ({ authenticated: true }),
+    listAccounts: async () => [
+      {
+        id: "remote-12",
+        email: "arquivo@example.com",
+        friendlyName: "Arquivo",
+        legacySlot: "ac12",
+        updatedAt: Date.now(),
+        revokedAt: null,
+      },
+    ],
+  };
+
+  await manager.restorePersistentConnections();
+  assert.equal(manager.isConnected("ac12"), true);
+  assert.equal(manager.getAccount("ac12").email, "arquivo@example.com");
+  assert.equal(manager.getAccountSequence(), "12");
+});

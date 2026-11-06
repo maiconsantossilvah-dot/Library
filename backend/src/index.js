@@ -15,6 +15,7 @@ import {
   frontendOrigin,
   html,
   HttpError,
+  isAccountSlot,
   json,
   noContent,
   readJson,
@@ -156,7 +157,7 @@ async function handleApi(request, env) {
   if (!route.action && request.method === "PATCH") {
     const body = await readJson(request);
     const legacySlot = String(body.legacySlot || "").toLowerCase();
-    if (!/^ac[1-4]$/.test(legacySlot)) {
+    if (!isAccountSlot(legacySlot)) {
       throw new HttpError(400, "invalid_legacy_slot", "Slot inválido");
     }
     const updated = await updateDriveAccount(

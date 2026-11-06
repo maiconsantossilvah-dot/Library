@@ -7,7 +7,12 @@ import {
   upsertDriveAccount,
   upsertOwner,
 } from "./database.js";
-import { frontendOrigin, HttpError, popupResultHtml } from "./http.js";
+import {
+  frontendOrigin,
+  HttpError,
+  isAccountSlot,
+  popupResultHtml,
+} from "./http.js";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -91,7 +96,7 @@ export async function startOwnerAuthorization(env, body) {
 
 export async function startDriveAuthorization(env, session, body) {
   const legacySlot = String(body.legacySlot || "").toLowerCase();
-  if (!/^ac[1-4]$/.test(legacySlot)) {
+  if (!isAccountSlot(legacySlot)) {
     throw new HttpError(400, "invalid_legacy_slot", "Slot de conta inválido");
   }
   const { rawState, challenge } = await createState(env, {

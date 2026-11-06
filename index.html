@@ -673,10 +673,6 @@
                   title="Visualizar uma conta ou todas"
                 >
                   <option value="all">Todas as contas</option>
-                  <option value="ac1">Ac1</option>
-                  <option value="ac2">Ac2</option>
-                  <option value="ac3">Ac3</option>
-                  <option value="ac4">Ac4</option>
                 </select>
                 <button
                   class="utility-btn activity-center-btn"
@@ -1168,12 +1164,7 @@
           id="folderAccountField"
           for="folderAccountSelect"
           >Conta do Drive
-          <select class="modal-input" id="folderAccountSelect">
-            <option value="ac1">Ac1</option>
-            <option value="ac2">Ac2</option>
-            <option value="ac3">Ac3</option>
-            <option value="ac4">Ac4</option>
-          </select>
+          <select class="modal-input" id="folderAccountSelect"></select>
         </label>
         <div
           class="destination-preview"
@@ -1303,8 +1294,8 @@
               <p>
                 Lê arquivos e pastas do Firebase, preserva os IDs e envia os
                 metadados às contas Drive conectadas. Não apaga a origem nem
-                duplica fotos e vídeos. Use as mesmas contas e posições Ac1–Ac4
-                da versão anterior.
+                duplica fotos e vídeos. Os identificadores Ac1–Ac4 da versão
+                anterior são preservados automaticamente.
               </p>
               <label class="field-label" for="cfg_firebaseProjectId"
                 >Project ID do Firebase
@@ -1782,17 +1773,28 @@
               Central de contas
             </h2>
             <p class="accounts-summary" id="accountsSummary">
-              Gerencie Ac1 a Ac4 e acompanhe a sincronização.
+              Conecte quantas Contas Google precisar e acompanhe a
+              sincronização.
             </p>
           </div>
-          <button
-            class="modal-icon-btn"
-            id="closeAccountsModal"
-            type="button"
-            aria-label="Fechar Central de contas"
-          >
-            <span data-icon="X"></span>
-          </button>
+          <div class="accounts-header-actions">
+            <button
+              class="modal-btn confirm add-drive-account-btn"
+              id="addDriveAccountBtn"
+              type="button"
+            >
+              <span data-icon="Plus"></span>
+              Adicionar conta
+            </button>
+            <button
+              class="modal-icon-btn"
+              id="closeAccountsModal"
+              type="button"
+              aria-label="Fechar Central de contas"
+            >
+              <span data-icon="X"></span>
+            </button>
+          </div>
         </header>
 
         <div class="accounts-toolbar">
@@ -1842,9 +1844,9 @@
         </section>
 
         <div class="accounts-grid" id="accountsGrid"></div>
-        <p class="accounts-empty" id="accountsEmpty" hidden>
+        <div class="accounts-empty" id="accountsEmpty" hidden>
           Nenhuma conta corresponde à busca.
-        </p>
+        </div>
         <div
           class="sr-only"
           id="accountsLiveRegion"

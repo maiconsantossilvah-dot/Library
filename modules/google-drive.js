@@ -7,6 +7,7 @@ const DRIVE_SCOPE = [
   "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const ACCOUNT_SLOT_PATTERN = /^ac[1-9]\d{0,61}$/;
 
 let identityPromise;
 
@@ -35,10 +36,90 @@ function loadGoogleIdentity() {
   return identityPromise;
 }
 
+export function isDriveAccountSlot(slot) {
+  return ACCOUNT_SLOT_PATTERN.test(String(slot || "").toLowerCase());
+}
+
 function normalizeSlot(slot) {
   const value = String(slot || "").toLowerCase();
-  if (!/^ac[1-4]$/.test(value)) throw new Error("Conta do Drive invalida");
+  if (!isDriveAccountSlot(value)) throw new Error("Conta do Drive invalida");
   return value;
+}
+
+function slotSequence(slot) {
+  return isDriveAccountSlot(slot) ? BigInt(String(slot).slice(2)) : 0n;
+}
+
+function compareAccountSlots(left, right) {
+  const leftSequence = slotSequence(left?.slot || left);
+  const rightSequence = slotSequence(right?.slot || right);
+  return leftSequence < rightSequence
+    ? -1
+    : leftSequence > rightSequence
+      ? 1
+      : 0;
+}
+
+function accountHasDetails(account = {}) {
+  return !!(
+    account.draft ||
+    account.email ||
+    account.friendlyName ||
+    account.rootFolderId ||
+    account.lastConnectedAt ||
+    account.lastCheckedAt ||
+    account.quota ||
+    account.persistentId
+  );
+}
+
+function normalizeAccount(account = {}, fallbackSlot = "") {
+  const slot = isDriveAccountSlot(account.slot)
+    ? String(account.slot).toLowerCase()
+    : normalizeSlot(fallbackSlot);
+  return {
+    slot,
+    email: account.email || "",
+    friendlyName: account.friendlyName || "",
+    rootFolderId: account.rootFolderId || "",
+    lastConnectedAt: account.lastConnectedAt || "",
+    lastCheckedAt: account.lastCheckedAt || "",
+    quota: account.quota || null,
+    persistentId: account.persistentId || "",
+    persistentAvailable: !!account.persistentAvailable,
+    draft: !!account.draft,
+  };
+}
+
+function normalizeAccounts(accounts = []) {
+  const bySlot = new Map();
+  accounts.forEach((account, index) => {
+    if (!account || typeof account !== "object") return;
+    const fallbackSlot = `ac${index + 1}`;
+    const normalized = normalizeAccount(account, fallbackSlot);
+    if (!accountHasDetails(normalized)) return;
+    bySlot.set(normalized.slot, normalized);
+  });
+  return [...bySlot.values()].sort(compareAccountSlots);
+}
+
+function normalizeSequence(value) {
+  try {
+    const sequence = BigInt(value || 0);
+    return sequence > 0n ? sequence : 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+function highestAccountSequence(accounts = [], fallback = 0n) {
+  return accounts.reduce((highest, account, index) => {
+    const slot = isDriveAccountSlot(account?.slot)
+      ? account.slot
+      : `ac${index + 1}`;
+    const sequence = slotSequence(slot);
+    return sequence > highest ? sequence : highest;
+  }, normalizeSequence(fallback));
 }
 
 function driveErrorMessage(payload, fallback) {
@@ -61,6 +142,7 @@ export class GoogleDriveManager {
     clientId = "",
     authApiUrl = "",
     accounts = [],
+    accountSequence = 0,
     onAccountsChange,
     onSessionInvalid,
   } = {}) {
@@ -69,31 +151,23 @@ export class GoogleDriveManager {
     this.credentialProvider = authApiUrl
       ? new PersistentDriveCredentialProvider({ apiBase: authApiUrl })
       : null;
-    this.accounts = Array.from({ length: 4 }, (_, index) => {
-      const slot = `ac${index + 1}`;
-      const saved =
-        accounts.find((account) => account.slot === slot) ||
-        accounts[index] ||
-        {};
-      return {
-        slot,
-        email: saved.email || "",
-        friendlyName: saved.friendlyName || "",
-        rootFolderId: saved.rootFolderId || "",
-        lastConnectedAt: saved.lastConnectedAt || "",
-        lastCheckedAt: saved.lastCheckedAt || "",
-        quota: saved.quota || null,
-        persistentId: saved.persistentId || "",
-        persistentAvailable: false,
-      };
-    });
+    this.accountSequence = highestAccountSequence(
+      accounts,
+      normalizeSequence(accountSequence),
+    );
+    this.accounts = normalizeAccounts(accounts);
     this.onAccountsChange = onAccountsChange;
     this.onSessionInvalid = onSessionInvalid;
     this.sessions = new Map();
     this.refreshPromises = new Map();
   }
 
-  configure({ clientId = "", authApiUrl = "", accounts = [] } = {}) {
+  configure({
+    clientId = "",
+    authApiUrl = "",
+    accounts = [],
+    accountSequence = 0,
+  } = {}) {
     this.clientId = clientId;
     if (authApiUrl !== this.authApiUrl) {
       this.authApiUrl = authApiUrl;
@@ -103,29 +177,53 @@ export class GoogleDriveManager {
       this.sessions.clear();
       this.refreshPromises.clear();
     }
+    this.accountSequence = highestAccountSequence(
+      accounts,
+      this.accountSequence > normalizeSequence(accountSequence)
+        ? this.accountSequence
+        : normalizeSequence(accountSequence),
+    );
     const previous = new Map(
       this.accounts.map((account) => [account.slot, account]),
     );
-    this.accounts = Array.from({ length: 4 }, (_, index) => {
-      const slot = `ac${index + 1}`;
-      const incoming =
-        accounts.find((account) => account.slot === slot) ||
-        accounts[index] ||
-        {};
-      const saved = previous.get(slot) || {};
+    this.accounts = normalizeAccounts(accounts).map((incoming) => {
+      const saved = previous.get(incoming.slot) || {};
       return {
-        slot,
-        email: incoming.email ?? saved.email ?? "",
-        friendlyName: incoming.friendlyName ?? saved.friendlyName ?? "",
-        rootFolderId: incoming.rootFolderId ?? saved.rootFolderId ?? "",
-        lastConnectedAt:
-          incoming.lastConnectedAt ?? saved.lastConnectedAt ?? "",
-        lastCheckedAt: incoming.lastCheckedAt ?? saved.lastCheckedAt ?? "",
-        quota: incoming.quota ?? saved.quota ?? null,
-        persistentId: incoming.persistentId ?? saved.persistentId ?? "",
-        persistentAvailable: false,
+        ...incoming,
+        persistentAvailable: !!saved.persistentAvailable,
+        draft: incoming.draft || !!saved.draft,
       };
     });
+  }
+
+  getAccountSequence() {
+    return this.accountSequence.toString();
+  }
+
+  async addAccount(initial = {}) {
+    this.accountSequence += 1n;
+    const account = normalizeAccount(
+      { ...initial, draft: true },
+      `ac${this.accountSequence}`,
+    );
+    this.accounts.push(account);
+    this.accounts.sort(compareAccountSlots);
+    await this.notifyAccountsChanged();
+    return { ...account, connected: false };
+  }
+
+  async removeAccount(slot) {
+    const normalized = normalizeSlot(slot);
+    const account = this.getAccount(normalized);
+    if (!account) return false;
+    if (account.persistentId || this.isConnected(normalized)) {
+      throw new Error("Desconecte a conta antes de removê-la da Central");
+    }
+    this.accounts = this.accounts.filter((item) => item.slot !== normalized);
+    this.sessions.delete(normalized);
+    this.refreshPromises.delete(normalized);
+    await this.notifyAccountsChanged();
+    return true;
   }
 
   getAccounts() {
@@ -164,9 +262,26 @@ export class GoogleDriveManager {
     const remoteAccounts = await this.credentialProvider.listAccounts();
     const bySlot = new Map(
       remoteAccounts
-        .filter((account) => /^ac[1-4]$/.test(account.legacySlot || ""))
-        .map((account) => [account.legacySlot, account]),
+        .filter((account) => isDriveAccountSlot(account.legacySlot))
+        .map((account) => [account.legacySlot.toLowerCase(), account]),
     );
+    for (const [slot, remote] of bySlot) {
+      if (this.accounts.some((account) => account.slot === slot)) continue;
+      this.accounts.push(
+        normalizeAccount(
+          {
+            slot,
+            email: remote.email,
+            friendlyName: remote.friendlyName,
+            persistentId: remote.id,
+          },
+          slot,
+        ),
+      );
+      const sequence = slotSequence(slot);
+      if (sequence > this.accountSequence) this.accountSequence = sequence;
+    }
+    this.accounts.sort(compareAccountSlots);
     this.accounts.forEach((account) => {
       const remote = bySlot.get(account.slot);
       account.persistentAvailable = !!remote && !remote.revokedAt;
@@ -177,6 +292,7 @@ export class GoogleDriveManager {
       account.lastConnectedAt = remote.updatedAt
         ? new Date(remote.updatedAt).toISOString()
         : account.lastConnectedAt;
+      account.draft = false;
     });
     await this.notifyAccountsChanged();
     return true;
@@ -195,6 +311,7 @@ export class GoogleDriveManager {
       account.email = remote.email;
       account.friendlyName = remote.friendlyName || account.friendlyName;
       account.lastConnectedAt = new Date().toISOString();
+      account.draft = false;
       this.sessions.delete(normalized);
       await this.getValidSession(normalized);
       await this.notifyAccountsChanged();
@@ -257,6 +374,7 @@ export class GoogleDriveManager {
     const account = this.getAccount(normalized);
     account.email = profile.email;
     account.lastConnectedAt = new Date().toISOString();
+    account.draft = false;
     await this.notifyAccountsChanged();
     return { ...account, connected: true };
   }

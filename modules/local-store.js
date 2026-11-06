@@ -7,6 +7,7 @@ let databasePromise;
 let manager;
 let syncTimer;
 const syncing = new Map();
+const isAccountSlot = (value) => /^ac[1-9]\d{0,61}$/.test(String(value || ""));
 const emit = (detail) =>
   globalThis.dispatchEvent?.(new CustomEvent("vault-sync", { detail }));
 export const serverTimestamp = () => new Date().toISOString();
@@ -252,9 +253,7 @@ export async function mergeRecords(db, incoming, slot) {
         dirty: false,
         data: {
           ...row.data,
-          ...(/^ac[1-4]$/.test(row.data.accountSlot)
-            ? { accountSlot: slot }
-            : {}),
+          ...(isAccountSlot(row.data.accountSlot) ? { accountSlot: slot } : {}),
         },
       };
       const get = store.get(key);
@@ -312,7 +311,7 @@ async function synchronize(slot) {
     const pending = (await allRecords(db)).filter(
       (r) =>
         r.dirty &&
-        (/^ac[1-4]$/.test(r.data?.accountSlot)
+        (isAccountSlot(r.data?.accountSlot)
           ? r.data.accountSlot === slot
           : defaultSlot === slot),
     );

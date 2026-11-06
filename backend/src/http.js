@@ -6,6 +6,10 @@ export class HttpError extends Error {
   }
 }
 
+export function isAccountSlot(value) {
+  return /^ac[1-9]\d{0,61}$/.test(String(value || "").toLowerCase());
+}
+
 export function frontendOrigin(env) {
   const origin = String(env.FRONTEND_ORIGIN || "").replace(/\/$/, "");
   if (!origin) throw new Error("FRONTEND_ORIGIN não configurado");

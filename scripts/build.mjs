@@ -33,7 +33,11 @@ const css = await build({
 const script = Object.entries(js.metafile.outputs)
   .find(([, v]) => v.entryPoint === "app.js")[0]
   .replace("dist/", "");
-const sheet = Object.keys(css.metafile.outputs)[0].replace("dist/", "");
+const sheet = Object.entries(css.metafile.outputs)
+  .find(
+    ([output, metadata]) => output.endsWith(".css") && metadata.entryPoint,
+  )[0]
+  .replace("dist/", "");
 const html = (await fs.readFile("index.html", "utf8"))
   .replace('src="app.js"', `src="./${script}"`)
   .replace('href="styles.css"', `href="./${sheet}"`);

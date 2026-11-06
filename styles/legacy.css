@@ -4254,7 +4254,7 @@ body {
   font-size: 12px;
 }
 .accounts-modal {
-  width: min(1040px, calc(100vw - 28px));
+  width: min(1160px, calc(100vw - 28px));
   max-height: min(90vh, 900px);
   overflow: auto;
   padding: 0;
@@ -4277,6 +4277,22 @@ body {
   color: var(--text3);
   font-size: 12px;
 }
+.accounts-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.add-drive-account-btn {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.add-drive-account-btn svg {
+  width: 16px;
+  height: 16px;
+}
 .modal-icon-btn {
   width: 36px;
   height: 36px;
@@ -4297,6 +4313,7 @@ body {
   grid-template-columns: minmax(220px, 1fr) minmax(150px, auto) auto;
   gap: 9px;
   padding: 8px 24px 14px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 .accounts-toolbar .modal-input {
   height: 40px;
@@ -4341,7 +4358,15 @@ body {
   border: 1px solid var(--border);
   border-radius: 17px;
   background: color-mix(in srgb, var(--surface) 96%, var(--bg2));
-  box-shadow: 0 9px 25px rgba(32, 50, 45, 0.05);
+  box-shadow: 0 10px 30px rgba(10, 24, 19, 0.08);
+  transition:
+    border-color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.drive-account-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(10, 24, 19, 0.12);
 }
 .drive-account-card[data-state="connected"] {
   border-color: color-mix(in srgb, var(--accent2) 38%, var(--border));
@@ -4478,6 +4503,13 @@ body {
 .account-card-actions .primary {
   margin-right: auto;
 }
+.account-card-actions .account-remove-action {
+  color: var(--danger);
+}
+.account-card-actions .account-remove-action:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 .account-card-actions button,
 .account-card-actions a {
   min-height: 34px;
@@ -4512,12 +4544,31 @@ body {
   cursor: not-allowed;
 }
 .accounts-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
   margin: 0 24px 22px;
   padding: 28px;
   border: 1px dashed var(--border);
   border-radius: 15px;
   color: var(--text3);
   text-align: center;
+}
+.accounts-empty[hidden] {
+  display: none;
+}
+.accounts-empty strong {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+.accounts-empty span {
+  max-width: 440px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.accounts-empty .modal-btn {
+  margin-top: 5px;
 }
 .accounts-footer {
   position: sticky;
@@ -4627,6 +4678,18 @@ body {
   }
   .accounts-modal-header {
     padding: 18px 16px 13px;
+  }
+  .accounts-modal-header {
+    align-items: flex-start;
+  }
+  .accounts-header-actions {
+    align-items: flex-end;
+    flex-direction: column-reverse;
+  }
+  .add-drive-account-btn {
+    min-height: 36px;
+    padding-inline: 10px;
+    font-size: 10px;
   }
   .accounts-toolbar {
     grid-template-columns: 1fr;
