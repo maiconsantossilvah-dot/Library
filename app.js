@@ -176,6 +176,8 @@ const UPLOAD_CONCURRENCY = 3;
 const SMALL_UPLOAD_CONCURRENCY = 5;
 const SMALL_UPLOAD_LIMIT = 5 * 1024 * 1024;
 const FOLDER_NAME_LIMIT = 200;
+const DEFAULT_PERSISTENT_AUTH_API_URL =
+  "https://vault-auth.maiconsantossilvah-captura.workers.dev";
 const uploadHashes = new WeakMap();
 const localTextSearch = createLocalTextSearch();
 let searchIndexQueue = Promise.resolve();
@@ -535,7 +537,8 @@ function prefillConfig(cfg) {
   $("cfg_cloudName").value = cfg.cloudName || "";
   $("cfg_uploadPreset").value = cfg.uploadPreset || "";
   $("cfg_googleClientId").value = cfg.googleClientId || "";
-  $("cfg_persistentAuthApiUrl").value = cfg.persistentAuthApiUrl || "";
+  $("cfg_persistentAuthApiUrl").value =
+    cfg.persistentAuthApiUrl || DEFAULT_PERSISTENT_AUTH_API_URL;
   renderDriveAccountSlots();
 }
 
@@ -820,9 +823,11 @@ async function initApp(cfg) {
     cloudName = cfg.cloudName;
     uploadPreset = cfg.uploadPreset;
     googleClientId = cfg.googleClientId || "";
-    persistentAuthApiUrl = cfg.persistentAuthApiUrl || "";
+    persistentAuthApiUrl =
+      cfg.persistentAuthApiUrl || DEFAULT_PERSISTENT_AUTH_API_URL;
     currentConfig = {
       ...cfg,
+      persistentAuthApiUrl,
       driveAccounts: normalizeDriveAccounts(cfg.driveAccounts),
     };
     if (!driveManager) {

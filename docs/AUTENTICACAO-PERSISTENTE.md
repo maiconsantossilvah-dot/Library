@@ -120,7 +120,7 @@ A resposta esperada é:
 Abra o VAULT publicado:
 
 1. **Ferramentas → Configuração avançada**;
-2. cole a URL do Worker em **URL da API privada do VAULT**;
+2. confirme a URL `https://vault-auth.maiconsantossilvah-captura.workers.dev` em **URL da API privada do VAULT**;
 3. salve;
 4. abra a **Central de contas**;
 5. conecte `Ac1` primeiro e confirme a conta proprietária;

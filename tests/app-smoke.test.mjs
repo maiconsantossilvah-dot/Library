@@ -76,8 +76,11 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   );
   assert.equal(document.getElementById("homeOverview").hidden, true);
   document.querySelector("[data-upload]").click();
-  assert.equal(document.getElementById("configModal").style.display, "flex");
-  document.getElementById("cancelConfig").click();
+  assert.equal(
+    document.getElementById("accountsModal").classList.contains("active"),
+    true,
+  );
+  document.getElementById("closeAccountsModal").click();
   assert.equal(document.getElementById("legacyMigrationNotice").hidden, true);
   document.getElementById("openConfigBtn").click();
   document.querySelector("#legacyFirebaseConfig summary").click();
@@ -297,20 +300,28 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     folderId: null,
   });
   await new Promise((r) => setTimeout(r, 80));
-  const folderCard = [...document.querySelectorAll("#folderChildrenGrid .folder-card")].find(
-    (item) => item.querySelector(".folder-card-name")?.textContent === "Pasta fixada",
+  const folderCard = [
+    ...document.querySelectorAll("#folderChildrenGrid .folder-card"),
+  ].find(
+    (item) =>
+      item.querySelector(".folder-card-name")?.textContent === "Pasta fixada",
   );
   assert.ok(folderCard);
   folderCard.querySelector(".folder-card-menu-btn").click();
   document.getElementById("folderActionTags").click();
-  assert.equal(document.getElementById("tagModalTitle").textContent, "Etiquetas da pasta");
+  assert.equal(
+    document.getElementById("tagModalTitle").textContent,
+    "Etiquetas da pasta",
+  );
   const authorInput = document.getElementById("tagNameInput");
   authorInput.value = "Autor: Eiichiro Oda";
   authorInput.dispatchEvent(new w.Event("input", { bubbles: true }));
   document.getElementById("createTagBtn").click();
   document.getElementById("saveTags").click();
   for (let attempt = 0; attempt < 40; attempt++) {
-    const folder = (await store.allRecords(db)).find((record) => record.id === "qa-folder");
+    const folder = (await store.allRecords(db)).find(
+      (record) => record.id === "qa-folder",
+    );
     if (folder?.data.tags?.length) break;
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -319,11 +330,18 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   ).data;
   assert.equal(taggedFolder.tags[0].name, "Autor: Eiichiro Oda");
   assert.equal(
-    document.querySelector('[data-search-tag="autor: eiichiro oda"] .search-tag-usage').textContent,
+    document.querySelector(
+      '[data-search-tag="autor: eiichiro oda"] .search-tag-usage',
+    ).textContent,
     "1 pasta",
   );
-  document.querySelector('#folderChildrenGrid [data-card-tag="autor: eiichiro oda"]').click();
-  assert.equal(document.querySelectorAll("#folderChildrenGrid .folder-card").length, 1);
+  document
+    .querySelector('#folderChildrenGrid [data-card-tag="autor: eiichiro oda"]')
+    .click();
+  assert.equal(
+    document.querySelectorAll("#folderChildrenGrid .folder-card").length,
+    1,
+  );
   document.getElementById("clearSearchTags").click();
   document.getElementById("viewFolders").click();
   document.querySelector('[data-search-tag="autor: eiichiro oda"]').click();
@@ -331,19 +349,25 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   document.getElementById("clearSearchTags").click();
   document.getElementById("viewGrid").click();
   document.getElementById("tagManagerBtn").click();
-  assert.match(document.getElementById("tagManagerStats").textContent, /1 pasta/);
+  assert.match(
+    document.getElementById("tagManagerStats").textContent,
+    /1 pasta/,
+  );
   document.querySelector('[data-manage-tag="autor: eiichiro oda"]').click();
   const authorManagerName = document.getElementById("tagManagerNameInput");
   authorManagerName.value = "Autor: Oda";
   authorManagerName.dispatchEvent(new w.Event("input", { bubbles: true }));
   document.getElementById("saveManagedTag").click();
   for (let attempt = 0; attempt < 40; attempt++) {
-    const folder = (await store.allRecords(db)).find((record) => record.id === "qa-folder");
+    const folder = (await store.allRecords(db)).find(
+      (record) => record.id === "qa-folder",
+    );
     if (folder?.data.tags?.[0]?.name === "Autor: Oda") break;
     await new Promise((r) => setTimeout(r, 25));
   }
   assert.equal(
-    (await store.allRecords(db)).find((record) => record.id === "qa-folder").data.tags[0].name,
+    (await store.allRecords(db)).find((record) => record.id === "qa-folder")
+      .data.tags[0].name,
     "Autor: Oda",
   );
   document.getElementById("closeTagManagerFooter").click();
