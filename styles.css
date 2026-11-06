@@ -351,6 +351,23 @@ body.vault-reimagined {
   font-family: var(--font-mono);
   font-size: 8px;
 }
+.vault-reimagined .sidebar-legal-links {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 11px;
+  color: rgba(242, 246, 237, 0.42);
+  font: 500 8px/1.3 var(--font-mono);
+}
+.vault-reimagined .sidebar-legal-links a {
+  color: inherit;
+  text-decoration: none;
+}
+.vault-reimagined .sidebar-legal-links a:hover,
+.vault-reimagined .sidebar-legal-links a:focus-visible {
+  color: #fff;
+  text-decoration: underline;
+}
 
 /* Área de trabalho */
 .vault-reimagined .main {
