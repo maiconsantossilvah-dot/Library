@@ -1,6 +1,42 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { IDBFactory } from "fake-indexeddb";
+import { PersistentDriveCredentialProvider } from "../modules/drive-credential-provider.js";
 import { GoogleDriveManager } from "../modules/google-drive.js";
+
+test("provider chama o fetch nativo com o receptor global correto", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalIndexedDb = globalThis.indexedDB;
+  const originalLocalStorage = globalThis.localStorage;
+  const values = new Map([["vault_persistent_session_v1", "session-id"]]);
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+  globalThis.indexedDB = new IDBFactory();
+  let receiver;
+  globalThis.fetch = function () {
+    receiver = this;
+    return Promise.resolve(
+      new Response(JSON.stringify({ authenticated: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  };
+  try {
+    const provider = new PersistentDriveCredentialProvider({
+      apiBase: "https://vault-auth.example.workers.dev",
+    });
+    await provider.getSession();
+    assert.equal(receiver, globalThis);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.indexedDB = originalIndexedDb;
+    globalThis.localStorage = originalLocalStorage;
+  }
+});
 
 function persistentManager(provider) {
   const manager = new GoogleDriveManager({

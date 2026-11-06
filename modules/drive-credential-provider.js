@@ -106,7 +106,7 @@ function apiError(payload, fallback) {
 }
 
 export class PersistentDriveCredentialProvider {
-  constructor({ apiBase, fetchImpl = globalThis.fetch } = {}) {
+  constructor({ apiBase, fetchImpl } = {}) {
     const parsed = new URL(apiBase);
     const local = ["localhost", "127.0.0.1"].includes(parsed.hostname);
     if (
@@ -117,7 +117,8 @@ export class PersistentDriveCredentialProvider {
     }
     this.apiBase = parsed.origin;
     this.apiOrigin = parsed.origin;
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl =
+      fetchImpl || ((...arguments_) => globalThis.fetch(...arguments_));
     this.sessionId = localStorage.getItem(SESSION_STORAGE_KEY) || "";
   }
 
