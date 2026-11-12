@@ -24,6 +24,7 @@ import { icon, hydrateIcons } from "./modules/icons.js";
 import { installInterface } from "./modules/interface.js";
 import { registerPwa } from "./modules/pwa.js";
 import { installPrivacy } from "./modules/privacy.js";
+import { installPrivateVault } from "./modules/vault-interface.js";
 import { installVideoScenes, captureCover } from "./modules/video-scenes.js";
 import { createMural } from "./modules/mural.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
@@ -46,6 +47,8 @@ import {
 
 // ??? State ????????????????????????????????????????????????
 let toastTimeout;
+let privateVaultUI;
+const scrubbedPrivateRevisions = new Set();
 let db;
 let legacyMigrationTask;
 let legacyMigrationState = "idle";
@@ -149,7 +152,6 @@ let descendantFolderCountByFolder = new Map();
 let duplicateFileIds = new Set();
 let dashboardRenderFrame = 0;
 let dashboardRenderTimer = null;
-let dashboardDiscoveryFileId = "";
 let searchRenderTimer = null;
 const navState = {
   section: "home",
@@ -406,8 +408,6 @@ const mangaZoomIn = $("mangaZoomIn");
 const mangaZoomOut = $("mangaZoomOut");
 const mangaClose = $("mangaClose");
 const connectionStatus = $("connectionStatus");
-const dashboardContinueSection = $("dashboardContinueSection");
-const dashContinue = $("dashContinue");
 
 // ??? Config persistence ???????????????????????????????????
 const CFG_KEY = "vault_config_v2";
@@ -1165,6 +1165,7 @@ function announceAccount(message) {
 
 function renderAccountCenter() {
   if (!accountsGrid) return;
+  if (navState.section === "home") renderHallAccounts();
   const accounts =
     driveManager?.getAccounts() ||
     normalizeDriveAccounts(
@@ -1701,6 +1702,16 @@ function listenFiles() {
     query(collection(db, "vault_files"), orderBy("createdAt", "desc")),
     (snap) => {
       files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      files.forEach((file) => localTextSearch.unblock(file.id));
+      void allRecords(db)
+        .then((rows) =>
+          scrubPrivateTraces(
+            rows.filter((row) => !row.removed && row.data?.privateVault),
+          ),
+        )
+        .catch((error) =>
+          console.warn("Limpeza de dados privados pendente", error),
+        );
       refreshLegacyNotice();
       rebuildFileIndexes();
       renderTagSearchOptions();
@@ -2065,9 +2076,17 @@ function getParentFolderId(folderId) {
 
 function syncSectionUI() {
   const isHome = navState.section === "home";
+  if (document.body.dataset.section === "vault" && navState.section !== "vault")
+    privateVaultUI?.lock();
   document.body.dataset.section = navState.section;
   dashboard.hidden = !isHome;
-  filesWorkspace.hidden = isHome || navState.section === "mural";
+  filesWorkspace.hidden = navState.section !== "files";
+  $("privateWorkspace").hidden = navState.section !== "vault";
+  $("navPrivate").classList.toggle("active", navState.section === "vault");
+  $("navPrivate").setAttribute(
+    "aria-current",
+    navState.section === "vault" ? "page" : "false",
+  );
   $("muralWorkspace").hidden = navState.section !== "mural";
   $("navMural").classList.toggle("active", navState.section === "mural");
   $("navMural").setAttribute(
@@ -2344,7 +2363,7 @@ function renderFolderChildrenSection() {
 
 function renderGrid() {
   renderDashboardVisibility();
-  if (navState.section === "home" || navState.section === "mural") {
+  if (navState.section !== "files") {
     if (fileGrid.childElementCount) fileGrid.replaceChildren();
     if (folderChildrenGrid?.childElementCount)
       folderChildrenGrid.replaceChildren();
@@ -2872,6 +2891,8 @@ async function indexFileLocally(file, sourceFile = null, onProgress = null) {
   if (existing?.sourceKey === sourceKey) return { status: "already" };
   const source = await resolveIndexSource(file, sourceFile);
   const extracted = await extractSearchText(source, onProgress);
+  // A queued OCR/extraction may finish after the user protected this file.
+  if (!fileById.has(file.id)) return { status: "unavailable" };
   await localTextSearch.put({
     id: file.id,
     text: extracted.text || "",
@@ -3046,6 +3067,7 @@ function makeFileCard(file) {
                  <button class="file-menu-item rename-btn" type="button" role="menuitem">Renomear</button>
                  <button class="file-menu-item info-btn" type="button" role="menuitem">Info completa</button>
                  <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
+                 <button class="file-menu-item private-vault-btn" type="button" role="menuitem">Guardar no cofre</button>
                  <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
                  ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
                  ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
@@ -3093,6 +3115,9 @@ function makeFileCard(file) {
   };
   bindAction(".file-delete", () => deleteFile(file));
   bindAction(".move-btn", () => openMoveModal(file));
+  bindAction(".private-vault-btn", () =>
+    privateVaultUI.protect("vault_files", file.id),
+  );
   bindAction(".cover-btn", () => setFolderCover(file));
   bindAction(".rename-btn", () => renameFile(file));
   bindAction(".description-btn", () => openDescriptionModal(file));
@@ -3334,6 +3359,7 @@ async function loadDriveThumbnail(file, force = false) {
   const request = driveManager
     .getMetadata(recordAccountSlot(file), file.driveFileId)
     .then((metadata) => {
+      if (!fileById.has(file.id)) return "";
       if (metadata.size !== undefined) {
         const actualSize = Number(metadata.size);
         if (Number.isFinite(actualSize)) {
@@ -3755,6 +3781,11 @@ folderActionTags.onclick = async () => {
   const folder = folderForActions;
   closeFolderActionsModal();
   if (folder) await editFolderTags(folder);
+};
+$("folderActionPrivate").onclick = () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder) void privateVaultUI.protect("vault_folders", folder.id);
 };
 folderActionDelete.onclick = async () => {
   const folder = folderForActions;
@@ -6235,6 +6266,7 @@ function closeLightbox() {
 
 const privacy = installPrivacy({
   closeMedia: () => {
+    privateVaultUI?.lock();
     closeLightbox();
     closeMangaReader();
     document.querySelectorAll("iframe").forEach((frame) => {
@@ -7124,22 +7156,8 @@ $("dashboardTimelineBtn").onclick = () => {
   openLibraryView({
     folderId: ROOT_ID,
     contentScope: "all",
-    viewMode: "timeline",
-  });
-};
-$("dashboardAllFilesBtn").onclick = () => {
-  openLibraryView({
-    folderId: ROOT_ID,
-    contentScope: "all",
     viewMode: "grid",
-    resetAdvancedFilters: true,
   });
-};
-$("clearRecentlyViewed").onclick = () => {
-  recentlyViewed = [];
-  persistRecentlyViewed();
-  renderRecentlyViewed([]);
-  showToast("Histórico de visualização limpo", "success");
 };
 $("viewDensity").onclick = () => {
   isCompactView = !isCompactView;
@@ -8054,8 +8072,8 @@ function updateDashboard() {
   const active = files.filter((f) => !f.deletedAt && matchesAccountView(f));
   const needsSetup = files.every((file) => file.deletedAt);
   $("homeSetup").hidden = !needsSetup;
-  $("homeOverview").hidden = needsSetup;
-  $("dashboardTimelineBtn").hidden = needsSetup;
+  $("homeOverview").hidden = false;
+  $("dashboardTimelineBtn").hidden = false;
   const hasDrive = !!driveManager
     ?.getAccounts()
     .some((account) => account.connected);
@@ -8078,15 +8096,77 @@ function updateDashboard() {
   const hour = new Date().getHours();
   $("dashGreeting").textContent =
     hour < 12 ? "Bom dia." : hour < 18 ? "Boa tarde." : "Boa noite.";
-  $("dashHeroText").textContent = active.length
-    ? `${active.length} arquivo(s) prontos para você revisitar.`
-    : "Comece guardando fotos, vídeos e documentos que importam.";
-  renderHistory();
-  renderPhotoDashboard(active);
-  renderDashboardOrganize(active);
-  renderDashboardHighlights(active);
-  renderRecentlyViewed(active);
-  hydrateDriveThumbnails(dashboard);
+  $("dashHeroText").textContent =
+    "Seu espaço pessoal. Apenas contas, armazenamento e status por aqui.";
+  renderHallAccounts();
+}
+
+function renderHallAccounts() {
+  const container = $("hallAccounts");
+  if (!container) return;
+  const accounts =
+    driveManager?.getAccounts() || currentConfig?.driveAccounts || [];
+  container.innerHTML = accounts.length
+    ? accounts
+        .map((account) => {
+          const quota = quotaSummary(account.quota);
+          const connected = !!account.connected;
+          return `<article class="hall-account"><div class="hall-account-heading"><span class="hall-account-slot">${esc(slotTag(account.slot))}</span><div><h3>${esc(account.friendlyName || account.email || slotTag(account.slot))}</h3>${account.email && account.friendlyName ? `<p>${esc(account.email)}</p>` : ""}</div><span class="hall-account-status${connected ? " is-connected" : ""}">${connected ? "Conectada" : "Desconectada"}</span></div><div class="hall-account-quota"><span>Armazenamento Google</span><strong>${esc(quota.text)}</strong></div><div class="account-quota-bar" aria-hidden="true"><span style="--quota-pct:${quota.pct.toFixed(1)}%"></span></div></article>`;
+        })
+        .join("")
+    : '<div class="hall-no-accounts"><strong>Nenhuma conta conectada.</strong><p>Conecte uma Conta Google para acompanhar o espaço disponível.</p></div>';
+  $("hallSyncStatus").textContent =
+    $("syncSummaryText")?.textContent || "Salvo neste navegador";
+  privateVaultUI
+    ?.configured()
+    .then((configured) => {
+      $("hallPrivateStatus").textContent = configured
+        ? "Trancado"
+        : "Crie sua senha";
+    })
+    .catch(() => {
+      $("hallPrivateStatus").textContent = "Verificar configuração";
+    });
+}
+
+async function scrubPrivateTraces(rows) {
+  rows = rows.filter(
+    (row) =>
+      !scrubbedPrivateRevisions.has(
+        `${row.collection}/${row.id}/${row.revision}`,
+      ),
+  );
+  if (!rows.length) return;
+  const ids = new Set(
+    rows.filter((row) => row.collection === "vault_files").map((row) => row.id),
+  );
+  ids.forEach((id) => localTextSearch.block(id));
+  await Promise.all([...ids].map((id) => localTextSearch.remove(id)));
+  recentlyViewed = recentlyViewed.filter((entry) => !ids.has(entry.id));
+  persistRecentlyViewed();
+  // The general activity log may contain names of these files or their folders.
+  localStorage.removeItem("vault_history_v1");
+  for (const id of ids) {
+    driveThumbnailCache.delete(id);
+    driveThumbnailSavedAt.delete(id);
+    if (driveObjectUrls.has(id)) URL.revokeObjectURL(driveObjectUrls.get(id));
+    driveObjectUrls.delete(id);
+  }
+  localStorage.setItem(
+    DRIVE_THUMBNAIL_CACHE_KEY,
+    JSON.stringify(
+      readPersistedDriveThumbnails().filter((entry) => !ids.has(entry.id)),
+    ),
+  );
+  closeLightbox();
+  lightboxFiles = [];
+  closeMangaReader();
+  closeFolderCoverPicker();
+  infoModal.classList.remove("active");
+  infoModalBody.replaceChildren();
+  rows.forEach((row) =>
+    scrubbedPrivateRevisions.add(`${row.collection}/${row.id}/${row.revision}`),
+  );
 }
 
 $("setupDriveBtn").onclick = () => {
@@ -8112,393 +8192,6 @@ function rememberRecentlyViewed(file) {
     ...recentlyViewed.filter((entry) => entry.id !== file.id),
   ].slice(0, 20);
   persistRecentlyViewed();
-  if (navState.section === "home")
-    renderRecentlyViewed(files.filter((item) => !item.deletedAt));
-}
-
-function recentViewedLabel(timestamp) {
-  const elapsed = Math.max(0, Date.now() - Number(timestamp || 0));
-  if (elapsed < 60_000) return "Agora";
-  if (elapsed < 3_600_000)
-    return `Há ${Math.max(1, Math.round(elapsed / 60_000))} min`;
-  if (elapsed < 86_400_000)
-    return `Há ${Math.max(1, Math.round(elapsed / 3_600_000))} h`;
-  return new Date(timestamp).toLocaleDateString("pt-BR");
-}
-
-function renderRecentlyViewed(active) {
-  if (!dashboardContinueSection || !dashContinue) return;
-  const activeById = new Map(active.map((file) => [file.id, file]));
-  const recentFiles = recentlyViewed
-    .map((entry) => ({ file: activeById.get(entry.id), ...entry }))
-    .filter((entry) => entry.file && matchesAccountView(entry.file))
-    .slice(0, 8);
-  dashboardContinueSection.hidden = recentFiles.length === 0;
-  dashContinue.innerHTML = recentFiles
-    .map(({ file, viewedAt }) => {
-      const thumb = dashboardThumb(file, 260, 180);
-      const preview = ["image", "video"].includes(file.fileType)
-        ? thumb
-          ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />`
-          : `<span class="continue-file-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}">${icon(file.fileType === "video" ? "Film" : "Image")}</span>`
-        : `<span class="continue-file-placeholder">${docIcon(file.name)}</span>`;
-      return `<button class="continue-file-item" type="button" data-recent-file="${esc(file.id)}" title="Continuar em ${esc(file.name)}">
-        <span class="continue-file-thumb">${preview}${file.fileType === "video" ? `<span class="continue-file-play">${icon("Play")}</span>` : ""}</span>
-        <span class="continue-file-copy"><strong>${esc(file.name)}</strong><span>${esc(recentViewedLabel(viewedAt))} · ${esc(getFolderPathLabel(file.folderId) || "Raiz")}</span></span>
-      </button>`;
-    })
-    .join("");
-  dashContinue.querySelectorAll("[data-recent-file]").forEach((button) => {
-    button.onclick = () => {
-      const recentFileList = recentFiles.map((entry) => entry.file);
-      const file = activeById.get(button.dataset.recentFile);
-      if (!file) return;
-      lightboxFiles = recentFileList;
-      openLightbox(file);
-    };
-  });
-}
-
-function getDashboardMedia(active) {
-  return active.filter(
-    (file) => file.fileType === "image" || file.fileType === "video",
-  );
-}
-
-function pickDashboardDiscovery(active, rotate = false) {
-  const media = getDashboardMedia(active);
-  if (!media.length) {
-    dashboardDiscoveryFileId = "";
-    return null;
-  }
-  const currentIndex = media.findIndex(
-    (file) => file.id === dashboardDiscoveryFileId,
-  );
-  if (currentIndex >= 0 && !rotate) return media[currentIndex];
-  const dayNumber = Math.floor(Date.now() / 86_400_000);
-  const nextIndex =
-    currentIndex >= 0
-      ? (currentIndex + 1) % media.length
-      : dayNumber % media.length;
-  const discovery = media[nextIndex];
-  dashboardDiscoveryFileId = discovery.id;
-  return discovery;
-}
-
-function openDashboardDiscovery(active, rotate = false) {
-  const file = pickDashboardDiscovery(active, rotate);
-  if (!file) return;
-  lightboxFiles = getDashboardMedia(active);
-  openLightbox(file);
-}
-
-function renderPhotoDashboard(active) {
-  const memoriesEl = $("dashMemories");
-  const albumsEl = $("dashAlbumSuggestions");
-  if (!memoriesEl || !albumsEl) return;
-  const memoryEyebrow = $("dashMemoryEyebrow");
-  const memoryKicker = $("dashMemoryKicker");
-  const today = new Date();
-  const memories = active
-    .filter((file) => file.fileType === "image" && file.eventDate)
-    .filter((file) => {
-      const date = fileDate(file);
-      return (
-        date.getMonth() === today.getMonth() &&
-        date.getDate() === today.getDate()
-      );
-    })
-    .sort((a, b) => fileDate(b) - fileDate(a))
-    .slice(0, 3);
-  const memory = memories[0];
-  if (memory) {
-    memoryEyebrow.textContent = "NESTE DIA";
-    memoryKicker.textContent = "MEMÓRIAS";
-    const thumb = dashboardThumb(memory, 900, 620);
-    memoriesEl.innerHTML = `
-      <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}" alt="${esc(memory.name)}" decoding="async" />` : `<span class="memory-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(memory) ? esc(memory.id) : ""}">${icon("Image")}</span>`}</div>
-      <div class="memory-copy"><em>${fileDate(memory).getFullYear()} · ${memories.length} memoria(s) hoje</em><strong>${esc(memory.name)}</strong><span>Uma lembrança registrada neste mesmo dia, em outro ano.</span></div>`;
-    memoriesEl.onclick = () => {
-      lightboxFiles = [memory];
-      openLightbox(memory);
-    };
-    memoriesEl.style.cursor = "pointer";
-  } else {
-    const discovery = pickDashboardDiscovery(active);
-    memoryEyebrow.textContent = "REDESCOBRIR";
-    memoryKicker.textContent = "DO SEU ACERVO";
-    if (discovery) {
-      const thumb = dashboardThumb(discovery, 900, 620);
-      const context = [
-        monthLabel(discovery),
-        getFolderPathLabel(discovery.folderId) || "Todos os arquivos",
-      ].filter(Boolean);
-      memoriesEl.innerHTML = `
-        <div class="memory-visual">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(discovery) ? esc(discovery.id) : ""}" alt="${esc(discovery.name)}" decoding="async" />` : `<span class="memory-placeholder" data-drive-thumb-id="${isGoogleDriveRecord(discovery) ? esc(discovery.id) : ""}">${icon(discovery.fileType === "video" ? "Film" : "Image")}</span>`}${discovery.fileType === "video" ? `<span class="memory-video-badge">${icon("Play")}</span>` : ""}</div>
-        <div class="memory-copy"><em>UM MOMENTO DO SEU ACERVO</em><strong>${esc(discovery.name)}</strong><span>${esc(context.join(" · "))}</span><div class="memory-actions"><button type="button" data-discovery-open>Abrir momento</button><button type="button" data-discovery-next>Outro momento</button></div></div>`;
-      memoriesEl.querySelector("[data-discovery-open]").onclick = () =>
-        openDashboardDiscovery(active);
-      memoriesEl.querySelector("[data-discovery-next]").onclick = () => {
-        pickDashboardDiscovery(active, true);
-        renderPhotoDashboard(active);
-        hydrateDriveThumbnails(memoriesEl);
-      };
-    } else {
-      memoriesEl.innerHTML = `<div class="memory-copy memory-empty-copy"><em>SEU ACERVO COMEÇA AQUI</em><strong>Guarde o primeiro momento.</strong><span>Quando houver fotos ou vídeos, o VAULT trará um deles de volta para você.</span><div class="memory-actions"><button type="button" data-discovery-upload>Adicionar arquivos</button></div></div>`;
-      memoriesEl.querySelector("[data-discovery-upload]").onclick =
-        requestUpload;
-    }
-    memoriesEl.onclick = null;
-    memoriesEl.style.cursor = "default";
-  }
-
-  const albums = new Map();
-  active
-    .filter(
-      (file) =>
-        file.fileType === "image" &&
-        file.suggestedAlbumKey &&
-        !file.isScreenshot,
-    )
-    .forEach((file) => {
-      const current = albums.get(file.suggestedAlbumKey) || {
-        key: file.suggestedAlbumKey,
-        label: file.suggestedAlbumLabel,
-        count: 0,
-        cover: file,
-      };
-      current.count += 1;
-      albums.set(file.suggestedAlbumKey, current);
-    });
-  const monthSuggestions = [...albums.values()]
-    .sort((a, b) => b.key.localeCompare(a.key))
-    .slice(0, 2);
-  const travelSuggestions = getTravelSuggestions(active)
-    .slice(0, 1)
-    .map((trip) => ({
-      ...trip,
-      cover: monthSuggestions[0]?.cover || null,
-      key: "",
-    }));
-  const suggestions = [...travelSuggestions, ...monthSuggestions].slice(0, 3);
-  albumsEl.innerHTML = suggestions.length
-    ? suggestions
-        .map((album) => {
-          const thumb = album.cover
-            ? dashboardThumb(album.cover, 360, 220)
-            : "";
-          return `<button class="home-album-card" type="button" data-album-key="${esc(album.key || "")}" data-date-from="${esc(album.dateFrom || "")}" data-date-to="${esc(album.dateTo || "")}">
-        <span class="home-album-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(album.cover) ? esc(album.cover.id) : ""}" alt="" />` : `<span data-drive-thumb-id="${esc(album.cover?.id || "")}"></span>`}</span>
-        <strong>${esc(album.label)}</strong><span>${album.count ? `${album.count} fotos` : "Sugestão automática"}</span>
-      </button>`;
-        })
-        .join("")
-    : `<span class="dash-memory-item">Analise fotos para receber sugestões</span>`;
-  albumsEl.querySelectorAll(".home-album-card").forEach((button) => {
-    button.onclick = () => {
-      if (button.dataset.dateFrom && button.dataset.dateTo)
-        openSuggestedDateRange(button.dataset.dateFrom, button.dataset.dateTo);
-      else openSuggestedAlbum(button.dataset.albumKey);
-    };
-  });
-}
-
-function renderDashboardOrganize(active) {
-  const container = $("dashOrganizeActions");
-  const summary = $("dashOrganizeSummary");
-  const surprise = $("dashboardSurpriseBtn");
-  if (!container || !summary || !surprise) return;
-  const tasks = [
-    {
-      scope: "untagged",
-      icon: "Tags",
-      label: "Sem etiquetas",
-      detail: "Identifique para encontrar depois",
-      count: active.filter((file) => normalizeTags(file.tags).length === 0)
-        .length,
-    },
-    {
-      scope: "screenshots",
-      icon: "Image",
-      label: "Capturas",
-      detail: "Revise imagens temporárias",
-      count: active.filter((file) => file.isScreenshot).length,
-    },
-    {
-      scope: "duplicates",
-      icon: "Copy",
-      label: "Possíveis duplicados",
-      detail: "Compare antes de remover",
-      count: active.filter((file) => duplicateFileIds.has(file.id)).length,
-    },
-    {
-      scope: "largeVideos",
-      icon: "Film",
-      label: "Vídeos grandes",
-      detail: "Veja o que ocupa mais espaço",
-      count: active.filter(
-        (file) =>
-          file.fileType === "video" && (file.size || 0) > 100 * 1024 * 1024,
-      ).length,
-    },
-  ];
-  const pendingGroups = tasks.filter((task) => task.count > 0).length;
-  summary.textContent = pendingGroups
-    ? `${pendingGroups} cuidado${pendingGroups === 1 ? " rápido" : "s rápidos"} para deixar sua biblioteca mais fácil de explorar.`
-    : "Tudo em ordem por aqui. Continue aproveitando seu acervo.";
-  container.innerHTML = tasks
-    .map(
-      (
-        task,
-      ) => `<button class="organize-action${task.count ? "" : " is-complete"}" type="button" data-organize-scope="${task.scope}">
-        <span class="organize-action-icon">${icon(task.count ? task.icon : "Check")}</span>
-        <span class="organize-action-copy"><strong>${esc(task.label)}</strong><span>${esc(task.count ? task.detail : "Tudo em ordem")}</span></span>
-        <span class="organize-action-count" aria-label="${task.count} arquivo${task.count === 1 ? "" : "s"}">${task.count}</span>
-        <span class="organize-action-arrow">${icon("ArrowRight")}</span>
-      </button>`,
-    )
-    .join("");
-  container.querySelectorAll("[data-organize-scope]").forEach((button) => {
-    button.onclick = () =>
-      openLibraryView({
-        folderId: ROOT_ID,
-        contentScope: button.dataset.organizeScope,
-        viewMode: "grid",
-        resetAdvancedFilters: true,
-      });
-  });
-  const hasMedia = getDashboardMedia(active).length > 0;
-  surprise.disabled = !hasMedia;
-  surprise.title = hasMedia
-    ? "Abrir um momento aleatório do acervo"
-    : "Adicione fotos ou vídeos para usar esta ação";
-  surprise.onclick = () => openDashboardDiscovery(active, true);
-}
-
-function dashboardThumb(file, width, height) {
-  return mediaThumbUrl(file, width, height);
-}
-
-function openSuggestedAlbum(key) {
-  const match = String(key || "").match(/(\d{4}-\d{2})$/);
-  if (!match) return;
-  const [year, month] = match[1].split("-").map(Number);
-  const lastDay = new Date(year, month, 0).getDate();
-  openSuggestedDateRange(
-    `${match[1]}-01`,
-    `${match[1]}-${String(lastDay).padStart(2, "0")}`,
-  );
-}
-
-function openSuggestedDateRange(dateFrom, dateTo) {
-  advancedFilters = { ...advancedFilters, dateFrom, dateTo };
-  advDateFrom.value = dateFrom;
-  advDateTo.value = dateTo;
-  openLibraryView({
-    folderId: ROOT_ID,
-    contentScope: "all",
-    viewMode: "timeline",
-  });
-}
-
-function renderDashboardHighlights(active) {
-  const element = $("dashHighlights");
-  if (!element) return;
-  const highlights = [];
-  const seen = new Set();
-  const isMedia = (file) =>
-    file.fileType === "image" || file.fileType === "video";
-  for (const file of active) {
-    if (!(file.favorite || ["important", "critical"].includes(file.priority)))
-      continue;
-    highlights.push(file);
-    seen.add(file.id);
-    if (highlights.length === 3) break;
-  }
-  if (highlights.length < 3) {
-    for (const file of active) {
-      if (seen.has(file.id)) continue;
-      highlights.push(file);
-      if (highlights.length === 3) break;
-    }
-  }
-  element.innerHTML = highlights.length
-    ? highlights
-        .map((file) => {
-          const thumb = dashboardThumb(file, 160, 160);
-          const label = file.favorite
-            ? "Favorito"
-            : file.priority === "critical"
-              ? "Muito importante"
-              : file.priority === "important"
-                ? "Importante"
-                : monthLabel(file);
-          return `<button class="home-highlight-item" type="button" data-file-id="${esc(file.id)}">
-        <span class="home-highlight-thumb">${thumb ? `<img src="${esc(thumb)}" data-drive-file-id="${isGoogleDriveRecord(file) ? esc(file.id) : ""}" alt="" loading="lazy" decoding="async" />` : `<span data-drive-thumb-id="${esc(file.id)}"></span>`}</span>
-        <span class="home-highlight-copy"><strong>${esc(file.name)}</strong><span>${esc(label)}</span></span>
-      </button>`;
-        })
-        .join("")
-    : `<span class="dash-memory-item">Arquivos recentes e favoritos aparecerão aqui.</span>`;
-  element.querySelectorAll(".home-highlight-item").forEach((button, index) => {
-    const file = highlights[index];
-    if (file)
-      button.onclick = () => {
-        lightboxFiles = highlights;
-        openLightbox(file);
-      };
-  });
-}
-
-function getTravelSuggestions(active) {
-  const photos = active
-    .filter(
-      (file) =>
-        file.fileType === "image" && file.eventDate && !file.isScreenshot,
-    )
-    .map((file) => ({ file, date: fileDate(file) }))
-    .sort((a, b) => a.date - b.date);
-  const groups = [];
-  let current = [];
-  photos.forEach((photo) => {
-    const previous = current[current.length - 1];
-    const gapDays = previous
-      ? Math.round((photo.date - previous.date) / 86400000)
-      : 0;
-    if (previous && gapDays > 3) {
-      groups.push(current);
-      current = [];
-    }
-    current.push(photo);
-  });
-  if (current.length) groups.push(current);
-  return groups
-    .filter(
-      (group) =>
-        group.length >= 6 &&
-        Math.round((group[group.length - 1].date - group[0].date) / 86400000) >=
-          2,
-    )
-    .sort((a, b) => b[b.length - 1].date - a[a.length - 1].date)
-    .map((group) => {
-      const first = group[0].date;
-      const last = group[group.length - 1].date;
-      const start = first.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "short",
-      });
-      const end = last.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-      return {
-        label: `Possivel viagem · ${start}–${end}`,
-        count: group.length,
-        dateFrom: first.toISOString().slice(0, 10),
-        dateTo: last.toISOString().slice(0, 10),
-      };
-    });
 }
 
 function historyItems() {
@@ -8811,6 +8504,7 @@ async function refreshSyncStatus() {
   }
   badge.dataset.state = state;
   text.textContent = label;
+  if ($("hallSyncStatus")) $("hallSyncStatus").textContent = label;
   badge.title = `${label}. Abrir ferramentas e sincronização.`;
   badge.setAttribute("aria-label", badge.title);
 }
@@ -9020,5 +8714,26 @@ $("navMural").onclick = async () => {
   renderGrid();
   await mural.open();
 };
+privateVaultUI = installPrivateVault({
+  getDb: openLocalStore,
+  getBlob: fetchStoredBlob,
+  muted: () => privacy.muted(),
+  formatSize: fmtSize,
+  toast: showToast,
+  openSection: () => {
+    isSelectMode = false;
+    selectedIds.clear();
+    updateBulkBar();
+    navState.section = "vault";
+    syncSectionUI();
+    breadcrumb.textContent = "Cofre privado";
+    renderGrid();
+    sidebar.classList.remove("mobile-open");
+  },
+  beforeProtect: scrubPrivateTraces,
+});
+$("navPrivate").onclick = () => privateVaultUI.open();
+$("hallPrivateBtn").onclick = () => privateVaultUI.open();
+$("hallAccountsBtn").onclick = () => openAccountsModal($("hallAccountsBtn"));
 installInterface();
 hydrateIcons();

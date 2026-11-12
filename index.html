@@ -17,7 +17,7 @@
       rel="stylesheet"
     />
   </head>
-  <body class="vault-reimagined">
+  <body class="vault-reimagined" data-section="home">
     <a class="skip-link" href="#content">Pular para o conteúdo</a>
     <div class="app-frame">
       <!-- NAVEGAÇÃO DO ACERVO -->
@@ -82,6 +82,10 @@
           <button class="app-nav-item" id="navMural" type="button">
             <span data-icon="LayoutGrid" aria-hidden="true"></span
             ><span>Mural</span>
+          </button>
+          <button class="app-nav-item" id="navPrivate" type="button">
+            <span data-icon="ShieldAlert" aria-hidden="true"></span
+            ><span>Cofre privado</span>
           </button>
         </nav>
 
@@ -873,7 +877,8 @@
                 >
                 <h1 id="dashGreeting">Bem-vindo de volta.</h1>
                 <p id="dashHeroText">
-                  Tudo que importa, organizado em um só lugar.
+                  Seu espaço pessoal. Apenas contas, armazenamento e status por
+                  aqui.
                 </p>
               </div>
               <div class="dashboard-hero-actions">
@@ -885,7 +890,7 @@
                   id="dashboardTimelineBtn"
                   type="button"
                 >
-                  Ver linha do tempo
+                  Abrir biblioteca
                 </button>
               </div>
               <div class="after-dark-hero-crest" aria-hidden="true">
@@ -965,113 +970,62 @@
                 <article class="dash-card storage-card">
                   <span class="dash-label">Armazenamento</span
                   ><strong id="dashStorageSummary">0 B</strong
-                  ><span class="dash-foot">do seu cofre</span>
+                  ><span class="dash-foot">na biblioteca</span>
                 </article>
               </section>
 
-              <section class="dashboard-feature-grid">
-                <article class="home-panel memory-spotlight-panel">
+              <section class="hall-grid" aria-label="Contas e privacidade">
+                <article class="home-panel hall-accounts-panel">
                   <div class="home-panel-head">
-                    <span class="eyebrow" id="dashMemoryEyebrow">NESTE DIA</span
-                    ><span class="panel-kicker" id="dashMemoryKicker"
-                      >MEMÓRIAS</span
-                    >
-                  </div>
-                  <div id="dashMemories" class="memory-spotlight">
-                    Sem memórias nesta data
-                  </div>
-                </article>
-                <article class="home-panel highlights-panel">
-                  <div class="home-panel-head">
-                    <span class="eyebrow">DESTAQUES</span
-                    ><button
-                      class="text-panel-action"
-                      id="dashboardAllFilesBtn"
-                      type="button"
-                    >
-                      Ver arquivos
-                    </button>
-                  </div>
-                  <div id="dashHighlights" class="home-highlight-list">
-                    Nenhum destaque ainda
-                  </div>
-                </article>
-              </section>
-
-              <section
-                class="dashboard-care-section"
-                aria-label="Sugestões para organizar o acervo"
-              >
-                <article class="home-panel organize-panel">
-                  <div class="home-panel-head organize-panel-head">
                     <div>
-                      <span class="eyebrow">PARA ORGANIZAR</span>
-                      <h2>Cuide do acervo aos poucos</h2>
+                      <span class="eyebrow">SUAS CONEXÕES</span>
+                      <h2>Contas e armazenamento</h2>
                     </div>
                     <button
-                      class="surprise-action"
-                      id="dashboardSurpriseBtn"
+                      class="text-panel-action"
+                      id="hallAccountsBtn"
                       type="button"
                     >
-                      <span data-icon="Sparkles" aria-hidden="true"></span>
-                      Surpreenda-me
+                      Gerenciar contas
                     </button>
                   </div>
-                  <p class="organize-intro" id="dashOrganizeSummary">
-                    Analisando o que pode ser organizado…
+                  <div id="hallAccounts" class="hall-account-list"></div>
+                </article>
+                <article class="home-panel hall-privacy-panel">
+                  <span class="eyebrow">PRIVACIDADE EM PRIMEIRO LUGAR</span>
+                  <h2>Bem-vindo ao seu hall.</h2>
+                  <p>
+                    Aqui você acompanha suas contas e o espaço disponível, sem
+                    fotos, capas, nomes de arquivos ou atividades recentes.
                   </p>
-                  <div
-                    class="organize-actions"
-                    id="dashOrganizeActions"
-                    aria-live="polite"
-                  ></div>
-                </article>
-              </section>
-
-              <section
-                class="dashboard-continue"
-                id="dashboardContinueSection"
-                hidden
-                aria-label="Continuar de onde parei"
-              >
-                <article class="home-panel continue-panel">
-                  <div class="home-panel-head">
+                  <dl class="hall-status-list">
                     <div>
-                      <span class="eyebrow">ACESSADOS RECENTEMENTE</span>
-                      <h2>Continuar de onde parei</h2>
+                      <dt>Prévias no início</dt>
+                      <dd>Desativadas</dd>
                     </div>
-                    <button
-                      class="text-panel-action"
-                      id="clearRecentlyViewed"
-                      type="button"
-                    >
-                      Limpar histórico
-                    </button>
-                  </div>
-                  <div class="continue-file-list" id="dashContinue"></div>
-                </article>
-              </section>
-
-              <section class="dashboard-lower-grid">
-                <article class="home-panel albums-panel">
-                  <div class="home-panel-head">
-                    <span class="eyebrow">ÁLBUNS</span
-                    ><span class="panel-kicker">SUGERIDOS</span>
-                  </div>
-                  <div id="dashAlbumSuggestions" class="home-album-grid">
-                    As sugestões aparecerão nas fotos analisadas
-                  </div>
-                </article>
-                <article class="home-panel activity-panel">
-                  <div class="home-panel-head">
-                    <span class="eyebrow">ATIVIDADE RECENTE</span
-                    ><span class="panel-kicker">ÚLTIMAS AÇÕES</span>
-                  </div>
-                  <div id="dashHistory" class="dash-history">Sem histórico</div>
+                    <div>
+                      <dt>Cofre privado</dt>
+                      <dd id="hallPrivateStatus">Crie sua senha</dd>
+                    </div>
+                    <div>
+                      <dt>Sincronização</dt>
+                      <dd id="hallSyncStatus">Salvo neste navegador</dd>
+                    </div>
+                  </dl>
+                  <button class="utility-btn" id="hallPrivateBtn" type="button">
+                    Acessar cofre privado
+                    <span data-icon="ArrowRight" aria-hidden="true"></span>
+                  </button>
                 </article>
               </section>
             </div>
           </section>
+          <section
+            id="privateWorkspace"
+            class="private-workspace"
+            hidden
+            aria-label="Cofre privado"
+          ></section>
           <section
             class="files-workspace"
             id="filesWorkspace"
@@ -1969,6 +1923,13 @@
             type="button"
           >
             Etiquetas
+          </button>
+          <button
+            class="folder-action-option"
+            id="folderActionPrivate"
+            type="button"
+          >
+            Guardar no cofre
           </button>
           <button
             class="folder-action-option danger"

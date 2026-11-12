@@ -74,7 +74,7 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     false,
     errors.join("\n"),
   );
-  assert.equal(document.getElementById("homeOverview").hidden, true);
+  assert.equal(document.getElementById("homeOverview").hidden, false);
   document.querySelector("[data-upload]").click();
   assert.equal(
     document.getElementById("accountsModal").classList.contains("active"),
@@ -498,35 +498,110 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
   assert.equal(document.getElementById("lbSissyHighlightBtn"), null);
   document.getElementById("lightboxClose").click();
   document.getElementById("navHome").click();
-  for (
-    let attempt = 0;
-    attempt < 40 && document.getElementById("dashboardContinueSection").hidden;
-    attempt++
-  )
-    await new Promise((r) => setTimeout(r, 25));
+  const waitFor = async (predicate) => {
+    for (let attempt = 0; attempt < 100 && !predicate(); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(predicate(), errors.join("\n"));
+  };
+  await new Promise((resolve) => setTimeout(resolve, 180));
   assert.equal(
-    document.getElementById("dashboardContinueSection").hidden,
+    document.querySelector("#dashboard img,#dashboard video,#dashboard iframe"),
+    null,
+  );
+  assert.equal(document.getElementById("dashboardContinueSection"), null);
+  assert.equal(document.getElementById("dashMemories"), null);
+  assert.equal(
+    document
+      .getElementById("dashboard")
+      .textContent.includes("Imagem vertical de teste"),
     false,
   );
-  assert.ok(document.querySelectorAll(".continue-file-item").length >= 2);
-  assert.match(
-    document.getElementById("dashOrganizeSummary").textContent,
-    /cuidado rápido/,
-  );
-  const untaggedAction = document.querySelector(
-    '[data-organize-scope="untagged"]',
-  );
-  assert.ok(untaggedAction);
+  assert.equal(document.getElementById("homeOverview").hidden, false);
+  document.getElementById("navPrivate").click();
+  await waitFor(() => document.getElementById("privatePasswordConfirm"));
+  const submitPassword = (password) => {
+    document.getElementById("privatePassword").value = password;
+    const confirmation = document.getElementById("privatePasswordConfirm");
+    if (confirmation) confirmation.value = password;
+    document
+      .getElementById("privateAccessForm")
+      .dispatchEvent(
+        new w.Event("submit", { bubbles: true, cancelable: true }),
+      );
+  };
+  submitPassword("Senha de teste longa 2026!");
+  await waitFor(() => document.getElementById("privateLockBtn"));
+  document.getElementById("clearSearchFilters").click();
+  await waitFor(() => document.getElementById("privatePassword"));
   assert.equal(
-    untaggedAction.querySelector(".organize-action-count").textContent,
-    "2",
+    document.body.dataset.vaultUnlocked,
+    "false",
+    "sair da área privada tranca o cofre",
   );
-  assert.equal(document.getElementById("dashboardSurpriseBtn").disabled, false);
-  untaggedAction.click();
-  assert.equal(document.body.dataset.section, "files");
+  const privateCard = [...document.querySelectorAll(".file-card")].find(
+    (card) => card.textContent.includes("Imagem vertical de teste"),
+  );
+  privateCard.querySelector(".private-vault-btn").click();
+  await waitFor(() => document.getElementById("privateAccessForm"));
+  submitPassword("senha incorreta");
+  await waitFor(() =>
+    /Senha incorreta/.test(
+      document.getElementById("privateAccessError")?.textContent || "",
+    ),
+  );
+  submitPassword("Senha de teste longa 2026!");
+  await waitFor(() => document.querySelector(".private-item-open"));
+  assert.ok(
+    (await store.allRecords(db)).find((row) => row.id === "qa-image").data
+      .privateVault,
+  );
   assert.equal(
-    JSON.parse(w.localStorage.getItem("vault_navigation_v1")).contentScope,
-    "untagged",
+    document.querySelector("#privateWorkspace img,#privateWorkspace video"),
+    null,
+  );
+  document.getElementById("privateLockBtn").click();
+  assert.equal(
+    document
+      .getElementById("privateWorkspace")
+      .textContent.includes("Imagem vertical de teste"),
+    false,
+  );
+  await waitFor(() => document.getElementById("privatePassword"));
+  submitPassword("Senha de teste longa 2026!");
+  await waitFor(() => document.querySelector(".private-item-open"));
+  document.querySelector(".private-item-open").click();
+  await waitFor(() => document.querySelector("#privatePreviewContent img"));
+  assert.equal(
+    document.getElementById("privatePreview").classList.contains("active"),
+    true,
+  );
+  Object.defineProperty(document, "visibilityState", {
+    value: "hidden",
+    configurable: true,
+  });
+  document.dispatchEvent(new w.Event("visibilitychange"));
+  assert.equal(
+    document.getElementById("privatePreview").classList.contains("active"),
+    false,
+  );
+  assert.equal(document.querySelector("#privatePreviewContent img"), null);
+  assert.equal(document.body.dataset.vaultUnlocked, "false");
+  assert.equal(
+    document
+      .getElementById("privateWorkspace")
+      .textContent.includes("Imagem vertical de teste"),
+    false,
+  );
+  Object.defineProperty(document, "visibilityState", {
+    value: "visible",
+    configurable: true,
+  });
+  document.getElementById("clearSearchFilters").click();
+  assert.equal(
+    document
+      .getElementById("fileGrid")
+      .textContent.includes("Imagem vertical de teste"),
+    false,
   );
   document.getElementById("navHome").click();
   document.body.dispatchEvent(

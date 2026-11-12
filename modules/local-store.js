@@ -6,6 +6,7 @@ const listeners = new Map();
 let databasePromise;
 let manager;
 let syncTimer;
+let localUpdates;
 const syncing = new Map();
 const isAccountSlot = (value) => /^ac[1-9]\d{0,61}$/.test(String(value || ""));
 const emit = (detail) =>
@@ -22,7 +23,28 @@ export function openLocalStore() {
       const request = indexedDB.open(DATABASE, 1);
       request.onupgradeneeded = () =>
         request.result.createObjectStore(TABLE, { keyPath: "key" });
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (typeof window !== "undefined") {
+          const refresh = () => notify(db).catch(() => {});
+          window.addEventListener("focus", refresh);
+          if (window.BroadcastChannel) {
+            try {
+              localUpdates = new window.BroadcastChannel(
+                "vault-library-changes-v1",
+              );
+              localUpdates.onmessage = () => {
+                // Drop unlocked private views and stale media in other tabs.
+                window.dispatchEvent(new Event("vault-records-external"));
+                refresh();
+              };
+            } catch {
+              // Browsers that block channels still refresh when focused.
+            }
+          }
+        }
+        resolve(db);
+      };
       request.onerror = () => reject(request.error);
       request.onblocked = () =>
         reject(new Error("Feche outras abas do VAULT e tente novamente."));
@@ -66,10 +88,14 @@ export function newerRecord(a, b) {
   return String(a.revision) >= String(b.revision) ? a : b;
 }
 
-async function notify(db) {
+async function notify(db, broadcast = false) {
+  if (broadcast) localUpdates?.postMessage({ type: "catalog-changed" });
   const records = await allRecords(db);
   for (const [name, callbacks] of listeners) {
-    const rows = records.filter((r) => r.collection === name && !r.removed);
+    // Protected envelopes never enter the public library or mural snapshots.
+    const rows = records.filter(
+      (r) => r.collection === name && !r.removed && !r.data?.privateVault,
+    );
     for (const { next, sort, error } of callbacks) {
       try {
         const sorted = [...rows].sort((a, b) => {
@@ -110,6 +136,10 @@ async function write(
     const get = store.get(key);
     get.onsuccess = () => {
       const old = get.result;
+      if (old?.data?.privateVault && !patch.privateVault) {
+        store.transaction.abort();
+        return;
+      }
       if (requireExisting && (!old || old.removed)) {
         store.transaction.abort();
         return;
@@ -130,7 +160,7 @@ async function write(
       });
     };
   });
-  await notify(ref.db);
+  await notify(ref.db, true);
   scheduleSync();
 }
 export async function addDoc(ref, data) {
@@ -143,6 +173,58 @@ export const updateDoc = (ref, patch) =>
 export const setDoc = (ref, data, options = {}) =>
   write(ref, data, { merge: !!options.merge });
 export const deleteDoc = (ref) => write(ref, {}, { removed: true });
+
+// Encrypt/restore a complete subtree in one transaction. Check revisions after
+// the asynchronous crypto work so a concurrent edit can never be overwritten.
+export async function replaceRecordsAtomically(
+  db,
+  changes,
+  expectedPublicRows,
+) {
+  await transaction(db, "readwrite", (store) => {
+    if (expectedPublicRows) {
+      const expected = new Map(
+        expectedPublicRows.map((row) => [row.key, row.revision]),
+      );
+      const all = store.getAll();
+      all.onsuccess = () => {
+        const publicRows = all.result.filter(
+          (row) =>
+            !row.removed &&
+            row.collection !== "vault_sync" &&
+            !row.data?.privateVault,
+        );
+        if (
+          publicRows.length !== expected.size ||
+          publicRows.some((row) => expected.get(row.key) !== row.revision)
+        )
+          store.transaction.abort();
+      };
+    }
+    for (const change of changes) {
+      const request = store.get(`${change.collection}/${change.id}`);
+      request.onsuccess = () => {
+        const old = request.result;
+        if (!old || old.removed || old.revision !== change.revision) {
+          store.transaction.abort();
+          return;
+        }
+        const tick = Math.max(
+          Date.now(),
+          Number(old.revision.split(":")[0]) + 1,
+        );
+        store.put({
+          ...old,
+          data: structuredClone(change.data),
+          revision: `${String(tick).padStart(16, "0")}:${crypto.randomUUID()}`,
+          dirty: true,
+        });
+      };
+    }
+  });
+  await notify(db, true);
+  scheduleSync();
+}
 
 // Import atomically without replacing newer edits or tombstones. Legacy
 // revisions precede every edit made by the current application.
@@ -167,7 +249,7 @@ export async function importMissingRecords(db, rows) {
     }
   });
   if (imported) {
-    await notify(db);
+    await notify(db, true);
     scheduleSync();
   }
   return imported;
@@ -263,7 +345,7 @@ export async function mergeRecords(db, incoming, slot) {
       };
     }
   });
-  await notify(db);
+  await notify(db, true);
 }
 
 export function syncAccount(slot) {

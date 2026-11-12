@@ -27,14 +27,22 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ## Navegação no computador
 
-- **Início** resume o acervo; **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual.
-- Na tela **Início**, **Redescobrir** traz uma foto ou vídeo diferente quando não há uma memória desta data. **Surpreenda-me** abre outro momento diretamente no visualizador.
-- **Para organizar** mostra, com contagens atualizadas, arquivos sem etiquetas, capturas, possíveis duplicados e vídeos grandes. Cada cartão abre o filtro correspondente na Biblioteca.
+- **Início** abre um hall sem imagens, capas, nomes de arquivos ou atividade recente: apenas contagens, contas, armazenamento e sincronização. A árvore de pastas fica oculta no hall, inclusive no tema After Dark.
+- **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual. **Cofre privado** abre a área protegida por senha.
 - Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
 - Arraste um cartão para uma pasta da árvore, uma pasta fixada ou um cartão de pasta para movê-lo. Ao arrastar um item selecionado, todos os selecionados são movidos juntos; arquivos do computador continuam abrindo a área de envio.
-- Fixe as pastas mais usadas pela estrela ao lado do nome ou em **Ações da pasta**. A seção **Continuar de onde parei**, no Início, reabre os últimos arquivos visualizados.
+- Fixe as pastas mais usadas pela estrela ao lado do nome ou em **Ações da pasta**.
+
+### Cofre privado
+
+- Abra **Cofre privado** e crie uma senha com pelo menos 10 caracteres. A senha não pode ser recuperada; guarde-a antes de proteger itens.
+- Em **Mais opções** de um arquivo ou nas ações de uma pasta, escolha **Guardar no cofre**. Pastas incluem todas as subpastas e os arquivos, inclusive os da lixeira. Referências desses arquivos no mural também ficam ocultas.
+- Os itens protegidos saem das buscas, etiquetas, favoritos, capas e árvore da biblioteca. Dentro do cofre, a listagem é textual; uma prévia só abre quando você escolhe um arquivo. **Retirar do cofre** devolve o item à biblioteca; um arquivo retirado sozinho de uma pasta ainda privada volta para a raiz.
+- O cofre tranca ao sair da área privada, ao trocar de aba, ao ocultar o conteúdo, ao fechar a página ou após 5 minutos sem atividade. A chave fica somente em memória. O hall continua sem imagens.
+- Nomes, etiquetas, URLs e demais metadados dos registros protegidos usam AES-256-GCM, com chave derivada da senha por PBKDF2-SHA-256 (600.000 iterações), salt aleatório e IV exclusivo por registro. Os metadados cifrados seguem na sincronização e no backup JSON v3; em outro navegador, use a mesma senha após recuperar os registros.
+- **Escopo da proteção:** os arquivos binários originais no Drive/Cloudinary, links já compartilhados, backups antigos e lotes imutáveis antigos do índice não são criptografados retroativamente. O cofre protege o catálogo atual dentro do VAULT; ele não muda as permissões dos originais nem substitui criptografia dos arquivos. Uma versão antiga do aplicativo não deve editar registros protegidos.
 
 ### Visualizador
 
@@ -64,7 +72,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ## Aparência
 
-Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma identidade visual adulta opcional, com imagem editorial e motivos de espadas, coroa e brilhos distribuídos pela interface. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias.
+Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma paleta alternativa, com motivos de espadas, coroa e brilhos distribuídos pela interface. O hall permanece sem imagens em todos os temas. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias; ocultar o conteúdo também tranca o cofre privado.
 
 ### Como a sincronização resolve alterações
 

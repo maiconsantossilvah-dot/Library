@@ -1,0 +1,286 @@
+/* Keep the entrance free of library content in every theme, from first paint. */
+body.vault-reimagined[data-section="home"] .dashboard-hero,
+body.vault-reimagined[data-section="vault"] .dashboard-hero {
+  background: var(--surface) !important;
+  background-image: none !important;
+}
+body.vault-reimagined[data-section="home"] .after-dark-hero-crest,
+body.vault-reimagined[data-section="home"] .hero-after-dark-label,
+body.vault-reimagined[data-section="home"] .sidebar-scroll,
+body.vault-reimagined[data-section="vault"] .sidebar-scroll,
+body.vault-reimagined[data-section="home"] .global-search,
+body.vault-reimagined[data-section="vault"] .global-search {
+  display: none !important;
+}
+body.vault-reimagined[data-section="home"] .hero-default-label {
+  display: inline !important;
+}
+body.vault-reimagined[data-section="home"] .sidebar-footer,
+body.vault-reimagined[data-section="vault"] .sidebar-footer {
+  margin-top: auto;
+}
+.vault-reimagined .hall-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  gap: 20px;
+  margin-top: 24px;
+}
+.vault-reimagined .hall-grid h2 {
+  font-size: 23px;
+  margin: 10px 0 18px;
+}
+.vault-reimagined .hall-grid p {
+  color: var(--text2);
+  line-height: 1.7;
+}
+.vault-reimagined .hall-account {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--border);
+}
+.vault-reimagined .hall-account:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.vault-reimagined .hall-account-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vault-reimagined .hall-account-heading > div {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.vault-reimagined .hall-account-heading h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.vault-reimagined .hall-account-heading p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.vault-reimagined .hall-account-slot {
+  padding: 9px;
+  border-radius: 9px;
+  background: var(--bg2);
+  color: var(--text);
+  font: 12px var(--font-mono);
+}
+.vault-reimagined .hall-account-status {
+  color: var(--text2);
+  font-size: 11px;
+}
+.vault-reimagined .hall-account-status.is-connected {
+  color: var(--accent2);
+}
+.vault-reimagined .hall-account-quota {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 10px;
+  color: var(--text2);
+  font-size: 12px;
+}
+.vault-reimagined .hall-account-quota strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.vault-reimagined .hall-status-list {
+  margin: 22px 0;
+  font-size: 12px;
+}
+.vault-reimagined .hall-status-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.vault-reimagined .hall-status-list dt {
+  color: var(--text2);
+}
+.vault-reimagined .hall-status-list dd {
+  margin: 0;
+  text-align: right;
+}
+.vault-reimagined .hall-no-accounts {
+  padding: 22px 0 4px;
+}
+.vault-reimagined .private-workspace {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.vault-reimagined .private-gate {
+  width: min(100%, 540px);
+  margin: 36px auto;
+  padding: 38px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 22px;
+}
+.vault-reimagined .private-gate-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  background: var(--bg2);
+  border-radius: 16px;
+  margin-bottom: 24px;
+}
+.vault-reimagined .private-gate-mark svg {
+  width: 27px;
+  height: 27px;
+}
+.vault-reimagined .private-gate h1,
+.vault-reimagined .private-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 400;
+  margin: 14px 0;
+}
+.vault-reimagined .private-gate > p,
+.vault-reimagined .private-header p {
+  color: var(--text2);
+  line-height: 1.6;
+}
+.vault-reimagined .private-access-form {
+  margin-top: 26px;
+}
+.vault-reimagined .private-access-form .modal-input {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.vault-reimagined .private-access-form .modal-btn {
+  width: 100%;
+}
+.vault-reimagined .private-help,
+.vault-reimagined .private-scope {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.vault-reimagined .private-scope {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.vault-reimagined .private-error {
+  color: var(--danger);
+  min-height: 20px;
+  font-size: 13px;
+}
+.vault-reimagined .private-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 0;
+}
+.vault-reimagined .private-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+  overflow-wrap: anywhere;
+}
+.vault-reimagined .private-breadcrumb button {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 8px;
+}
+.vault-reimagined .private-item-list {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.vault-reimagined .private-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.vault-reimagined .private-item:last-child {
+  border-bottom: 0;
+}
+.vault-reimagined .private-item-icon {
+  color: var(--text2);
+}
+.vault-reimagined .private-item-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: var(--text);
+  padding: 4px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.vault-reimagined .private-item-open small {
+  color: var(--text2);
+}
+.vault-reimagined .private-empty {
+  text-align: center;
+  padding: 40px 22px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.vault-reimagined .private-preview-modal {
+  width: min(1000px, 94vw);
+  max-width: 1000px;
+}
+.vault-reimagined #privatePreviewContent {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+}
+.vault-reimagined #privatePreviewContent img,
+.vault-reimagined #privatePreviewContent video {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+}
+.vault-reimagined #privatePreviewContent iframe {
+  width: 100%;
+  height: 60vh;
+  border: 0;
+}
+.vault-reimagined .private-download {
+  display: inline-flex;
+  text-decoration: none;
+}
+@media (max-width: 1100px) {
+  .vault-reimagined .hall-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .vault-reimagined .private-gate {
+    padding: 24px;
+    margin-top: 12px;
+  }
+  .vault-reimagined .private-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .vault-reimagined .private-item {
+    flex-wrap: wrap;
+  }
+  .vault-reimagined .private-item-open {
+    flex-basis: 65%;
+  }
+  .vault-reimagined .private-restore {
+    margin-left: 34px;
+  }
+  .vault-reimagined .hall-account-heading {
+    flex-wrap: wrap;
+  }
+}

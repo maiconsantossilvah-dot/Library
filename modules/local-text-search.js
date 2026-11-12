@@ -4,7 +4,8 @@ const STORE_NAME = "texts";
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+    request.onupgradeneeded = () =>
+      request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -19,6 +20,7 @@ function requestResult(request) {
 
 export function createLocalTextSearch() {
   const entries = new Map();
+  const blocked = new Set();
   let databasePromise = null;
 
   function database() {
@@ -29,8 +31,10 @@ export function createLocalTextSearch() {
   return {
     async hydrate() {
       const db = await database();
-      const records = await requestResult(db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll());
-      records.forEach(record => entries.set(record.id, record));
+      const records = await requestResult(
+        db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll(),
+      );
+      records.forEach((record) => entries.set(record.id, record));
       return entries.size;
     },
 
@@ -39,21 +43,43 @@ export function createLocalTextSearch() {
     },
 
     async put(record) {
+      if (blocked.has(record.id)) return;
       entries.set(record.id, record);
       const db = await database();
-      await requestResult(db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(record));
+      if (blocked.has(record.id)) return;
+      await requestResult(
+        db
+          .transaction(STORE_NAME, "readwrite")
+          .objectStore(STORE_NAME)
+          .put(record),
+      );
+    },
+
+    block(fileId) {
+      blocked.add(fileId);
+      entries.delete(fileId);
+    },
+    unblock(fileId) {
+      blocked.delete(fileId);
     },
 
     async remove(fileId) {
       entries.delete(fileId);
       const db = await database();
-      await requestResult(db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(fileId));
+      await requestResult(
+        db
+          .transaction(STORE_NAME, "readwrite")
+          .objectStore(STORE_NAME)
+          .delete(fileId),
+      );
     },
 
     async clear() {
       entries.clear();
       const db = await database();
-      await requestResult(db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).clear());
+      await requestResult(
+        db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).clear(),
+      );
     },
 
     count() {
@@ -64,7 +90,13 @@ export function createLocalTextSearch() {
 
 function canvasBlob(canvas) {
   return new Promise((resolve, reject) => {
-    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Nao foi possivel preparar a imagem")), "image/png");
+    canvas.toBlob(
+      (blob) =>
+        blob
+          ? resolve(blob)
+          : reject(new Error("Nao foi possivel preparar a imagem")),
+      "image/png",
+    );
   });
 }
 
@@ -75,7 +107,9 @@ async function scaleImageForOcr(file) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  canvas
+    .getContext("2d", { alpha: false })
+    .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   return canvasBlob(canvas);
 }
@@ -87,8 +121,11 @@ async function loadTesseract() {
 async function recognizeImages(images, onProgress) {
   const { createWorker } = await loadTesseract();
   const worker = await createWorker("por+eng", 1, {
-    logger: message => {
-      if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+    logger: (message) => {
+      if (
+        message.status === "recognizing text" &&
+        Number.isFinite(message.progress)
+      ) {
         onProgress?.(message.progress);
       }
     },
@@ -108,8 +145,10 @@ async function recognizeImages(images, onProgress) {
 }
 
 async function loadPdfJs() {
-  const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.mjs";
+  const pdfjs =
+    await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.mjs";
   return pdfjs;
 }
 
@@ -118,24 +157,33 @@ async function renderPdfPage(page) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
-  await page.render({ canvasContext: canvas.getContext("2d", { alpha: false }), viewport }).promise;
+  await page.render({
+    canvasContext: canvas.getContext("2d", { alpha: false }),
+    viewport,
+  }).promise;
   return canvasBlob(canvas);
 }
 
 async function extractPdfText(file, onProgress) {
   const pdfjs = await loadPdfJs();
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const task = pdfjs.getDocument({
+    data: new Uint8Array(await file.arrayBuffer()),
+  });
   const pdf = await task.promise;
   try {
     const pages = [];
     for (let number = 1; number <= pdf.numPages; number += 1) {
       const page = await pdf.getPage(number);
       const content = await page.getTextContent();
-      pages.push(content.items.map(item => item.str || "").join(" "));
-      onProgress?.(number / pdf.numPages, `Lendo pagina ${number}/${pdf.numPages}`);
+      pages.push(content.items.map((item) => item.str || "").join(" "));
+      onProgress?.(
+        number / pdf.numPages,
+        `Lendo pagina ${number}/${pdf.numPages}`,
+      );
     }
     const nativeText = pages.join("\n").replace(/\s+/g, " ").trim();
-    if (nativeText.length >= 30) return { text: nativeText, method: "pdf-text", truncated: false };
+    if (nativeText.length >= 30)
+      return { text: nativeText, method: "pdf-text", truncated: false };
 
     const pageLimit = Math.min(pdf.numPages, 20);
     const renderedPages = [];
@@ -144,8 +192,14 @@ async function extractPdfText(file, onProgress) {
       renderedPages.push(await renderPdfPage(page));
       onProgress?.(number / pageLimit, `Preparando OCR ${number}/${pageLimit}`);
     }
-    const ocrText = await recognizeImages(renderedPages, progress => onProgress?.(progress, "Lendo texto do PDF"));
-    return { text: ocrText, method: "pdf-ocr", truncated: pdf.numPages > pageLimit };
+    const ocrText = await recognizeImages(renderedPages, (progress) =>
+      onProgress?.(progress, "Lendo texto do PDF"),
+    );
+    return {
+      text: ocrText,
+      method: "pdf-ocr",
+      truncated: pdf.numPages > pageLimit,
+    };
   } finally {
     await pdf.destroy();
   }
@@ -161,7 +215,9 @@ export async function extractSearchText(file, onProgress) {
   if (file.type.startsWith("image/")) {
     const scaled = await scaleImageForOcr(file);
     return {
-      text: await recognizeImages([scaled], progress => onProgress?.(progress, "Lendo texto da imagem")),
+      text: await recognizeImages([scaled], (progress) =>
+        onProgress?.(progress, "Lendo texto da imagem"),
+      ),
       method: "image-ocr",
       truncated: false,
     };

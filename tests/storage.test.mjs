@@ -2,6 +2,67 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { IDBFactory } from "fake-indexeddb";
 let sequence = 0;
+test("outras abas recebem alterações sem circular mensagens ou expor os dados no canal", async () => {
+  const previousWindow = globalThis.window;
+  const peers = [];
+  const messages = [];
+  class Channel {
+    constructor() {
+      peers.push(this);
+    }
+    postMessage(message) {
+      messages.push(message);
+      for (const peer of peers)
+        if (peer !== this)
+          queueMicrotask(() => peer.onmessage?.({ data: message }));
+    }
+  }
+  const events = new EventTarget();
+  globalThis.window = {
+    BroadcastChannel: Channel,
+    addEventListener: events.addEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
+  };
+  try {
+    globalThis.indexedDB = new IDBFactory();
+    const first = await import(`../modules/local-store.js?tabs=${++sequence}`);
+    const second = await import(`../modules/local-store.js?tabs=${++sequence}`);
+    const db1 = await first.openLocalStore();
+    const db2 = await second.openLocalStore();
+    let visible = [];
+    let external = 0;
+    events.addEventListener("vault-records-external", () => external++);
+    const stop = second.onSnapshot(
+      second.collection(db2, "vault_files"),
+      (snapshot) => {
+        visible = snapshot.docs.map((row) => row.id);
+      },
+    );
+    await first.setDoc(first.doc(db1, "vault_files", "shared"), {
+      name: "Privado",
+    });
+    for (let attempt = 0; attempt < 30 && !visible.length; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(visible, ["shared"]);
+    await first.setDoc(first.doc(db1, "vault_files", "shared"), {
+      privateVault: { ciphertext: "encrypted" },
+    });
+    for (let attempt = 0; attempt < 30 && visible.length; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(visible, []);
+    assert.equal(external, 2);
+    assert.deepEqual(messages, [
+      { type: "catalog-changed" },
+      { type: "catalog-changed" },
+    ]);
+    stop();
+    db1.close();
+    db2.close();
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
 async function device() {
   globalThis.indexedDB = new IDBFactory();
   const s = await import(`../modules/local-store.js?test=${++sequence}`);
