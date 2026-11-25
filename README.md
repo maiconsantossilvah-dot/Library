@@ -27,7 +27,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ## Navegação no computador
 
-- **Início** abre um hall sem imagens, capas, nomes de arquivos ou atividade recente: apenas contagens, contas, armazenamento e sincronização. A árvore de pastas fica oculta no hall, inclusive no tema After Dark.
+- **Início** abre o hall com contagens, contas, armazenamento e sincronização. Em **Editar hall**, habilite prévias e escolha blocos, ordem e aparência para cada conta. O padrão continua sendo **hall sem prévias**. A árvore de pastas fica oculta no hall, inclusive no tema After Dark.
 - **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual. **Wallpapers** cria e aplica fundos à Biblioteca. **Cofre privado** abre a área protegida por senha.
 - Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
@@ -35,19 +35,44 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 - Arraste um cartão para uma pasta da árvore, uma pasta fixada ou um cartão de pasta para movê-lo. Ao arrastar um item selecionado, todos os selecionados são movidos juntos; arquivos do computador continuam abrindo a área de envio.
 - Fixe as pastas mais usadas pela estrela ao lado do nome ou em **Ações da pasta**.
 
+### Contas, destaques e hall
+
+- **Escopo do acervo**, no topo em desktop e celular, filtra o hall, a biblioteca, pastas, busca, contadores e capas. A escolha persiste entre sessões. Contas desconectadas continuam no seletor, com contagens preservadas e indicação de atenção.
+- Na Central de contas, **Nome, cor e iniciais** personaliza a identidade. **Editar hall** define título, wallpaper (URL ou cor), desfoque, escurecimento, destaque e aparência da grade por escopo. Escopos sem configuração herdam **Todas as contas**; **Restaurar padrão** retoma essa herança.
+- Habilite blocos e arraste para ordenar ou use as setas. Blocos de mídia têm quantidade, fonte e tamanho configuráveis. Estão disponíveis banner, fixados, continuar, recentes, favoritos, melhores avaliados, melhores do mês, memórias, redescubra, nunca visto, espaço por conta e sincronização.
+- O botão de fixação nas miniaturas e no visualizador escolhe escopo e tamanho. Cada escopo aceita até 24 destaques, reordenáveis por arraste ou setas, inclusive por toque. Desafixar não exclui o original.
+- O banner usa foto fixa, aleatório por visita ou foto do dia, estável entre favoritas e fotos com quatro ou cinco estrelas. **Neste dia** usa a data original disponível, com fallback para data do catálogo, e desaparece quando não há lembranças.
+- O visualizador salva estrelas, último acesso e posição do vídeo. **Continuar** retoma vídeos e a página de mangá. A biblioteca oferece filtro por avaliação mínima e ordenação por estrelas.
+- O cofre privado nunca participa desses blocos. **Hall sem prévias** e **Modo discreto** ocultam a mídia do hall e seu wallpaper.
+
+### Pastas vinculadas
+
+- Na criação, escolha **Disponível em**. Para uma pasta existente, use **Ações da pasta → Vincular a outras contas**. Pastas equivalentes no mesmo nível podem ser mescladas por nome após confirmação. Só os metadados são reorganizados; os arquivos continuam em suas contas.
+- Uma conta selecionada mostra apenas seus arquivos. Dentro da pasta, **Incluir contas vinculadas** amplia explicitamente a visualização; o filtro ao lado escolhe uma conta vinculada. Essa exceção não altera o escopo do hall.
+- Escolha a política de envio: **Conta ativa**, **Mais espaço livre** ou **Perguntar a cada envio**. Mais espaço livre usa a quota conhecida e reserva espaço para o lote inteiro. Com a conta ativa desconectada, o seletor oferece outra vinculada disponível. Uma pasta física no destino só é criada quando necessária para um envio.
+- Desvincular pede confirmação e deixa os arquivos daquela conta sem pasta no catálogo, preservando os originais. Contas indisponíveis mantêm registros e contagens, com espaços reservados para reconectar.
+- **Mover para outra conta** baixa e reenvia com progresso e cancelamento. O original só é excluído após o Drive confirmar o tamanho e o catálogo salvar a cópia. Cancelar antes dessa etapa preserva o original. Uma falha transitória no envio consulta a mesma sessão resumível antes de reenviar bytes.
+- **Aparência desta pasta** define layout e proporção; capas individuais continuam nas ações existentes. Indicadores da conta de origem podem ser ocultados em **Editar hall**.
+
+### Backup e desempenho
+
+Os backups incluem `schemaVersion: 4` e preservam avaliações, pins por escopo, datas, progresso, vínculos, políticas de envio, identidade e configurações do hall. Backups antigos recebem padrões, preservando os envelopes do cofre. As novas coleções participam da sincronização de metadados existente no Drive. A conta ativa entra no JSON; credenciais ficam fora dele. O envelope mantém `version: 3` para compatibilidade.
+
+As URLs das miniaturas do Drive têm cache em IndexedDB por até 24 horas. O hall limita a quantidade renderizada por bloco; grades uniformes com mais de 180 itens usam páginas virtuais e liberam o DOM fora da janela de rolagem. Outros layouts mantêm carregamento progressivo. A suíte verifica o cálculo dos blocos com 10.000 arquivos; o tempo total em dispositivos reais depende da indexação, do navegador e da rede.
+
 ### Cofre privado
 
 - Abra **Cofre privado** e crie uma senha com pelo menos 10 caracteres. A senha não pode ser recuperada; guarde-a antes de proteger itens.
 - Em **Mais opções** de um arquivo ou nas ações de uma pasta, escolha **Guardar no cofre**. Pastas incluem todas as subpastas e os arquivos, inclusive os da lixeira. Referências desses arquivos no mural também ficam ocultas.
 - Os itens protegidos saem das buscas, etiquetas, favoritos, capas e árvore da biblioteca. Dentro do cofre, a listagem é textual; uma prévia só abre quando você escolhe um arquivo. **Retirar do cofre** devolve o item à biblioteca; um arquivo retirado sozinho de uma pasta ainda privada volta para a raiz.
-- O cofre tranca ao sair da área privada, ao trocar de aba, ao ocultar o conteúdo, ao fechar a página ou após 5 minutos sem atividade. A chave fica somente em memória. O hall continua sem imagens.
+- O cofre tranca ao sair da área privada, ao trocar de aba, ao ocultar o conteúdo, ao fechar a página ou após 5 minutos sem atividade. A chave fica somente em memória. Itens do cofre ficam sempre fora dos destaques, banners e memórias.
 - Nomes, etiquetas, URLs e demais metadados dos registros protegidos usam AES-256-GCM, com chave derivada da senha por PBKDF2-SHA-256 (600.000 iterações), salt aleatório e IV exclusivo por registro. Os metadados cifrados seguem na sincronização e no backup JSON v3; em outro navegador, use a mesma senha após recuperar os registros.
 - **Escopo da proteção:** os arquivos binários originais no Drive/Cloudinary, links já compartilhados, backups antigos e lotes imutáveis antigos do índice não são criptografados retroativamente. O cofre protege o catálogo atual dentro do VAULT; ele não muda as permissões dos originais nem substitui criptografia dos arquivos. Uma versão antiga do aplicativo não deve editar registros protegidos.
 
 ### Visualizador
 
 - Use `←` e `→` para navegar, `Espaço` para avançar, `F` para favoritar, `T` para editar etiquetas e `M` para mover.
-- Em fotos e vídeos, `0` ajusta à tela, `1` mostra o tamanho original e `Enter` alterna a tela cheia. Em fotos, `+` e `-` controlam o zoom.
+- No visualizador, `1` a `5` atribuem estrelas e `0` remove a avaliação. `A` ajusta à tela, `O` mostra o tamanho original e `Enter` alterna a tela cheia. Em fotos, `+` e `-` controlam o zoom.
 - As miniaturas são carregadas progressivamente. URLs temporárias do Drive são reaproveitadas enquanto válidas e os arquivos vizinhos são pré-carregados para reduzir a espera ao navegar.
 
 ### Etiquetas coloridas
@@ -72,7 +97,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 
 ## Aparência
 
-Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma paleta alternativa, com motivos de espadas, coroa e brilhos distribuídos pela interface. O hall permanece sem imagens em todos os temas. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias; ocultar o conteúdo também tranca o cofre privado.
+Em **Ferramentas → Aparência e privacidade**, o tema **After Dark** ativa uma paleta alternativa, com motivos de espadas, coroa e brilhos distribuídos pela interface. O hall respeita a configuração de prévias em todos os temas. O modo discreto oculta os blocos de mídia e o wallpaper do hall. A aparência padrão continua sendo a inicial. Desativar o tema retorna ao modo escuro comum; o botão de tema claro/escuro também sai do After Dark. A preferência fica somente neste navegador. **Modo discreto** e **Ocultar conteúdo** continuam disponíveis para esconder rapidamente as prévias; ocultar o conteúdo também tranca o cofre privado.
 
 ### Como a sincronização resolve alterações
 
@@ -115,7 +140,7 @@ O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 
 ## Migrar da versão anterior
 
-Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Ferramentas → Restaurar JSON** aceita o formato antigo e o completo v3. Registros com o mesmo ID podem ser substituídos após confirmação.
+Faça um backup JSON da versão antiga antes de substituí-la, se possível. **Ferramentas → Restaurar JSON** aceita os formatos antigos e os backups completos com schemaVersion 4. Registros com o mesmo ID podem ser substituídos após confirmação.
 
 Se a configuração antiga ainda estiver neste navegador, o aplicativo inicia a migração **Firebase → catálogo local → Drive** automaticamente. Lê `vault_folders` e `vault_files` diretamente do servidor Firebase, preserva os IDs, relações entre pastas, tags, datas e referências aos arquivos originais e envia os metadados às contas conectadas. Fotos e vídeos não são duplicados. O Firebase nunca é alterado ou apagado.
 

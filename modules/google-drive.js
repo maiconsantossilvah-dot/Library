@@ -1,4 +1,5 @@
 import { PersistentDriveCredentialProvider } from "./drive-credential-provider.js";
+import { transferResumable } from "./resumable-upload.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
@@ -633,13 +634,14 @@ export class GoogleDriveManager {
     return `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}${authUser}`;
   }
 
-  async getBlob(slot, fileId, allowRetry = true) {
+  async getBlob(slot, fileId, allowRetry = true, { signal } = {}) {
     const normalized = normalizeSlot(slot);
     const session = await this.getValidSession(normalized);
     const response = await fetch(
       `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
       {
         headers: { Authorization: `Bearer ${session.accessToken}` },
+        signal,
       },
     );
     if (!response.ok) {
@@ -648,7 +650,7 @@ export class GoogleDriveManager {
         this.sessions.delete(normalized);
         if (allowRetry && this.getAccount(normalized)?.persistentAvailable) {
           await this.getValidSession(normalized, { forceRefresh: true });
-          return this.getBlob(normalized, fileId, false);
+          return this.getBlob(normalized, fileId, false, { signal });
         }
         this.onSessionInvalid?.(normalized, payload);
       }
@@ -662,7 +664,7 @@ export class GoogleDriveManager {
     return response.blob();
   }
 
-  async uploadFile(slot, file, parentId, { onProgress, onXhr } = {}) {
+  async uploadFile(slot, file, parentId, { onProgress, onXhr, signal } = {}) {
     const normalized = normalizeSlot(slot);
     const session = await this.getValidSession(normalized);
     if (!file.size)
@@ -684,6 +686,7 @@ export class GoogleDriveManager {
             "Content-Type": "application/json; charset=UTF-8",
           },
           body: JSON.stringify(metadata),
+          signal,
         },
       );
     } catch (error) {
@@ -711,13 +714,35 @@ export class GoogleDriveManager {
     if (!uploadUrl)
       throw new Error("O Google Drive nao retornou a sessao de upload");
 
-    const uploaded = await this.sendUploadXhr(
-      normalized,
-      "PUT",
-      uploadUrl,
+    const uploaded = await transferResumable(
       file,
-      { "Content-Type": mimeType },
-      { onProgress, onXhr },
+      (offset) =>
+        this.sendUploadXhr(
+          normalized,
+          "PUT",
+          uploadUrl,
+          offset ? file.slice(offset) : file,
+          {
+            "Content-Type": mimeType,
+            ...(offset
+              ? {
+                  "Content-Range": `bytes ${offset}-${file.size - 1}/${file.size}`,
+                }
+              : {}),
+          },
+          {
+            onProgress: (loaded) => onProgress?.(loaded + offset, file.size),
+            onXhr,
+            signal,
+          },
+        ),
+      () =>
+        fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Range": `bytes */${file.size}` },
+          signal,
+        }),
+      { signal },
     );
     if (!uploaded?.id)
       throw new Error(
@@ -734,9 +759,23 @@ export class GoogleDriveManager {
     return uploaded;
   }
 
-  sendUploadXhr(slot, method, url, body, headers, { onProgress, onXhr }) {
+  sendUploadXhr(
+    slot,
+    method,
+    url,
+    body,
+    headers,
+    { onProgress, onXhr, signal },
+  ) {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Upload cancelado", "AbortError"));
+        return;
+      }
       const xhr = new XMLHttpRequest();
+      const abort = () => xhr.abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      xhr.onloadend = () => signal?.removeEventListener("abort", abort);
       xhr.open(method, url);
       for (const [name, value] of Object.entries(headers))
         xhr.setRequestHeader(name, value);
@@ -756,11 +795,14 @@ export class GoogleDriveManager {
             this.onSessionInvalid?.(slot, payload);
           }
           reject(
-            new Error(
-              driveErrorMessage(
-                payload,
-                `Erro ${xhr.status} no upload para o Drive`,
+            Object.assign(
+              new Error(
+                driveErrorMessage(
+                  payload,
+                  `Erro ${xhr.status} no upload para o Drive`,
+                ),
               ),
+              { status: xhr.status },
             ),
           );
         }

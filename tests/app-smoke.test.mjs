@@ -447,14 +447,14 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     "scale(1.25)",
   );
   document.body.dispatchEvent(
-    new w.KeyboardEvent("keydown", { key: "0", bubbles: true }),
+    new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),
   );
   assert.equal(
     document.querySelector("#lightboxInner img").style.transform,
     "scale(1)",
   );
   document.body.dispatchEvent(
-    new w.KeyboardEvent("keydown", { key: "1", bubbles: true }),
+    new w.KeyboardEvent("keydown", { key: "o", bubbles: true }),
   );
   assert.equal(
     document
@@ -463,7 +463,7 @@ test("biblioteca completa: inicializar offline, navegar e pesquisar sem exceçõ
     true,
   );
   document.body.dispatchEvent(
-    new w.KeyboardEvent("keydown", { key: "0", bubbles: true }),
+    new w.KeyboardEvent("keydown", { key: "a", bubbles: true }),
   );
   document.body.dispatchEvent(
     new w.KeyboardEvent("keydown", { key: " ", bubbles: true }),

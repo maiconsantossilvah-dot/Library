@@ -1,5 +1,16 @@
 // Device-local metadata. Drive synchronization uses immutable change sets so
 // two devices cannot overwrite each other's index. Deletions travel as tombstones.
+import {
+  normalizeFile,
+  normalizeFolder,
+  SCHEMA_VERSION,
+} from "./hall-model.js";
+const normalize = (name, data) =>
+  name === "vault_files"
+    ? normalizeFile(data)
+    : name === "vault_folders"
+      ? normalizeFolder(data)
+      : data;
 const DATABASE = "vault_library_v3";
 const TABLE = "records";
 const listeners = new Map();
@@ -75,9 +86,11 @@ export async function allRecords(db) {
   });
 }
 
-export async function getSyncSummary() {
+export async function getSyncSummary(scope = "all") {
   const rows = (await allRecords()).filter(
-    (r) => r.collection !== "vault_sync",
+    (r) =>
+      r.collection !== "vault_sync" &&
+      (scope === "all" || r.data?.accountSlot === scope),
   );
   return { pending: rows.filter((r) => r.dirty).length, total: rows.length };
 }
@@ -108,7 +121,7 @@ async function notify(db, broadcast = false) {
         next({
           docs: sorted.map((r) => ({
             id: r.id,
-            data: () => structuredClone(r.data),
+            data: () => normalize(name, structuredClone(r.data)),
           })),
         });
       } catch (e) {
@@ -153,7 +166,18 @@ async function write(
         key,
         id: ref.id,
         collection: ref.name,
-        data: { ...(merge ? old?.data : {}), ...structuredClone(patch) },
+        data: normalize(ref.name, {
+          ...(merge ? old?.data : {}),
+          ...structuredClone(patch),
+          ...(merge && patch.driveFolderIds
+            ? {
+                driveFolderIds: {
+                  ...old?.data?.driveFolderIds,
+                  ...patch.driveFolderIds,
+                },
+              }
+            : {}),
+        }),
         revision: `${String(tick).padStart(16, "0")}:${crypto.randomUUID()}`,
         removed,
         dirty: true,
@@ -173,6 +197,68 @@ export const updateDoc = (ref, patch) =>
 export const setDoc = (ref, data, options = {}) =>
   write(ref, data, { merge: !!options.merge });
 export const deleteDoc = (ref) => write(ref, {}, { removed: true });
+
+// Restore one catalog transaction, then publish one snapshot per collection.
+// This avoids rebuilding a large library after every individual restored row.
+export async function restoreCatalogRecords(db, records) {
+  await transaction(db, "readwrite", (store) => {
+    for (const row of records) {
+      const key = `${row.collection}/${row.id}`;
+      const request = store.get(key);
+      request.onsuccess = () => {
+        const old = request.result;
+        if (old?.data?.privateVault && !row.data.privateVault) {
+          store.transaction.abort();
+          return;
+        }
+        const tick = Math.max(
+          Date.now(),
+          Number(old?.revision?.split(":")[0] || 0) + 1,
+        );
+        store.put({
+          key,
+          id: row.id,
+          collection: row.collection,
+          data: normalize(row.collection, structuredClone(row.data)),
+          removed: !!row.removed,
+          dirty: true,
+          revision: `${String(tick).padStart(16, "0")}:${crypto.randomUUID()}`,
+        });
+      };
+    }
+  });
+  await notify(db, true);
+  scheduleSync();
+}
+
+// Catalog-only compound edits commit together, including unlink and reorder.
+export async function updateCatalogBatch(db, changes) {
+  await transaction(db, "readwrite", (store) => {
+    for (const change of changes) {
+      const request = store.get(`${change.collection}/${change.id}`);
+      request.onsuccess = () => {
+        const old = request.result;
+        if (!old || old.removed || old.data?.privateVault) {
+          store.transaction.abort();
+          return;
+        }
+        const tick = Math.max(
+          Date.now(),
+          Number(old.revision?.split(":")[0] || 0) + 1,
+        );
+        store.put({
+          ...old,
+          data: normalize(change.collection, { ...old.data, ...change.data }),
+          removed: !!change.removed,
+          dirty: true,
+          revision: `${String(tick).padStart(16, "0")}:${crypto.randomUUID()}`,
+        });
+      };
+    }
+  });
+  await notify(db, true);
+  scheduleSync();
+}
 
 // Encrypt/restore a complete subtree in one transaction. Check revisions after
 // the asynchronous crypto work so a concurrent edit can never be overwritten.
@@ -320,6 +406,8 @@ export async function mergeRecords(db, incoming, slot) {
           "vault_boards",
           "vault_board_items",
           "vault_board_edges",
+          "vault_scope_settings",
+          "vault_account_identity",
         ].includes(row.collection) ||
         typeof row.id !== "string" ||
         !row.id ||
@@ -400,6 +488,7 @@ async function synchronize(slot) {
     if (pending.length) {
       const payload = JSON.stringify({
         version: 3,
+        schemaVersion: SCHEMA_VERSION,
         records: pending.map(({ dirty, ...r }) => r),
       });
       const uploaded = await manager.uploadIndex(slot, root, payload);

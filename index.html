@@ -193,6 +193,16 @@
       <!-- ÁREA PRINCIPAL -->
       <main class="main" id="main">
         <header class="topbar">
+          <div class="global-account-scope">
+            <label for="accountViewSelect">Escopo do acervo</label
+            ><select
+              class="sort-select account-view-select"
+              id="accountViewSelect"
+              title="Visualizar uma conta ou todas"
+            >
+              <option value="all">Todas as contas</option>
+            </select>
+          </div>
           <div class="workspace-masthead">
             <button
               class="sidebar-open-btn"
@@ -382,6 +392,20 @@
                 <option value="name">Nome A-Z</option>
                 <option value="size">Tamanho</option>
                 <option value="type">Tipo</option>
+                <option value="rating">Melhor avaliação</option>
+              </select>
+              <label class="sr-only" for="ratingFilter">Avaliação mínima</label>
+              <select
+                id="ratingFilter"
+                class="sort-select"
+                aria-label="Avaliação mínima"
+              >
+                <option value="0">Todas as avaliações</option>
+                <option value="1">1+ estrela</option>
+                <option value="2">2+ estrelas</option>
+                <option value="3">3+ estrelas</option>
+                <option value="4">4+ estrelas</option>
+                <option value="5">5 estrelas</option>
               </select>
             </div>
             <div class="toolbar-actions">
@@ -600,7 +624,11 @@
                   ></span>
                   <span id="afterDarkToggleText">Ativar tema After Dark</span>
                 </button>
-                <button class="utility-btn" id="openWallpaperStudio" type="button">
+                <button
+                  class="utility-btn"
+                  id="openWallpaperStudio"
+                  type="button"
+                >
                   <span data-icon="Images" aria-hidden="true"></span>
                   Personalizar fundo da Biblioteca
                 </button>
@@ -683,16 +711,6 @@
             <details class="tools-group">
               <summary>Contas e atividades</summary>
               <div class="control-cluster account-cluster">
-                <label class="sr-only" for="accountViewSelect"
-                  >Conta do Google Drive</label
-                >
-                <select
-                  class="sort-select account-view-select"
-                  id="accountViewSelect"
-                  title="Visualizar uma conta ou todas"
-                >
-                  <option value="all">Todas as contas</option>
-                </select>
                 <button
                   class="utility-btn activity-center-btn"
                   id="activityCenterBtn"
@@ -765,14 +783,17 @@
                 >
                   Limpar índice local
                 </button>
-                <button
-                  class="utility-btn"
-                  id="migrateCloudinaryBtn"
-                  type="button"
-                  title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
-                >
-                  Migrar Cloudinary → Drive
-                </button>
+                <details class="advanced-migration">
+                  <summary>Avançado: migração</summary>
+                  <button
+                    class="utility-btn"
+                    id="migrateCloudinaryBtn"
+                    type="button"
+                    title="Copia arquivos antigos do Cloudinary para a conta Drive selecionada"
+                  >
+                    Migrar Cloudinary → Drive
+                  </button>
+                </details>
                 <button
                   class="utility-btn"
                   id="openDriveConfigBtn"
@@ -988,7 +1009,17 @@
                 </article>
               </section>
 
-              <section class="hall-grid" aria-label="Contas e privacidade">
+              <div class="hall-toolbar">
+                <span id="hallScopeLabel">Todas as contas</span
+                ><button class="utility-btn" id="editHallBtn" type="button">
+                  Editar hall
+                </button>
+              </div>
+              <section
+                class="hall-grid"
+                id="hallBlocks"
+                aria-label="Blocos do hall"
+              >
                 <article class="home-panel hall-accounts-panel">
                   <div class="home-panel-head">
                     <div>
@@ -1009,13 +1040,14 @@
                   <span class="eyebrow">PRIVACIDADE EM PRIMEIRO LUGAR</span>
                   <h2>Bem-vindo ao seu hall.</h2>
                   <p>
-                    Aqui você acompanha suas contas e o espaço disponível, sem
-                    fotos, capas, nomes de arquivos ou atividades recentes.
+                    Personalize os blocos em Editar hall. Prévias ficam
+                    desativadas por padrão e o modo discreto sempre tem
+                    prioridade.
                   </p>
                   <dl class="hall-status-list">
                     <div>
                       <dt>Prévias no início</dt>
-                      <dd>Desativadas</dd>
+                      <dd id="hallPreviewStatus">Desativadas</dd>
                     </div>
                     <div>
                       <dt>Cofre privado</dt>
@@ -1141,6 +1173,10 @@
           >Conta do Drive
           <select class="modal-input" id="folderAccountSelect"></select>
         </label>
+        <fieldset id="folderAvailableAccounts">
+          <legend>Disponível em</legend>
+          <div id="folderAccountChoices"></div>
+        </fieldset>
         <div
           class="destination-preview"
           id="folderDestination"
@@ -1917,6 +1953,20 @@
       <div class="modal folder-actions-modal">
         <h2 class="modal-title" id="folderActionsTitle">Pasta</h2>
         <div class="folder-action-list">
+          <button
+            class="folder-action-option"
+            id="folderActionLink"
+            type="button"
+          >
+            Vincular a outras contas
+          </button>
+          <button
+            class="folder-action-option"
+            id="folderActionLayout"
+            type="button"
+          >
+            Aparência desta pasta
+          </button>
           <button
             class="folder-action-option"
             id="folderActionPin"

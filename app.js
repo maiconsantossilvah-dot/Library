@@ -19,7 +19,29 @@ import {
   syncAccount,
   getSyncSummary,
   allRecords,
+  updateCatalogBatch,
+  restoreCatalogRecords,
 } from "./modules/local-store.js";
+import { createHall } from "./modules/hall.js";
+import { planFolderLinks } from "./modules/linked-folders.js";
+import { mountVirtualCatalog } from "./modules/virtual-catalog.js";
+import {
+  readThumbnailCache,
+  saveThumbnail,
+  removeThumbnails,
+} from "./modules/thumbnail-cache.js";
+import {
+  SCHEMA_VERSION,
+  normalizeFile,
+  normalizeFolder,
+  normalizeSettings,
+  scopeSettings,
+  folderAccounts,
+  pinFor,
+  chooseUploadAccount,
+  planUploadAccounts,
+  migrateBackup,
+} from "./modules/hall-model.js";
 import { icon, hydrateIcons } from "./modules/icons.js";
 import { installInterface } from "./modules/interface.js";
 import { registerPwa } from "./modules/pwa.js";
@@ -52,6 +74,14 @@ let toastTimeout;
 let privateVaultUI;
 const scrubbedPrivateRevisions = new Set();
 let db;
+let hallUI;
+let hallSettings = {};
+let accountIdentities = {};
+let unsubHallSettings, unsubAccountIdentities;
+let includeLinkedAccounts = false;
+let linkedAccountFilter = "all";
+let minimumRating = 0;
+const folderCreationLocks = new Map();
 let legacyMigrationTask;
 let legacyMigrationState = "idle";
 let legacyMigrationMessage = "";
@@ -232,6 +262,7 @@ let lightboxInfoVisible =
 let lightboxFitMode = "fit";
 let lightboxPrefetchTimer = null;
 let loadMoreObserver = null;
+let disposeVirtualCatalog;
 let mangaState = {
   pages: [],
   index: 0,
@@ -510,6 +541,14 @@ function clearConfig() {
 // ??? Bootstrap ????????????????????????????????????????????
 const savedCfg = loadConfig();
 queueMicrotask(async () => {
+  try {
+    for (const entry of await readThumbnailCache()) {
+      driveThumbnailCache.set(entry.id, entry.url);
+      driveThumbnailSavedAt.set(entry.id, entry.savedAt);
+    }
+  } catch {
+    /* Cache is optional. */
+  }
   try {
     await localTextSearch.hydrate();
   } catch (e) {
@@ -919,6 +958,7 @@ async function initApp(cfg) {
 
     listenFolders();
     listenFiles();
+    listenHallSettings();
     renderAccountControls();
     renderDriveAccountSlots();
     renderAccountCenter();
@@ -998,7 +1038,9 @@ function accountLabel(slot, includeEmail = true) {
     );
   const tag = slotTag(slot);
   const identity =
-    account?.friendlyName || (includeEmail ? account?.email : "");
+    accountIdentities[slot]?.name ||
+    account?.friendlyName ||
+    (includeEmail ? account?.email : "");
   return identity ? `${tag} · ${identity}` : tag;
 }
 
@@ -1030,7 +1072,7 @@ function renderAccountControls() {
     '<option value="all">Todas as contas</option>',
     ...accounts.map(
       (account) =>
-        `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : ""}</option>`,
+        `<option value="${account.slot}">${esc(accountLabel(account.slot))}${account.connected ? " ✓" : " · precisa de atenção"}</option>`,
     ),
   ].join("");
   const requestedView = isDriveAccountSlot(activeAccountView)
@@ -1233,6 +1275,7 @@ function renderAccountCenter() {
         <button class="account-view-action" type="button" ${canOpen ? "" : "disabled"}>Ver arquivos</button>
         <button class="account-open-drive" type="button" ${canOpen ? "" : "disabled"}>Abrir VAULT no Drive</button>
         <button class="account-check-action" type="button" ${canOpen ? "" : "disabled"}>Verificar</button>
+        <button class="account-appearance-action" type="button">Nome, cor e iniciais</button>
         ${account.persistentId ? '<button class="account-disconnect-action" type="button">Desconectar</button>' : ""}
         ${canRemove ? '<button class="account-remove-action" type="button">Remover</button>' : ""}
       </div>
@@ -1260,10 +1303,53 @@ function bindAccountCardActions() {
     const account = driveManager?.getAccount(slot);
     const nameInput = card.querySelector(".account-friendly-name");
     const emailInput = card.querySelector(".account-email");
+    card.querySelector(".account-appearance-action").onclick = async () => {
+      const old = accountIdentities[slot] || {};
+      const values = await openFieldsDialog({
+        title: "Identidade da conta",
+        fields: [
+          {
+            name: "name",
+            label: "Nome de exibição",
+            value: old.name || account?.friendlyName || "",
+            maxlength: 40,
+          },
+          {
+            name: "color",
+            label: "Cor",
+            type: "color",
+            value: old.color || "#4bce97",
+          },
+          {
+            name: "initials",
+            label: "Iniciais",
+            value: old.initials || slotTag(slot),
+            maxlength: 4,
+          },
+        ],
+      });
+      if (values)
+        try {
+          await setDoc(doc(db, "vault_account_identity", slot), {
+            ...values,
+            color: /^#[\da-f]{6}$/i.test(values.color)
+              ? values.color
+              : "#4bce97",
+            accountSlot: slot,
+          });
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+    };
     const saveIdentity = async () => {
       if (!account) return;
       const previousEmail = account.email || "";
       account.friendlyName = nameInput.value.trim();
+      if (accountIdentities[slot])
+        await setDoc(doc(db, "vault_account_identity", slot), {
+          ...accountIdentities[slot],
+          name: account.friendlyName,
+        });
       account.email = emailInput.value.trim();
       if (
         previousEmail.toLowerCase() !== account.email.toLowerCase() &&
@@ -1732,6 +1818,225 @@ function listenFiles() {
   );
 }
 
+function listenHallSettings() {
+  unsubHallSettings?.();
+  unsubAccountIdentities?.();
+  unsubHallSettings = onSnapshot(
+    collection(db, "vault_scope_settings"),
+    (snap) => {
+      hallSettings = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+      applyScopeAppearance();
+      hallUI?.render();
+    },
+    (e) => showToast(e.message, "error"),
+  );
+  unsubAccountIdentities = onSnapshot(
+    collection(db, "vault_account_identity"),
+    (snap) => {
+      accountIdentities = Object.fromEntries(
+        snap.docs.map((d) => [d.id, d.data()]),
+      );
+      renderAccountControls();
+      renderAccountCenter();
+      renderHallAccounts();
+      hallUI?.render();
+    },
+    (e) => showToast(e.message, "error"),
+  );
+}
+
+async function saveScopeSettings(scope, settings) {
+  if (!db) throw new Error("Abra o acervo antes de editar o hall.");
+  if (settings === null)
+    await deleteDoc(doc(db, "vault_scope_settings", scope));
+  else
+    await setDoc(doc(db, "vault_scope_settings", scope), {
+      ...normalizeSettings(settings),
+      scopeKey: scope,
+      accountSlot: scope === "all" ? "" : scope,
+    });
+}
+
+function applyScopeAppearance() {
+  const config = scopeSettings(hallSettings, activeAccountView);
+  if (config.accentColor)
+    mainEl.style.setProperty("--accent", config.accentColor);
+  else mainEl.style.removeProperty("--accent");
+  document.body.dataset.accountBadges = String(config.showAccountBadges);
+  const folderConfig = getFolder(navState.folderId)?.grid || {};
+  const grid = { ...config.grid, ...folderConfig };
+  fileGrid.dataset.density = grid.density;
+  fileGrid.dataset.aspect = grid.aspect;
+  fileGrid.dataset.layout = grid.layout;
+  fileGrid.dataset.hover = grid.hover;
+  fileGrid.style.setProperty("--catalog-gap", `${grid.gap}px`);
+  fileGrid.style.setProperty("--catalog-radius", `${grid.radius}px`);
+}
+
+async function setFileRating(id, rating) {
+  try {
+    await updateDoc(doc(db, "vault_files", id), { rating });
+    const file = fileById.get(id);
+    if (
+      file &&
+      currentLightboxFile()?.id === id &&
+      lightbox.classList.contains("active")
+    )
+      mountRatingControls(file);
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+function mountRatingControls(file) {
+  lightboxInfo.querySelector(".rating-panel")?.remove();
+  const panel = document.createElement("section");
+  panel.className = "lb-panel-section rating-panel";
+  panel.innerHTML = `<h2>Avaliação</h2><div class="rating-controls" role="group" aria-label="Avaliação de 0 a 5 estrelas">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-rating="${n}" aria-label="${n} estrela${n > 1 ? "s" : ""}" aria-pressed="${file.rating === n}">${n <= file.rating ? "★" : "☆"}</button>`).join("")}<button type="button" data-rating="0" aria-label="Remover avaliação">0</button></div><button type="button" class="utility-btn" data-pin>Fixar / editar destaque</button>`;
+  panel.querySelectorAll("[data-rating]").forEach((b) => {
+    b.onclick = () => setFileRating(file.id, Number(b.dataset.rating));
+  });
+  panel.querySelector("[data-pin]").onclick = () =>
+    hallUI
+      .editPin(fileById.get(file.id) || file)
+      .catch((e) => showToast(e.message, "error"));
+  lightboxInfo.prepend(panel);
+}
+
+function renderLinkedFolderControls(folder) {
+  let panel = $("linkedFolderControls");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "linkedFolderControls";
+    panel.className = "linked-folder-controls";
+    currentFolderMeta.after(panel);
+  }
+  const accounts = folderAccounts(folder || {});
+  panel.hidden = accounts.length < 2;
+  if (panel.hidden) return;
+  panel.innerHTML = `<label><input type="checkbox" id="includeLinkedAccounts"${includeLinkedAccounts ? " checked" : ""}> Incluir contas vinculadas</label><label>Conta nesta pasta <select id="linkedFolderAccountFilter"><option value="all">Todas as contas vinculadas</option>${accounts.map((slot) => `<option value="${slot}"${linkedAccountFilter === slot ? " selected" : ""}>${esc(accountLabel(slot))}</option>`).join("")}</select></label>`;
+  $("includeLinkedAccounts").onchange = (e) => {
+    includeLinkedAccounts = e.target.checked;
+    linkedAccountFilter = "all";
+    closeLightbox();
+    renderGrid();
+  };
+  $("linkedFolderAccountFilter").onchange = (e) => {
+    linkedAccountFilter = e.target.value;
+    closeLightbox();
+    renderGrid();
+  };
+}
+
+async function editFolderLinks(folder) {
+  const accounts = driveManager?.getAccounts() || [];
+  const linked = folderAccounts(folder);
+  const values = await openFieldsDialog({
+    title: `Vincular “${folder.name}”`,
+    fields: [
+      ...accounts.map((a) => ({
+        name: a.slot,
+        label: `${accountLabel(a.slot)}${a.connected ? "" : " · precisa de atenção"}`,
+        type: "checkbox",
+        value: linked.includes(a.slot),
+      })),
+      {
+        name: "uploadPolicy",
+        label: "Destino dos envios",
+        type: "select",
+        value: folder.uploadPolicy || "active",
+        options: [
+          { value: "active", label: "Conta ativa" },
+          { value: "most_free", label: "Mais espaço livre" },
+          { value: "ask", label: "Perguntar a cada envio" },
+        ],
+      },
+    ],
+  });
+  if (!values) return;
+  const selected = accounts.filter((a) => values[a.slot]).map((a) => a.slot);
+  const candidates = folders.filter(
+    (f) =>
+      f.id !== folder.id &&
+      !f.deletedAt &&
+      (f.parentId || null) === (folder.parentId || null) &&
+      f.name.trim().toLocaleLowerCase() ===
+        folder.name.trim().toLocaleLowerCase() &&
+      folderAccounts(f).every((slot) => selected.includes(slot)),
+  );
+  const mergeIds = [];
+  for (const candidate of candidates) {
+    if (
+      await openConfirmDialog({
+        title: "Mesclar pasta equivalente?",
+        message: `“${candidate.name}” em ${accountLabel(recordAccountSlot(candidate))} será reunida nesta pasta. Somente os metadados serão reorganizados; os arquivos continuarão em suas contas.`,
+        confirmText: "Mesclar",
+      })
+    )
+      mergeIds.push(candidate.id);
+  }
+  const plan = planFolderLinks(folder, selected, folders, files, mergeIds);
+  if (
+    plan.removed.length &&
+    !(await openConfirmDialog({
+      title: "Desvincular conta da pasta?",
+      message: `${plan.detached} arquivo(s) passarão a ficar sem pasta nas contas de origem. Nenhum arquivo será apagado.`,
+      confirmText: "Desvincular",
+    }))
+  )
+    return;
+  plan.changes.at(-1).data.uploadPolicy = values.uploadPolicy;
+  await updateCatalogBatch(db, plan.changes);
+  includeLinkedAccounts = false;
+  linkedAccountFilter = "all";
+  renderGrid();
+  showToast("Vínculos da pasta atualizados", "success");
+}
+
+async function editFolderLayout(folder) {
+  const values = await openFieldsDialog({
+    title: `Aparência: ${folder.name}`,
+    fields: [
+      {
+        name: "layout",
+        label: "Layout",
+        type: "select",
+        value: folder.grid?.layout || "grid",
+        options: [
+          { value: "grid", label: "Grade" },
+          { value: "masonry", label: "Masonry" },
+          { value: "timeline", label: "Linha do tempo" },
+        ],
+      },
+      {
+        name: "aspect",
+        label: "Proporção",
+        type: "select",
+        value: folder.grid?.aspect || "original",
+        options: [
+          { value: "square", label: "Quadrada" },
+          { value: "original", label: "Original" },
+          { value: "portrait", label: "4:5" },
+        ],
+      },
+      {
+        name: "clear",
+        label: "Herdar aparência do escopo",
+        type: "checkbox",
+        value: false,
+      },
+    ],
+  });
+  if (values) {
+    await updateDoc(doc(db, "vault_folders", folder.id), {
+      grid: values.clear
+        ? null
+        : { layout: values.layout, aspect: values.aspect },
+    });
+    applyScopeAppearance();
+  }
+}
+
 // ??? Sidebar folder list ??????????????????????????????????
 function normalizeFolderId(folderId) {
   return folderId || ROOT_ID;
@@ -1855,6 +2160,12 @@ function recordAccountSlot(record) {
 }
 
 function matchesAccountView(record) {
+  if (
+    record &&
+    !record.fileType &&
+    record.linkedAccountIds?.includes(activeAccountView)
+  )
+    return true;
   return (
     activeAccountView === "all" ||
     recordAccountSlot(record) === activeAccountView
@@ -1863,7 +2174,9 @@ function matchesAccountView(record) {
 
 function accountBadge(record) {
   const slot = recordAccountSlot(record);
-  return slot === "legacy" ? "LEG" : slotTag(slot);
+  return slot === "legacy"
+    ? "LEG"
+    : accountIdentities[slot]?.initials?.slice(0, 4) || slotTag(slot);
 }
 
 function getFolderPath(folderId = navState.folderId) {
@@ -2096,7 +2409,10 @@ function syncSectionUI() {
     navState.section === "mural" ? "page" : "false",
   );
   $("wallpaperWorkspace").hidden = navState.section !== "wallpaper";
-  $("navWallpaper").classList.toggle("active", navState.section === "wallpaper");
+  $("navWallpaper").classList.toggle(
+    "active",
+    navState.section === "wallpaper",
+  );
   $("navWallpaper").setAttribute(
     "aria-current",
     navState.section === "wallpaper" ? "page" : "false",
@@ -2172,6 +2488,8 @@ function openLibraryView(options = {}) {
 }
 
 function setCurrentFolder(folderId) {
+  includeLinkedAccounts = false;
+  linkedAccountFilter = "all";
   navState.section = "files";
   syncSectionUI();
   navState.folderId = normalizeFolderId(folderId);
@@ -2330,6 +2648,7 @@ function updateLibraryWorkspaceHeader() {
   if (createSubfolderLabel)
     createSubfolderLabel.textContent = isRoot ? "Nova pasta" : "Nova subpasta";
   if (createSubfolderBtn) createSubfolderBtn.hidden = false;
+  renderLinkedFolderControls(folder);
   createSubfolderBtn?.setAttribute(
     "aria-label",
     isRoot ? "Criar nova pasta" : "Criar subpasta nesta pasta",
@@ -2374,7 +2693,10 @@ function renderFolderChildrenSection() {
 }
 
 function renderGrid() {
+  disposeVirtualCatalog?.();
+  disposeVirtualCatalog = null;
   renderDashboardVisibility();
+  applyScopeAppearance();
   if (navState.section !== "files") {
     if (fileGrid.childElementCount) fileGrid.replaceChildren();
     if (folderChildrenGrid?.childElementCount)
@@ -2394,6 +2716,7 @@ function renderGrid() {
 
   let itemCount = 0;
   let elements = [];
+  let virtualized = false;
   if (navState.viewMode === "folders") {
     const folderItems = getFolderChildren(navState.folderId).filter(
       folderMatchesSearch,
@@ -2407,9 +2730,23 @@ function renderGrid() {
     const contentFiles = getContentFiles();
     lightboxFiles = contentFiles;
     itemCount = contentFiles.length;
-    const visibleFiles = contentFiles.slice(0, visibleLimit);
+    if (
+      contentFiles.length > 180 &&
+      navState.viewMode === "grid" &&
+      fileGrid.dataset.layout === "grid"
+    ) {
+      disposeVirtualCatalog = mountVirtualCatalog(
+        fileGrid,
+        contentFiles,
+        makeFileCard,
+        hydrateDriveThumbnails,
+      );
+      virtualized = !!disposeVirtualCatalog;
+    }
+    const visibleFiles = virtualized ? [] : contentFiles.slice(0, visibleLimit);
     elements =
-      navState.viewMode === "timeline"
+      navState.viewMode === "timeline" ||
+      (navState.viewMode === "grid" && fileGrid.dataset.layout === "timeline")
         ? renderTimelineViewItems(visibleFiles)
         : visibleFiles.map(makeFileCard);
   }
@@ -2419,7 +2756,8 @@ function renderGrid() {
   elements.forEach((element) => fragment.appendChild(element));
   fileGrid.appendChild(fragment);
   hydrateDriveThumbnails(fileGrid);
-  loadMoreBtn.style.display = itemCount > visibleLimit ? "inline-flex" : "none";
+  loadMoreBtn.style.display =
+    !virtualized && itemCount > visibleLimit ? "inline-flex" : "none";
   loadMoreBtn.textContent = `Carregar mais (${Math.min(PAGE_SIZE, itemCount - visibleLimit)})`;
   updateContextualActions();
   updateViewA11y();
@@ -2529,7 +2867,8 @@ function updateEmptyState(itemCount) {
     !!currentSearch ||
     activeSearchTags.size > 0 ||
     Object.values(advancedFilters).some(Boolean) ||
-    activeAccountView !== "all";
+    activeAccountView !== "all" ||
+    minimumRating > 0;
   emptyTitle.textContent = filtered ? "Nenhum resultado encontrado" : title;
   emptySub.textContent = filtered
     ? "Tente outro termo, altere a conta ou limpe os filtros."
@@ -2592,7 +2931,17 @@ function countFilesInFolder(folderId) {
 }
 
 function applyFilter(list) {
-  let result = list.filter(matchesAccountView);
+  const folder = getFolder(navState.folderId);
+  const linkedOverride =
+    includeLinkedAccounts && folderAccounts(folder || {}).length > 1;
+  let result = list.filter((file) =>
+    linkedOverride && file.folderId === folder?.id
+      ? folderAccounts(folder).includes(recordAccountSlot(file))
+      : matchesAccountView(file),
+  );
+  if (linkedAccountFilter !== "all" && folderAccounts(folder || {}).length > 1)
+    result = result.filter((f) => recordAccountSlot(f) === linkedAccountFilter);
+  if (minimumRating) result = result.filter((f) => f.rating >= minimumRating);
   if (navState.viewMode === "gallery" || navState.contentScope === "media")
     result = result.filter(
       (f) => f.fileType === "image" || f.fileType === "video",
@@ -2637,6 +2986,11 @@ function isDuplicateFile(file) {
 
 function sortFiles(list) {
   return [...list].sort((a, b) => {
+    if (currentSort === "rating")
+      return (
+        (b.rating || 0) - (a.rating || 0) ||
+        dateValue(b.createdAt) - dateValue(a.createdAt)
+      );
     if (currentSort === "oldest")
       return dateValue(a.createdAt) - dateValue(b.createdAt);
     if (currentSort === "name")
@@ -3033,6 +3387,12 @@ function makeFileCard(file) {
   } else {
     thumbHtml = `<span class="thumb-icon">${docIcon(file.name)}</span>`;
   }
+  const unavailableAccount =
+    isGoogleDriveRecord(file) &&
+    !driveManager?.isConnected(recordAccountSlot(file));
+  if (unavailableAccount)
+    thumbHtml =
+      '<span class="account-unavailable">Indisponível: reconectar conta</span>';
 
   const favClass = file.favorite ? "fav-btn active" : "fav-btn";
   const favTitle = file.favorite ? "Remover dos favoritos" : "Favoritar";
@@ -3054,8 +3414,9 @@ function makeFileCard(file) {
     <div class="file-thumb">
       ${thumbHtml}
       <span class="file-type-badge">${typeLabel}</span>
-      <span class="account-badge file-account-badge">${accountBadge(file)}</span>
+      <span class="account-badge file-account-badge" style="--account-color:${/^#[\da-f]{6}$/i.test(accountIdentities[recordAccountSlot(file)]?.color) ? accountIdentities[recordAccountSlot(file)].color : "var(--accent)"}">${esc(accountBadge(file))}</span>
       <button class="${favClass}" title="${favTitle}" aria-label="${favTitle}" aria-pressed="${!!file.favorite}">${icon("Star")}</button>
+      ${isMedia && !isTrash ? `<button type="button" class="hall-pin-btn" aria-label="Fixar ou editar destaque" aria-pressed="${!!pinFor(file, activeAccountView)}" title="Fixar no hall">⌖</button>` : ""}
       <button type="button" class="select-checkbox" aria-label="Selecionar ${esc(file.name)}" aria-pressed="${selectedIds.has(file.id)}"><span class="chk">${icon(selectedIds.has(file.id) ? "Check" : "Square")}</span></button>
     </div>`;
 
@@ -3081,15 +3442,17 @@ function makeFileCard(file) {
                  <button class="file-menu-item tags-btn" type="button" role="menuitem">Etiquetas</button>
                  <button class="file-menu-item private-vault-btn" type="button" role="menuitem">Guardar no cofre</button>
                  <button class="file-menu-item share-btn" type="button" role="menuitem">Copiar link</button>
-                 ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button>` : ""}
+                 ${canCopyAcrossAccounts ? `<button class="file-menu-item copy-account-btn" type="button" role="menuitem">Copiar para outra conta</button><button class="file-menu-item move-account-btn" type="button" role="menuitem">Mover para outra conta</button>` : ""}
                  ${canReadAsManga ? `<button class="file-menu-item manga-btn-card" type="button" role="menuitem">Ler pasta</button>` : ""}
                  ${canUseAsCover ? `<button class="file-menu-item cover-btn" type="button" role="menuitem">Usar como capa</button>` : ""}
                  <button class="file-menu-item danger file-delete" type="button" role="menuitem">Enviar para lixeira</button>
+                 ${file.missing ? '<button class="file-menu-item remove-missing-record" type="button" role="menuitem">Remover registro ausente</button>' : ""}
                </div>`
           }
         </div>
       </div>
       <div class="file-card-details">
+        ${file.rating ? `<span class="file-rating" aria-label="${file.rating} estrelas">${"★".repeat(file.rating)}</span>` : ""}
         ${dateSummary(file) ? `<span class="date-summary">${esc(dateSummary(file))}</span>` : ""}
         <span class="file-size">${isTrash ? "Lixeira" : fmtSize(file.size)}</span>
       </div>
@@ -3125,7 +3488,29 @@ function makeFileCard(file) {
       handler();
     });
   };
+  bindAction(".hall-pin-btn", () =>
+    hallUI.editPin(file).catch((error) => showToast(error.message, "error")),
+  );
+  bindAction(".move-account-btn", () => copyFileToAnotherAccount(file, true));
   bindAction(".file-delete", () => deleteFile(file));
+  bindAction(".remove-missing-record", async () => {
+    if (
+      await openConfirmDialog({
+        title: "Remover registro ausente?",
+        message:
+          "Somente o registro do catálogo será removido. Nenhum arquivo será apagado do Drive.",
+        confirmText: "Remover registro",
+      })
+    ) {
+      try {
+        await deleteDoc(doc(db, "vault_files", file.id));
+        await localTextSearch.remove(file.id);
+        await removeThumbnails([file.id]);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    }
+  });
   bindAction(".move-btn", () => openMoveModal(file));
   bindAction(".private-vault-btn", () =>
     privateVaultUI.protect("vault_files", file.id),
@@ -3174,6 +3559,10 @@ function makeFileCard(file) {
       return;
     }
     if (file.deletedAt) return;
+    if (unavailableAccount) {
+      openAccountsModal();
+      return;
+    }
     openLightbox(file);
   };
   card.draggable = !isTrash;
@@ -3317,7 +3706,11 @@ function cloudPreview(publicId, resourceType, w = 1920, h = 1440) {
 function mediaThumbUrl(file, w = 520, h = 360) {
   if (!file) return "";
   if (file.customCover) return file.customCover;
-  const cover = file.coverFileId && fileById.get(file.coverFileId);
+  const coverCandidate = file.coverFileId && fileById.get(file.coverFileId);
+  const cover =
+    coverCandidate && matchesAccountView(coverCandidate)
+      ? coverCandidate
+      : null;
   if (cover && !cover.deletedAt && cover.fileType === "image")
     return mediaThumbUrl(cover, w, h);
   if (isGoogleDriveRecord(file))
@@ -3349,12 +3742,17 @@ function rememberDriveThumbnail(id, url) {
   if (!id || !url) return;
   driveThumbnailCache.set(id, url);
   driveThumbnailSavedAt.set(id, Date.now());
+  void saveThumbnail(id, url).catch(() => {});
   persistDriveThumbnailCache();
 }
 
 async function loadDriveThumbnail(file, force = false) {
   if (file.customCover) return file.customCover;
-  const cover = file.coverFileId && fileById.get(file.coverFileId);
+  const coverCandidate = file.coverFileId && fileById.get(file.coverFileId);
+  const cover =
+    coverCandidate && matchesAccountView(coverCandidate)
+      ? coverCandidate
+      : null;
   if (cover && !cover.deletedAt && cover.fileType === "image")
     return isGoogleDriveRecord(cover)
       ? loadDriveThumbnail(cover, force)
@@ -3544,11 +3942,15 @@ function makeFolderCard(folder, count) {
   const coverFile =
     coverCandidate &&
     !coverCandidate.deletedAt &&
+    matchesAccountView(coverCandidate) &&
     ["image", "video"].includes(coverCandidate.fileType)
       ? coverCandidate
       : getAutomaticFolderCover(folder.id);
   const coverUrl =
-    folder.customCover || (coverFile ? folderCoverUrl(coverFile) : "");
+    (recordAccountSlot(folder) === activeAccountView ||
+    activeAccountView === "all"
+      ? folder.customCover
+      : "") || (coverFile ? folderCoverUrl(coverFile) : "");
   const coverRatio =
     coverFile?.width && coverFile?.height
       ? `${coverFile.width} / ${coverFile.height}`
@@ -3693,6 +4095,7 @@ function getImagesForFolderTree(folderId) {
     .filter(
       (file) =>
         !file.deletedAt &&
+        matchesAccountView(file) &&
         (file.fileType === "image" ||
           (file.fileType === "video" && mediaThumbUrl(file))) &&
         folderIds.has(file.folderId),
@@ -4165,8 +4568,18 @@ async function exportData(format) {
     );
     const payload = {
       version: 3,
+      schemaVersion: SCHEMA_VERSION,
+      activeScope: activeAccountView,
       exportedAt: new Date().toISOString(),
-      records,
+      records: records.map((r) => ({
+        ...r,
+        data:
+          r.collection === "vault_files"
+            ? normalizeFile(r.data)
+            : r.collection === "vault_folders"
+              ? normalizeFolder(r.data)
+              : r.data,
+      })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -4386,7 +4799,9 @@ function renderMoveTree(parentId, depth, currentFolderId) {
     : "legacy";
   const children = folders.filter(
     (f) =>
-      (f.parentId || null) === parentId && recordAccountSlot(f) === sourceSlot,
+      (f.parentId || null) === parentId &&
+      (recordAccountSlot(f) === sourceSlot ||
+        folderAccounts(f).includes(sourceSlot)),
   );
   children.forEach((f) => {
     const isCurrent = f.id === currentFolderId;
@@ -4465,7 +4880,11 @@ function openFolderCreateDialog(parentId = navState.folderId) {
     folderModalContext.textContent = parent
       ? `Ela será criada dentro de “${parent.name || "Pasta"}”.`
       : "Crie uma pasta principal para o seu acervo.";
-  const inheritedSlot = parent ? recordAccountSlot(parent) : "";
+  const inheritedSlot = parent
+    ? folderAccounts(parent).includes(activeAccountView)
+      ? activeAccountView
+      : recordAccountSlot(parent)
+    : "";
   folderAccountField.hidden = !!parent;
   const accountSlots = (driveManager?.getAccounts() || []).map(
     (account) => account.slot,
@@ -4484,6 +4903,13 @@ function openFolderCreateDialog(parentId = navState.folderId) {
         ? activeAccountView
         : accountSlots[0];
   folderNameInput.value = "";
+  const availableSlots = parent ? folderAccounts(parent) : accountSlots;
+  $("folderAccountChoices").innerHTML = availableSlots
+    .map(
+      (slot) =>
+        `<label><input type="checkbox" value="${slot}"${slot === folderAccountSelect.value || parent ? " checked" : ""}>${esc(accountLabel(slot))}</label>`,
+    )
+    .join("");
   updateFolderDestinationPreview();
   folderModal.classList.add("active");
   setTimeout(() => folderNameInput.focus(), 100);
@@ -4493,7 +4919,9 @@ async function moveStoredFileTo(file, targetFolderId) {
   const sourceSlot = recordAccountSlot(file);
   const targetFolder = targetFolderId ? getFolder(targetFolderId) : null;
   const targetSlot = targetFolder
-    ? recordAccountSlot(targetFolder)
+    ? folderAccounts(targetFolder).includes(sourceSlot)
+      ? sourceSlot
+      : recordAccountSlot(targetFolder)
     : sourceSlot;
   if (targetSlot !== sourceSlot)
     throw new Error(
@@ -4508,7 +4936,7 @@ async function moveStoredFileTo(file, targetFolderId) {
   await driveManager.moveFile(sourceSlot, file.driveFileId, targetDriveParent);
 }
 
-async function copyFileToAnotherAccount(file) {
+async function copyFileToAnotherAccount(file, move = false) {
   const sourceSlot = recordAccountSlot(file);
   if (!driveManager?.isConnected(sourceSlot)) {
     showToast(
@@ -4526,7 +4954,7 @@ async function copyFileToAnotherAccount(file) {
       label: `${accountFullLabel(slot)} · ${driveManager.isConnected(slot) ? "disponível" : "reconectar"}`,
     }));
   const values = await openFieldsDialog({
-    title: `Copiar “${file.name}”`,
+    title: `${move ? "Mover" : "Copiar"} “${file.name}”`,
     confirmText: "Escolher pasta",
     fields: [
       {
@@ -4540,7 +4968,7 @@ async function copyFileToAnotherAccount(file) {
         name: "deleteOriginal",
         label: "Excluir o original somente depois que a cópia for concluída",
         type: "checkbox",
-        value: false,
+        value: move,
       },
     ],
   });
@@ -4613,11 +5041,21 @@ async function executeCopyFileAcrossAccounts(file, options) {
   itemEl.className = "upload-item";
   itemEl.dataset.status = "active";
   itemEl.dataset.activityType = "copy";
+  itemEl.dataset.cancellable = "true";
   itemEl.innerHTML = `<div class="upload-item-top"><div class="upload-item-name"><span class="account-badge">${slotTag(sourceSlot)}→${slotTag(targetSlot)}</span> ${esc(file.name)}</div></div><div class="upload-item-destination">Destino: ${esc(formatDriveDestination(targetSlot, targetFolderId))}</div><div class="upload-item-bar-wrap"><div class="upload-item-bar" style="width:0%"></div></div><div class="upload-item-status">Baixando da conta de origem...</div>`;
   uploadList.appendChild(itemEl);
   showActivityCenter();
   const bar = itemEl.querySelector(".upload-item-bar");
   const status = itemEl.querySelector(".upload-item-status");
+  const copyController = new AbortController();
+  const copyId = `copy:${crypto.randomUUID()}`;
+  activeUploads.set(copyId, copyController);
+  const cancelCopy = document.createElement("button");
+  cancelCopy.type = "button";
+  cancelCopy.className = "upload-cancel";
+  cancelCopy.textContent = "Cancelar";
+  cancelCopy.onclick = () => copyController.abort();
+  itemEl.querySelector(".upload-item-top").append(cancelCopy);
   let copySaved = false;
   try {
     if (
@@ -4625,7 +5063,12 @@ async function executeCopyFileAcrossAccounts(file, options) {
       !driveManager.isConnected(targetSlot)
     )
       throw new Error("Uma das contas perdeu a conexão durante a cópia.");
-    const blob = await driveManager.getBlob(sourceSlot, file.driveFileId);
+    const blob = await driveManager.getBlob(
+      sourceSlot,
+      file.driveFileId,
+      true,
+      { signal: copyController.signal },
+    );
     const source = new File([blob], file.name || "arquivo", {
       type: file.mimeType || blob.type || "application/octet-stream",
     });
@@ -4639,6 +5082,7 @@ async function executeCopyFileAcrossAccounts(file, options) {
       source,
       driveParentId,
       {
+        signal: copyController.signal,
         onProgress: (loaded, total) => {
           const pct = total ? Math.round((loaded / total) * 100) : 0;
           bar.style.width = `${pct}%`;
@@ -4673,11 +5117,21 @@ async function executeCopyFileAcrossAccounts(file, options) {
       dueDate: file.dueDate || "",
       customFields: file.customFields || {},
       notes: normalizeNotes(file.notes),
+      rating: file.rating || 0,
+      takenAt: file.takenAt || file.eventDate || file.createdAt,
+      playbackPosition: file.playbackPosition || 0,
       copiedFromFileId: file.id,
       createdAt: serverTimestamp(),
     };
     await addDoc(collection(db, "vault_files"), copiedRecord);
     copySaved = true;
+    cancelCopy.disabled = true;
+    itemEl.dataset.cancellable = "false";
+    if (copyController.signal.aborted)
+      throw new DOMException(
+        "Movimentação cancelada; o original foi preservado.",
+        "AbortError",
+      );
     if (deleteOriginal) {
       status.textContent = "Cópia confirmada. Excluindo o original...";
       await finalizeCopiedOriginalDeletion(file, sourceSlot);
@@ -4693,6 +5147,14 @@ async function executeCopyFileAcrossAccounts(file, options) {
     );
     showToast(`${file.name} copiado para ${slotTag(targetSlot)}`, "success");
   } catch (error) {
+    if (error.name === "AbortError") {
+      itemEl.dataset.status = "cancelled";
+      itemEl.dataset.cancellable = "false";
+      status.textContent = copySaved
+        ? "Cancelado. A cópia foi salva e o original foi preservado."
+        : "Cancelado. O original foi preservado.";
+      return;
+    }
     itemEl.dataset.status = "error";
     itemEl.classList.add("upload-error");
     if (copySaved && deleteOriginal) {
@@ -4734,6 +5196,8 @@ async function executeCopyFileAcrossAccounts(file, options) {
     };
     showToast(message, "error");
   } finally {
+    activeUploads.delete(copyId);
+    cancelCopy.remove();
     updateActivityCenter();
   }
 }
@@ -4783,7 +5247,9 @@ async function createFolder() {
   const parentId = toLocalFolderId(pendingFolderParentId);
   const parent = parentId ? getFolder(parentId) : null;
   const accountSlot = parent
-    ? recordAccountSlot(parent)
+    ? folderAccounts(parent).includes(activeAccountView)
+      ? activeAccountView
+      : recordAccountSlot(parent)
     : folderAccountSelect.value;
   if (accountSlot === "legacy") {
     showToast(
@@ -4814,6 +5280,16 @@ async function createFolder() {
       tags: [],
       accountSlot,
       driveFolderId: driveFolder.id,
+      homeAccountId: accountSlot,
+      linkedAccountIds: [
+        ...new Set([
+          accountSlot,
+          ...[
+            ...$("folderAccountChoices").querySelectorAll("input:checked"),
+          ].map((input) => input.value),
+        ]),
+      ],
+      uploadPolicy: "active",
       createdAt: serverTimestamp(),
     });
     navState.expandedFolders.add(normalizeFolderId(pendingFolderParentId));
@@ -4830,6 +5306,46 @@ async function createFolder() {
 
 async function ensureFolderOnDrive(folder, targetSlot = "") {
   if (!folder) throw new Error("Pasta nao encontrada");
+  const slot = targetSlot || recordAccountSlot(folder);
+  const key = `${folder.id}:${slot}`;
+  if (folderCreationLocks.has(key)) return folderCreationLocks.get(key);
+  const task = ensureLinkedFolderOnDrive(folder, slot).finally(() =>
+    folderCreationLocks.delete(key),
+  );
+  folderCreationLocks.set(key, task);
+  return task;
+}
+
+async function ensureLinkedFolderOnDrive(folder, targetSlot) {
+  const normalized = normalizeFolder(folder);
+  if (
+    folderAccounts(folder).includes(targetSlot) &&
+    targetSlot !== recordAccountSlot(folder)
+  ) {
+    if (!driveManager?.isConnected(targetSlot))
+      throw new Error(
+        `Reconecte ${accountLabel(targetSlot)} para enviar arquivos.`,
+      );
+    if (normalized.driveFolderIds[targetSlot])
+      return normalized.driveFolderIds[targetSlot];
+    const parent = folder.parentId ? getFolder(folder.parentId) : null;
+    const parentDriveId =
+      parent && folderAccounts(parent).includes(targetSlot)
+        ? await ensureFolderOnDrive(parent, targetSlot)
+        : await driveManager.ensureRootFolder(targetSlot);
+    const created = await driveManager.createFolder(
+      targetSlot,
+      folder.name || "Pasta",
+      parentDriveId,
+    );
+    // Re-read the map after the network call: concurrent uploads may add another account.
+    const driveFolderIds = {
+      ...normalizeFolder(getFolder(folder.id) || folder).driveFolderIds,
+      [targetSlot]: created.id,
+    };
+    await updateDoc(doc(db, "vault_folders", folder.id), { driveFolderIds });
+    return created.id;
+  }
   let accountSlot = recordAccountSlot(folder);
   if (accountSlot === "legacy") accountSlot = targetSlot;
   if (!isDriveAccountSlot(accountSlot))
@@ -5728,6 +6244,9 @@ function scheduleLightboxPrefetch() {
 }
 
 function openLightbox(file) {
+  const sameFile =
+    lightbox.classList.contains("active") &&
+    currentLightboxFile()?.id === file.id;
   closeLightbox();
   const generation = ++lightboxGeneration;
   lightboxIndex = lightboxFiles.findIndex((item) => item.id === file.id);
@@ -5735,7 +6254,7 @@ function openLightbox(file) {
     lightboxFiles = [file];
     lightboxIndex = 0;
   }
-  rememberRecentlyViewed(file);
+  if (!sameFile) rememberRecentlyViewed(file);
 
   lightboxTitle.textContent = file.name || "Arquivo sem nome";
   lightboxType.textContent = lightboxFileTypeLabel(file);
@@ -5784,6 +6303,30 @@ function openLightbox(file) {
     vid.muted = privacy.muted();
     vid.playsInline = true;
     vid.preload = "metadata";
+    vid.addEventListener("loadedmetadata", () => {
+      if (file.playbackPosition > 0 && file.playbackPosition < vid.duration - 2)
+        vid.currentTime = file.playbackPosition;
+    });
+    let lastSavedAt = 0;
+    const persistPosition = () => {
+      if (
+        generation !== lightboxGeneration ||
+        vid.readyState < 1 ||
+        !Number.isFinite(vid.currentTime)
+      )
+        return;
+      void updateDoc(doc(db, "vault_files", file.id), {
+        playbackPosition: vid.ended ? 0 : vid.currentTime,
+      }).catch((error) => showToast(error.message, "error"));
+    };
+    vid.addEventListener("timeupdate", () => {
+      if (Date.now() - lastSavedAt > 10000) {
+        lastSavedAt = Date.now();
+        persistPosition();
+      }
+    });
+    vid.addEventListener("pause", persistPosition);
+    vid.addEventListener("ended", persistPosition);
     vid.poster = mediaThumbUrl(file) || "";
     vid.volume = Number(localStorage.getItem("vault_video_volume") || "0.8");
     vid.playbackRate = Number(localStorage.getItem("vault_video_speed") || "1");
@@ -5837,8 +6380,8 @@ function openLightbox(file) {
     "Normal";
   const favLabel = file.favorite ? "Favoritado" : "Favoritar";
   const mediaViewActions = ["image", "video"].includes(file.fileType)
-    ? `<button class="lb-action-btn is-active" id="lbFitBtn" type="button" aria-pressed="true" title="Ajustar à tela (0)">${icon("ScanLine")}<span>Ajustar</span></button>
-       <button class="lb-action-btn" id="lbOriginalBtn" type="button" aria-pressed="false" title="Tamanho original (1)">${icon("Square")}<span>Original</span></button>`
+    ? `<button class="lb-action-btn is-active" id="lbFitBtn" type="button" aria-pressed="true" title="Ajustar à tela (A)">${icon("ScanLine")}<span>Ajustar</span></button>
+       <button class="lb-action-btn" id="lbOriginalBtn" type="button" aria-pressed="false" title="Tamanho original (O)">${icon("Square")}<span>Original</span></button>`
     : "";
   const imageActions =
     file.fileType === "image"
@@ -5879,7 +6422,7 @@ function openLightbox(file) {
     </section>
     <section class="lb-panel-section">
       <div class="lb-section-heading"><div><span class="lb-eyebrow">Atalhos</span><h2>Ações</h2></div></div>
-      <p class="lb-shortcut-help"><kbd>F</kbd> favorito <kbd>T</kbd> etiquetas <kbd>M</kbd> mover <kbd>0</kbd> ajustar <kbd>1</kbd> original <kbd>Enter</kbd> tela cheia</p>
+      <p class="lb-shortcut-help"><kbd>F</kbd> favorito <kbd>T</kbd> etiquetas <kbd>M</kbd> mover <kbd>0–5</kbd> avaliação <kbd>A</kbd> ajustar <kbd>O</kbd> original <kbd>Enter</kbd> tela cheia</p>
       <div class="lb-actions">
         ${mediaViewActions}
         ${imageActions}
@@ -5896,6 +6439,7 @@ function openLightbox(file) {
     </section>
     ${file.fileType === "video" ? '<section class="lb-panel-section"><div class="lb-section-heading"><div><span class="lb-eyebrow">Vídeo</span><h2>Cenas salvas</h2></div></div><div class="video-scenes" id="videoScenes" aria-label="Cenas salvas"></div></section>' : ""}`;
 
+  mountRatingControls(file);
   $("lbDownloadBtn").onclick = () => downloadStoredFile(file);
   $("lbFavBtn").onclick = async () => {
     await toggleFavorite(file);
@@ -6158,8 +6702,10 @@ function handleLightboxShortcut(event) {
   if (["+", "="].includes(event.key))
     return run(() => setLightboxZoom(lightboxZoom + 0.25));
   if (event.key === "-") return run(() => setLightboxZoom(lightboxZoom - 0.25));
-  if (event.key === "0") return run(() => setLightboxFitMode("fit"));
-  if (event.key === "1") return run(() => setLightboxFitMode("original"));
+  if (/^[0-5]$/.test(event.key) && file)
+    return run(() => setFileRating(file.id, Number(event.key)));
+  if (key === "a") return run(() => setLightboxFitMode("fit"));
+  if (key === "o") return run(() => setLightboxFitMode("original"));
   if (event.key === "Enter") return run(toggleLightboxFullscreen);
   if (event.key === " ") return run(() => navigateLightbox(1));
   return false;
@@ -6252,6 +6798,19 @@ document.onkeydown = (e) => {
     navigateLightbox(1);
 };
 function closeLightbox() {
+  const closingFile = currentLightboxFile(),
+    closingVideo = lightboxInner.querySelector("video");
+  if (
+    lightbox.classList.contains("active") &&
+    closingFile &&
+    closingVideo &&
+    closingVideo.readyState >= 1 &&
+    Number.isFinite(closingVideo.currentTime)
+  ) {
+    void updateDoc(doc(db, "vault_files", closingFile.id), {
+      playbackPosition: closingVideo.ended ? 0 : closingVideo.currentTime,
+    }).catch(() => {});
+  }
   lightboxGeneration++;
   clearTimeout(lightboxPrefetchTimer);
   if (document.fullscreenElement === lightbox)
@@ -6332,6 +6891,10 @@ function getMangaPages(folderId) {
       (file) =>
         isActiveFile(file) &&
         file.fileType === "image" &&
+        (matchesAccountView(file) ||
+          (includeLinkedAccounts && folderId === navState.folderId)) &&
+        (linkedAccountFilter === "all" ||
+          recordAccountSlot(file) === linkedAccountFilter) &&
         (file.folderId || null) === firestoreFolderId,
     )
     .sort(comparePageFiles);
@@ -6593,6 +7156,33 @@ function updateMangaIndexFromScroll() {
 }
 
 function closeMangaReader() {
+  if (mangaReader.classList.contains("active") && mangaState.pages.length) {
+    const page = mangaState.pages[mangaState.index];
+    if (page) {
+      const changes = files
+        .filter(
+          (f) =>
+            f.folderId === page.folderId && f.mangaProgress && f.id !== page.id,
+        )
+        .map((f) => ({
+          collection: "vault_files",
+          id: f.id,
+          data: { mangaProgress: null },
+        }));
+      changes.push({
+        collection: "vault_files",
+        id: page.id,
+        data: {
+          mangaProgress:
+            mangaState.index < mangaState.pages.length - 1
+              ? { index: mangaState.index, folderId: page.folderId }
+              : null,
+          lastViewedAt: serverTimestamp(),
+        },
+      });
+      void updateCatalogBatch(db, changes).catch(() => {});
+    }
+  }
   disposeMangaImages();
   mangaPreloader?.dispose();
   mangaPreloader = null;
@@ -6631,11 +7221,18 @@ function requestUpload() {
     : activeAccountView !== "all"
       ? activeAccountView
       : "";
-  if (requiredSlot === "legacy") {
+  const hasLinkedDestination =
+    folderAccounts(folder || {}).length > 1 &&
+    folderAccounts(folder).some((slot) => driveManager.isConnected(slot));
+  if (requiredSlot === "legacy" && !hasLinkedDestination) {
     showToast("Migre esta pasta para o Drive antes de adicionar arquivos.");
     return;
   }
-  if (requiredSlot && !driveManager.isConnected(requiredSlot)) {
+  if (
+    requiredSlot &&
+    !driveManager.isConnected(requiredSlot) &&
+    !hasLinkedDestination
+  ) {
     openAccountsModal();
     showToast(`Reconecte ${slotTag(requiredSlot)} para enviar arquivos aqui.`);
     return;
@@ -6656,7 +7253,12 @@ async function handleFiles(fileList) {
   if (!fileList.length) return;
   let destination;
   try {
-    destination = await resolveUploadDestination();
+    const folder = getFolder(navState.folderId);
+    const bytes =
+      folder?.uploadPolicy === "most_free"
+        ? Math.max(...Array.from(fileList, (file) => file.size))
+        : Array.from(fileList).reduce((sum, file) => sum + file.size, 0);
+    destination = await resolveUploadDestination(bytes);
   } catch (error) {
     showToast(error.message, "error");
     fileInput.value = "";
@@ -6689,6 +7291,30 @@ async function handleFiles(fileList) {
     fileInput.value = "";
     return;
   }
+  let uploadPlan;
+  const uploadFolder = getFolder(destination.folderId);
+  if (
+    uploadFolder?.uploadPolicy === "most_free" &&
+    folderAccounts(uploadFolder).length > 1
+  ) {
+    try {
+      uploadPlan = planUploadAccounts(
+        uploadFolder,
+        driveManager.getAccounts(),
+        activeAccountView,
+        uniqueFiles,
+      );
+    } catch (error) {
+      showToast(error.message, "error");
+      fileInput.value = "";
+      return;
+    }
+    const counts = new Map();
+    uploadPlan.forEach((slot) => counts.set(slot, (counts.get(slot) || 0) + 1));
+    destination.label = [...counts]
+      .map(([slot, count]) => `${count} arquivo(s) em ${accountLabel(slot)}`)
+      .join("; ");
+  }
   const destinationConfirmed = await openConfirmDialog({
     title: "Confirmar destino do upload",
     message: `${uniqueFiles.length} arquivo(s) serão enviados para ${destination.label}. Continuar?`,
@@ -6705,11 +7331,20 @@ async function handleFiles(fileList) {
   await runLimitedQueue(
     uniqueFiles,
     async (file) => {
+      const accountSlot = uploadPlan?.get(file) || destination.accountSlot;
+      let driveParentId = destination.driveParentId;
+      try {
+        if (accountSlot !== destination.accountSlot)
+          driveParentId = await ensureFolderOnDrive(uploadFolder, accountSlot);
+      } catch (error) {
+        showToast(error.message, "error");
+        return;
+      }
       if (
         await uploadOneFile(
           file,
-          destination.accountSlot,
-          destination.driveParentId,
+          accountSlot,
+          driveParentId,
           destination.folderId,
         )
       )
@@ -6763,12 +7398,53 @@ async function chooseAccountSlot(title = "Escolher conta do Drive") {
   return values.accountSlot;
 }
 
-async function resolveUploadDestination() {
+async function resolveUploadDestination(bytes = 0) {
   const folder =
     navState.folderId === ROOT_ID ? null : getFolder(navState.folderId);
-  const accountSlot = folder
-    ? recordAccountSlot(folder)
-    : await chooseAccountSlot("Enviar arquivos para qual conta?");
+  let accountSlot;
+  if (folder && folderAccounts(folder).length > 1) {
+    const accounts = driveManager.getAccounts();
+    accountSlot = chooseUploadAccount(
+      folder,
+      accounts,
+      activeAccountView,
+      bytes,
+    );
+    const activeUnavailable =
+      activeAccountView !== "all" &&
+      !accounts.some((a) => a.slot === activeAccountView && a.connected);
+    if (folder.uploadPolicy === "ask" || activeUnavailable) {
+      const choices = accounts.filter(
+        (a) =>
+          a.connected &&
+          folderAccounts(folder).includes(a.slot) &&
+          (!a.quota?.limit ||
+            Number(a.quota.limit) - Number(a.quota.usage || 0) >= bytes),
+      );
+      const answer = await openFieldsDialog({
+        title: activeUnavailable
+          ? "Conta ativa indisponível. Escolha outra conta vinculada"
+          : "Enviar para qual conta vinculada?",
+        fields: [
+          {
+            name: "slot",
+            label: "Conta de destino",
+            type: "select",
+            value: accountSlot,
+            options: choices.map((a) => ({
+              value: a.slot,
+              label: accountLabel(a.slot),
+            })),
+          },
+        ],
+      });
+      if (!answer) throw new Error("Envio cancelado.");
+      accountSlot = answer.slot;
+    }
+  } else
+    accountSlot = folder
+      ? recordAccountSlot(folder)
+      : await chooseAccountSlot("Enviar arquivos para qual conta?");
   if (accountSlot === "legacy")
     throw new Error(
       "Migre esta pasta para o Drive antes de enviar novos arquivos",
@@ -6895,10 +7571,13 @@ async function uploadOneFile(
   const bar = itemEl.querySelector(".upload-item-bar");
   const status = itemEl.querySelector(".upload-item-status");
   const cancelBtn = itemEl.querySelector(".upload-cancel");
+  const uploadController = new AbortController();
+  activeUploads.set(uploadId, uploadController);
   let xhr = null;
   let cancelled = false;
   cancelBtn.onclick = () => {
     cancelled = true;
+    uploadController.abort();
     xhr?.abort();
     activeUploads.delete(uploadId);
     status.textContent = "Cancelado";
@@ -6923,9 +7602,10 @@ async function uploadOneFile(
       file,
       driveParentId,
       {
+        signal: uploadController.signal,
         onXhr: (nextXhr) => {
           xhr = nextXhr;
-          activeUploads.set(uploadId, nextXhr);
+          activeUploads.set(uploadId, uploadController);
         },
         onProgress: (loaded, total) => {
           const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -6976,6 +7656,14 @@ async function uploadOneFile(
       description: "",
       priority: "normal",
       eventDate: photoInsights.capturedAt || "",
+      rating: 0,
+      pinned: null,
+      takenAt:
+        photoInsights.capturedAt ||
+        imageMetadata.time ||
+        (file.lastModified
+          ? new Date(file.lastModified).toISOString()
+          : serverTimestamp()),
       photoDateSource: photoInsights.dateSource || "",
       isScreenshot: photoInsights.isScreenshot,
       suggestedAlbumKey: photoInsights.albumKey || "",
@@ -7041,8 +7729,12 @@ function getFileType(file) {
 
 // ??? Drag & drop ??????????????????????????????????????????
 function isInternalLibraryDrag(event) {
-  return [...(event.dataTransfer?.types || [])].includes(
-    "application/x-vault-file-ids",
+  return [...(event.dataTransfer?.types || [])].some((type) =>
+    [
+      "application/x-vault-file-ids",
+      "application/x-vault-pin",
+      "application/x-vault-hall-block",
+    ].includes(type),
   );
 }
 
@@ -7258,6 +7950,10 @@ document.querySelectorAll(".chip").forEach((chip) => {
 navHome?.addEventListener("click", openHomeSection);
 navFiles?.addEventListener("click", () => openLibraryView());
 accountViewSelect?.addEventListener("change", () => {
+  closeLightbox();
+  closeMangaReader();
+  includeLinkedAccounts = false;
+  linkedAccountFilter = "all";
   activeAccountView = accountViewSelect.value;
   localStorage.setItem("vault_drive_account_view", activeAccountView);
   navState.folderId = ROOT_ID;
@@ -7702,7 +8398,7 @@ async function importFromUrl() {
     const source = new File([blob], name, {
       type: blob.type || "application/octet-stream",
     });
-    const destination = await resolveUploadDestination();
+    const destination = await resolveUploadDestination(source.size);
     const confirmed = await openConfirmDialog({
       title: "Confirmar destino",
       message: `“${name}” será enviado para ${destination.label}.`,
@@ -7737,6 +8433,16 @@ async function importBackupJson(file) {
     showToast("JSON invalido", "error");
     return;
   }
+  try {
+    if (!Array.isArray(backup.records) && Array.isArray(backup.files))
+      backup.files = backup.files
+        .filter((r) => r && typeof r === "object")
+        .map((r) => (r.privateVault ? r : { ...r, ...normalizeBackupFile(r) }));
+    backup = migrateBackup(backup);
+  } catch (error) {
+    showToast(error.message, "error");
+    return;
+  }
   const foldersToImport = Array.isArray(backup.folders) ? backup.folders : [];
   if (backup.version === 3 && Array.isArray(backup.records)) {
     const validCollections = [
@@ -7745,6 +8451,8 @@ async function importBackupJson(file) {
       "vault_boards",
       "vault_board_items",
       "vault_board_edges",
+      "vault_scope_settings",
+      "vault_account_identity",
     ];
     const rows = backup.records.filter(
       (r) =>
@@ -7763,9 +8471,18 @@ async function importBackupJson(file) {
     });
     if (!confirmed) return;
     try {
-      for (const row of rows) {
-        await setDoc(doc(db, row.collection, row.id), row.data);
-        if (row.removed) await deleteDoc(doc(db, row.collection, row.id));
+      await restoreCatalogRecords(db, rows);
+      if (
+        backup.activeScope === "all" ||
+        isDriveAccountSlot(backup.activeScope)
+      ) {
+        activeAccountView = backup.activeScope;
+        localStorage.setItem("vault_drive_account_view", activeAccountView);
+        renderAccountControls();
+        rebuildFileIndexes();
+        renderFolderList();
+        renderGrid();
+        updateDashboard();
       }
       showToast(
         "Backup restaurado neste navegador. Conecte as contas para sincronizar.",
@@ -8004,7 +8721,9 @@ async function inspectFileAvailability(file) {
         );
         return { status: "skipped", reason: "account_session_expired" };
       }
-      return { status: "missing", reason: "removed_from_drive" };
+      return /404|not found|File not found/i.test(String(error.message))
+        ? { status: "missing", reason: "removed_from_drive" }
+        : { status: "skipped", reason: "verification_unavailable" };
     }
   }
   if (file.fileType === "image") {
@@ -8111,24 +8830,27 @@ function updateDashboard() {
   $("dashHeroText").textContent =
     "Seu espaço pessoal. Apenas contas, armazenamento e status por aqui.";
   renderHallAccounts();
+  hallUI?.render();
 }
 
 function renderHallAccounts() {
   const container = $("hallAccounts");
   if (!container) return;
-  const accounts =
-    driveManager?.getAccounts() || currentConfig?.driveAccounts || [];
+  const accounts = (
+    driveManager?.getAccounts() ||
+    currentConfig?.driveAccounts ||
+    []
+  ).filter((a) => activeAccountView === "all" || a.slot === activeAccountView);
   container.innerHTML = accounts.length
     ? accounts
         .map((account) => {
           const quota = quotaSummary(account.quota);
           const connected = !!account.connected;
-          return `<article class="hall-account"><div class="hall-account-heading"><span class="hall-account-slot">${esc(slotTag(account.slot))}</span><div><h3>${esc(account.friendlyName || account.email || slotTag(account.slot))}</h3>${account.email && account.friendlyName ? `<p>${esc(account.email)}</p>` : ""}</div><span class="hall-account-status${connected ? " is-connected" : ""}">${connected ? "Conectada" : "Desconectada"}</span></div><div class="hall-account-quota"><span>Armazenamento Google</span><strong>${esc(quota.text)}</strong></div><div class="account-quota-bar" aria-hidden="true"><span style="--quota-pct:${quota.pct.toFixed(1)}%"></span></div></article>`;
+          return `<article class="hall-account"><div class="hall-account-heading"><span class="hall-account-slot">${esc(accountIdentities[account.slot]?.initials || slotTag(account.slot))}</span><div><h3>${esc(accountIdentities[account.slot]?.name || account.friendlyName || account.email || slotTag(account.slot))}</h3>${account.email && account.friendlyName ? `<p>${esc(account.email)}</p>` : ""}</div><span class="hall-account-status${connected ? " is-connected" : ""}">${connected ? "Conectada" : "Precisa de atenção"}</span></div><div class="hall-account-quota"><span>Armazenamento Google</span><strong>${esc(quota.text)}</strong></div><div class="account-quota-bar" aria-hidden="true"><span style="--quota-pct:${quota.pct.toFixed(1)}%"></span></div></article>`;
         })
         .join("")
     : '<div class="hall-no-accounts"><strong>Nenhuma conta conectada.</strong><p>Conecte uma Conta Google para acompanhar o espaço disponível.</p></div>';
-  $("hallSyncStatus").textContent =
-    $("syncSummaryText")?.textContent || "Salvo neste navegador";
+  void refreshHallSyncStatus();
   privateVaultUI
     ?.configured()
     .then((configured) => {
@@ -8154,6 +8876,7 @@ async function scrubPrivateTraces(rows) {
   );
   ids.forEach((id) => localTextSearch.block(id));
   await Promise.all([...ids].map((id) => localTextSearch.remove(id)));
+  await removeThumbnails([...ids]).catch(() => {});
   recentlyViewed = recentlyViewed.filter((entry) => !ids.has(entry.id));
   persistRecentlyViewed();
   // The general activity log may contain names of these files or their folders.
@@ -8199,6 +8922,11 @@ function persistRecentlyViewed() {
 
 function rememberRecentlyViewed(file) {
   if (!file?.id || file.deletedAt) return;
+  if (db)
+    void updateDoc(doc(db, "vault_files", file.id), {
+      lastViewedAt: serverTimestamp(),
+      viewCount: (fileById.get(file.id)?.viewCount || 0) + 1,
+    }).catch((error) => showToast(error.message, "error"));
   recentlyViewed = [
     { id: file.id, viewedAt: Date.now() },
     ...recentlyViewed.filter((entry) => entry.id !== file.id),
@@ -8516,9 +9244,26 @@ async function refreshSyncStatus() {
   }
   badge.dataset.state = state;
   text.textContent = label;
-  if ($("hallSyncStatus")) $("hallSyncStatus").textContent = label;
+  void refreshHallSyncStatus();
   badge.title = `${label}. Abrir ferramentas e sincronização.`;
   badge.setAttribute("aria-label", badge.title);
+}
+async function refreshHallSyncStatus() {
+  const scope = activeAccountView;
+  if (scope === "all") {
+    $("hallSyncStatus").textContent =
+      $("syncSummaryText")?.textContent || "Salvo neste navegador";
+    return;
+  }
+  try {
+    const summary = await getSyncSummary(scope);
+    if (activeAccountView === scope)
+      $("hallSyncStatus").textContent = summary.pending
+        ? `${summary.pending} pendente${summary.pending === 1 ? "" : "s"} neste escopo`
+        : "Sem alterações pendentes neste escopo";
+  } catch {
+    /* Keep the last known count when local storage is unavailable. */
+  }
 }
 window.addEventListener("vault-sync", ({ detail }) => {
   currentSyncState = detail.state;
@@ -8696,6 +9441,8 @@ $("legacyMigrationAction").onclick = () => {
 if (savedCfg?.projectId && !localStorage.getItem("vault_legacy_firebase"))
   localStorage.setItem("vault_legacy_firebase", JSON.stringify(savedCfg));
 $("clearSearchFilters").onclick = () => {
+  minimumRating = 0;
+  $("ratingFilter").value = "0";
   currentSearch = "";
   searchInput.value = "";
   activeSearchTags.clear();
@@ -8720,9 +9467,15 @@ const mural = createMural({
   toast: showToast,
 });
 const libraryWallpaper = createLibraryWallpaper();
-libraryWallpaper.ready.catch((error) => console.warn("Fundo da Biblioteca indisponível", error));
+libraryWallpaper.ready.catch((error) =>
+  console.warn("Fundo da Biblioteca indisponível", error),
+);
 const wallpaperStudio = createWallpaperStudio({
-  getPhotos: () => files.filter((file) => file.fileType === "image" && !file.deletedAt && !file.privateVault),
+  getPhotos: () =>
+    files.filter(
+      (file) =>
+        file.fileType === "image" && !file.deletedAt && !file.privateVault,
+    ),
   getThumbnail: (file) => mediaThumbUrl(file, 320, 240),
   loadThumbnail: (file) =>
     isGoogleDriveRecord(file)
@@ -8775,5 +9528,58 @@ privateVaultUI = installPrivateVault({
 $("navPrivate").onclick = () => privateVaultUI.open();
 $("hallPrivateBtn").onclick = () => privateVaultUI.open();
 $("hallAccountsBtn").onclick = () => openAccountsModal($("hallAccountsBtn"));
+$("ratingFilter").onchange = (event) => {
+  minimumRating = Number(event.target.value);
+  visibleLimit = PAGE_SIZE;
+  renderGrid();
+};
+$("folderActionLink").onclick = () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder)
+    editFolderLinks(folder).catch((e) => showToast(e.message, "error"));
+};
+$("folderActionLayout").onclick = () => {
+  const folder = folderForActions;
+  closeFolderActionsModal();
+  if (folder)
+    editFolderLayout(folder).catch((e) => showToast(e.message, "error"));
+};
+hallUI = createHall({
+  getState: () => ({
+    files,
+    settings: hallSettings,
+    scope: activeAccountView,
+    accountOf: recordAccountSlot,
+    accountName: (slot) => accountLabel(slot),
+    available: (file) =>
+      !file.missing &&
+      (!isGoogleDriveRecord(file) ||
+        !!driveManager?.isConnected(recordAccountSlot(file))),
+    openAccounts: () => openAccountsModal(),
+  }),
+  saveSettings: saveScopeSettings,
+  saveFile: (id, data) => updateDoc(doc(db, "vault_files", id), data),
+  saveFiles: (patches) =>
+    updateCatalogBatch(
+      db,
+      patches.map(({ id, ...data }) => ({
+        collection: "vault_files",
+        id,
+        data,
+      })),
+    ),
+  openFile: (file, list) => {
+    lightboxFiles = list;
+    if (file.mangaProgress) openMangaReader(file);
+    else openLightbox(file);
+  },
+  thumbnail: mediaThumbUrl,
+  hydrate: hydrateDriveThumbnails,
+  ask: openFieldsDialog,
+  confirm: openConfirmDialog,
+  toast: showToast,
+  escape: esc,
+});
 installInterface();
 hydrateIcons();
