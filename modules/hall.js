@@ -3,9 +3,11 @@ import {
   changePin,
   hallItems,
   normalizeSettings,
+  normalizeBanner,
   pinFor,
   scopeSettings,
 } from "./hall-model.js";
+import { createHallBanner } from "./hall-banner.js";
 
 export function createHall({
   getState,
@@ -115,18 +117,50 @@ export function createHall({
         continue;
       }
       if (!lists) continue;
-      let list = lists[block.id] || [];
       if (block.id === "banner") {
-        const banner =
-          config.featuredMode === "daily"
-            ? lists.daily
-            : config.featuredMode === "random"
-              ? lists.random
-              : lists.media.find(
-                  (f) => f.id === config.bannerFileId && f.fileType === "image",
-                );
-        list = banner ? [banner] : [];
+        const file = bannerFile(config);
+        const section = document.createElement("section");
+        section.className = "home-panel hall-media-block hall-block-banner";
+        section.dataset.hallBlock = "banner";
+        section.setAttribute("aria-label", "Banner do hall");
+        section.style.setProperty(
+          "--banner-radius",
+          `${config.banner.radius}px`,
+        );
+        const tools = document.createElement("div");
+        tools.className = config.banner.showHeading
+          ? "hall-banner-heading"
+          : "hall-banner-tools";
+        if (config.banner.showHeading) {
+          const heading = document.createElement("h2");
+          heading.textContent = "Banner";
+          tools.append(heading);
+        }
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "hall-banner-customize";
+        edit.textContent = "Personalizar banner";
+        edit.onclick = () => openEditor("banner");
+        tools.append(edit);
+        const available = file ? s.available(file) : false;
+        section.append(
+          tools,
+          createHallBanner(file, config.banner, {
+            thumbnail,
+            available,
+            placeholder: file
+              ? "Indisponível: reconecte a conta para ver o banner."
+              : "Escolha uma foto em Personalizar banner.",
+            open: file
+              ? () =>
+                  available ? openFile(file, lists.media) : s.openAccounts()
+              : undefined,
+          }),
+        );
+        container.append(section);
+        continue;
       }
+      let list = lists[block.id] || [];
       if (block.options.source === "favorites")
         list = list.filter((f) => f.favorite);
       if (block.options.source === "rated")
@@ -195,6 +229,18 @@ export function createHall({
       container.append(section);
     }
     hydrate(container);
+    if (editor.classList.contains("active")) updateBannerPreview();
+  }
+
+  function bannerFile(config) {
+    const list = items();
+    return config.featuredMode === "daily"
+      ? list.daily
+      : config.featuredMode === "random"
+        ? list.random
+        : list.media.find(
+            (f) => f.id === config.bannerFileId && f.fileType === "image",
+          );
   }
 
   async function reorderPins(from, to) {
@@ -350,6 +396,14 @@ export function createHall({
       ${field("Cantos (0–32 px)", "radius", `<input name="radius" type="number" min="0" max="32" value="${draft.grid.radius}">`)}
       ${field("Espaçamento (0–40 px)", "gap", `<input name="gap" type="number" min="0" max="40" value="${draft.grid.gap}">`)}
       ${field("Indicadores da conta de origem", "showAccountBadges", `<input name="showAccountBadges" type="checkbox"${draft.showAccountBadges ? " checked" : ""}>`)}
+      </div><fieldset class="hall-banner-settings" id="hallBannerSettings"><legend>Banner</legend>
+      <p>O banner ocupa toda a largura do bloco. Ajuste a imagem, o texto e a altura para cada tela.</p>
+      <div class="hall-banner-preview-toolbar"><span>Prévia</span><button type="button" data-banner-device="desktop" aria-pressed="true">Desktop</button><button type="button" data-banner-device="mobile" aria-pressed="false">Celular</button></div>
+      <div id="hallBannerPreview" class="hall-banner-preview" data-device="desktop"></div>
+      <p class="hall-banner-drag-help">Arraste a imagem na prévia para reposicionar ou use os controles de enquadramento.</p>
+      <div class="hall-banner-presets"><span>Começar com:</span><button type="button" data-banner-preset="strip">Faixa</button><button type="button" data-banner-preset="feature">Destaque</button><button type="button" data-banner-preset="cover">Capa</button><button type="button" data-banner-defaults>Restaurar aparência do banner</button></div>
+      <div class="hall-appearance-fields">
+      ${field("Exibir banner no hall", "banner_enabled", `<input type="checkbox" name="banner_enabled"${draft.blocks.find((b) => b.id === "banner").enabled ? " checked" : ""}>`)}
       ${field(
         "Modo do banner",
         "featuredMode",
@@ -374,8 +428,254 @@ export function createHall({
           )
           .join("")}</select>`,
       )}
-      </div><h3>Blocos</h3><p>Arraste para ordenar ou use as setas. O modo discreto sempre oculta as prévias.</p><div class="hall-block-editor"></div>`;
+      ${bannerFields()}
+      </div></fieldset><h3>Blocos</h3><p>Arraste para ordenar ou use as setas. O modo discreto sempre oculta as prévias.</p><div class="hall-block-editor"></div>`;
     renderBlockEditor();
+    bindBannerEditor();
+    updateBannerPreview();
+  }
+
+  const bannerRanges = {
+    height: ["Altura no desktop", 160, 720, 20, "px"],
+    mobileHeight: ["Altura no celular", 140, 520, 20, "px"],
+    positionX: ["Enquadramento horizontal", 0, 100, 1, "%"],
+    positionY: ["Enquadramento vertical", 0, 100, 1, "%"],
+    zoom: ["Zoom", 1, 2.5, 0.05, "×"],
+    dim: ["Escurecimento", 0, 85, 1, "%"],
+    blur: ["Desfoque", 0, 16, 1, "px"],
+    radius: ["Cantos do banner", 0, 40, 1, "px"],
+    titleSize: ["Tamanho do título", 20, 64, 1, "px"],
+  };
+  function bannerFields() {
+    const b = draft.banner;
+    const text = (key, label, max) =>
+      field(
+        label,
+        `banner_${key}`,
+        `<input name="banner_${key}" value="${esc(b[key])}" maxlength="${max}">`,
+      );
+    const fields = [
+      field(
+        "Ajuste da imagem",
+        "banner_fit",
+        select(
+          "banner_fit",
+          [
+            ["cover", "Preencher e recortar"],
+            ["contain", "Mostrar imagem inteira"],
+          ],
+          b.fit,
+        ),
+      ),
+      ...Object.entries(bannerRanges).map(
+        ([key, [label, min, max, step, unit]]) =>
+          field(
+            label,
+            `banner_${key}`,
+            `<span class="hall-banner-range"><input type="range" id="banner_${key}" name="banner_${key}" min="${min}" max="${max}" step="${step}" value="${b[key]}"><output for="banner_${key}" data-banner-output="${key}">${b[key]}${unit}</output></span>`,
+          ),
+      ),
+      text("title", "Título do banner (opcional)", 120),
+      field(
+        "Subtítulo (opcional)",
+        "banner_subtitle",
+        `<textarea name="banner_subtitle" maxlength="320" rows="3">${esc(b.subtitle)}</textarea>`,
+      ),
+      field(
+        "Posição do texto",
+        "banner_textPosition",
+        select(
+          "banner_textPosition",
+          [
+            ["top-left", "Superior esquerdo"],
+            ["top-center", "Superior central"],
+            ["top-right", "Superior direito"],
+            ["bottom-left", "Inferior esquerdo"],
+            ["bottom-center", "Inferior central"],
+            ["bottom-right", "Inferior direito"],
+          ],
+          b.textPosition,
+        ),
+      ),
+      field(
+        "Camada de contraste",
+        "banner_overlay",
+        select(
+          "banner_overlay",
+          [
+            ["gradient", "Degradê atrás do texto"],
+            ["solid", "Escurecimento uniforme"],
+            ["none", "Sem camada"],
+          ],
+          b.overlay,
+        ),
+      ),
+      field(
+        "Cor do texto",
+        "banner_textColor",
+        `<input type="color" name="banner_textColor" value="${b.textColor}">`,
+      ),
+      field(
+        "Cor de fundo",
+        "banner_backgroundColor",
+        `<input type="color" name="banner_backgroundColor" value="${b.backgroundColor}">`,
+      ),
+      field(
+        "Mostrar nome do arquivo",
+        "banner_showFileName",
+        `<input type="checkbox" name="banner_showFileName"${b.showFileName ? " checked" : ""}>`,
+      ),
+      field(
+        "Mostrar cabeçalho “Banner”",
+        "banner_showHeading",
+        `<input type="checkbox" name="banner_showHeading"${b.showHeading ? " checked" : ""}>`,
+      ),
+    ];
+    return fields.join("");
+  }
+  function readBannerForm() {
+    const form = editor.querySelector("form");
+    return normalizeBanner(
+      Object.fromEntries(
+        Object.keys(normalizeBanner()).map((key) => {
+          const input = form.elements.namedItem(`banner_${key}`);
+          return [
+            key,
+            input?.type === "checkbox"
+              ? input.checked
+              : (input?.value ?? draft.banner[key]),
+          ];
+        }),
+      ),
+    );
+  }
+  function writeBannerForm(config) {
+    const form = editor.querySelector("form");
+    for (const [key, value] of Object.entries(config)) {
+      const input = form.elements.namedItem(`banner_${key}`);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = value;
+      else input.value = value;
+    }
+    updateBannerPreview();
+  }
+  function updateBannerOutputs() {
+    const form = editor.querySelector("form");
+    for (const [key, [, , , , unit]] of Object.entries(bannerRanges)) {
+      const output = editor.querySelector(`[data-banner-output="${key}"]`);
+      if (output)
+        output.textContent = `${form.elements.namedItem(`banner_${key}`).value}${unit}`;
+    }
+  }
+  function updateBannerPreview() {
+    const target = $("hallBannerPreview");
+    if (!target) return;
+    const form = editor.querySelector("form");
+    const blocked = discreet() || form.elements.hidePreviews.checked;
+    const config = readBannerForm();
+    const file = blocked
+      ? null
+      : bannerFile({
+          featuredMode: form.elements.featuredMode.value,
+          bannerFileId: form.elements.bannerFileId.value,
+        });
+    const available = !!file && getState().available(file);
+    const frame = createHallBanner(file, config, {
+      thumbnail,
+      available,
+      placeholder: blocked
+        ? "Prévia oculta pela configuração de privacidade."
+        : file
+          ? "Conta indisponível. Reconecte para visualizar a foto."
+          : "Escolha uma foto deste escopo para visualizar o banner.",
+    });
+    target.replaceChildren(frame);
+    updateBannerOutputs();
+    if (available) {
+      bindBannerPan(frame);
+      hydrate(target);
+    }
+  }
+  function bindBannerPan(frame) {
+    frame.dataset.repositionable = "true";
+    let start;
+    frame.onpointerdown = (event) => {
+      if (event.button != null && event.button !== 0) return;
+      event.preventDefault();
+      const config = readBannerForm();
+      start = {
+        pointer: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        positionX: config.positionX,
+        positionY: config.positionY,
+        rect: frame.getBoundingClientRect(),
+      };
+      frame.setPointerCapture?.(event.pointerId);
+    };
+    frame.onpointermove = (event) => {
+      if (!start || start.pointer !== event.pointerId) return;
+      const form = editor.querySelector("form");
+      for (const [key, delta, size, initial] of [
+        [
+          "positionX",
+          event.clientX - start.x,
+          start.rect.width,
+          start.positionX,
+        ],
+        [
+          "positionY",
+          event.clientY - start.y,
+          start.rect.height,
+          start.positionY,
+        ],
+      ]) {
+        const value = Math.round(
+          Math.min(100, Math.max(0, initial - (delta / (size || 1)) * 100)),
+        );
+        form.elements.namedItem(`banner_${key}`).value = value;
+        frame.style.setProperty(
+          key === "positionX" ? "--banner-x" : "--banner-y",
+          `${value}%`,
+        );
+      }
+      updateBannerOutputs();
+    };
+    frame.onpointerup = frame.onpointercancel = () => {
+      start = null;
+    };
+  }
+  function bindBannerEditor() {
+    editor
+      .querySelectorAll(
+        '#hallBannerSettings input,#hallBannerSettings select,#hallBannerSettings textarea,[name="hidePreviews"]',
+      )
+      .forEach((input) => input.addEventListener("input", updateBannerPreview));
+    editor.querySelector('[name="banner_enabled"]').onchange = (event) => {
+      draft.blocks.find((b) => b.id === "banner").enabled =
+        event.target.checked;
+      renderBlockEditor();
+    };
+    editor.querySelectorAll("[data-banner-device]").forEach((button) => {
+      button.onclick = () => {
+        $("hallBannerPreview").dataset.device = button.dataset.bannerDevice;
+        editor
+          .querySelectorAll("[data-banner-device]")
+          .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+      };
+    });
+    editor.querySelectorAll("[data-banner-preset]").forEach((button) => {
+      button.onclick = () => {
+        const preset = {
+          strip: { height: 200, mobileHeight: 160, titleSize: 28 },
+          feature: { height: 320, mobileHeight: 220, titleSize: 36 },
+          cover: { height: 520, mobileHeight: 340, titleSize: 48 },
+        }[button.dataset.bannerPreset];
+        writeBannerForm({ ...readBannerForm(), ...preset });
+      };
+    });
+    editor.querySelector("[data-banner-defaults]").onclick = () =>
+      writeBannerForm(normalizeBanner());
   }
   function renderBlockEditor() {
     const list = editor.querySelector(".hall-block-editor");
@@ -402,18 +702,30 @@ export function createHall({
         ],
         block.options.size,
       )}</label><button type="button" data-up aria-label="Subir ${name}">↑</button><button type="button" data-down aria-label="Descer ${name}">↓</button>`;
+      if (block.id === "banner") {
+        row.classList.add("hall-banner-editor-row");
+        row.innerHTML = `<label><input type="checkbox"${block.enabled ? " checked" : ""}>Banner</label><button type="button" data-banner-options>Personalizar banner</button><button type="button" data-up aria-label="Subir Banner">↑</button><button type="button" data-down aria-label="Descer Banner">↓</button>`;
+        row.querySelector("[data-banner-options]").onclick = () =>
+          $("hallBannerSettings").scrollIntoView?.({
+            block: "start",
+            behavior: "smooth",
+          });
+      }
       row.querySelector('[type="checkbox"]').onchange = (e) => {
         block.enabled = e.target.checked;
+        if (block.id === "banner")
+          editor.querySelector('[name="banner_enabled"]').checked =
+            block.enabled;
       };
-      row.querySelector('[type="number"]').oninput = (e) => {
+      row.querySelector('[type="number"]')?.addEventListener("input", (e) => {
         block.options.count = e.target.value;
-      };
-      row.querySelector('[name="source"]').onchange = (e) => {
+      });
+      row.querySelector('[name="source"]')?.addEventListener("change", (e) => {
         block.options.source = e.target.value;
-      };
-      row.querySelector('[name="size"]').onchange = (e) => {
+      });
+      row.querySelector('[name="size"]')?.addEventListener("change", (e) => {
         block.options.size = e.target.value;
-      };
+      });
       const move = (to) => {
         if (to < 0 || to >= draft.blocks.length) return;
         draft.blocks.splice(to, 0, draft.blocks.splice(i, 1)[0]);
@@ -451,7 +763,10 @@ export function createHall({
       list.append(row);
     });
   }
-  $("editHallBtn").onclick = () => {
+  function openEditor(section) {
+    editor.dataset.editorSection = section === "banner" ? "banner" : "all";
+    editor.querySelector("h2").textContent =
+      section === "banner" ? "Personalizar banner" : "Editar hall";
     editingScope = getState().scope;
     draft = structuredClone(settings());
     $("hallEditorScope").textContent =
@@ -460,15 +775,33 @@ export function createHall({
         : getState().accountName(editingScope);
     $("hallEditorError").textContent = "";
     editorFields();
+    if (globalThis.matchMedia?.("(max-width: 700px)").matches) {
+      $("hallBannerPreview").dataset.device = "mobile";
+      editor
+        .querySelectorAll("[data-banner-device]")
+        .forEach((button) =>
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.bannerDevice === "mobile"),
+          ),
+        );
+    }
     editor.classList.add("active");
-  };
-  editor.querySelector("[data-close]").onclick = () =>
+    queueMicrotask(() => {
+      editor.querySelector("form").scrollTop = 0;
+    });
+  }
+  $("editHallBtn").onclick = () => openEditor();
+  function closeEditor() {
     editor.classList.remove("active");
+    $("hallBannerPreview")?.replaceChildren();
+  }
+  editor.querySelector("[data-close]").onclick = closeEditor;
   editor.onkeydown = (e) => {
-    if (e.key === "Escape") editor.classList.remove("active");
+    if (e.key === "Escape") closeEditor();
   };
   editor.onclick = (e) => {
-    if (e.target === editor) editor.classList.remove("active");
+    if (e.target === editor) closeEditor();
   };
   editor.querySelector("[data-reset]").onclick = () =>
     run(async () => {
@@ -482,7 +815,7 @@ export function createHall({
       )
         return;
       await saveSettings(editingScope, null);
-      editor.classList.remove("active");
+      closeEditor();
       render();
     });
   editor.querySelector("form").onsubmit = async (event) => {
@@ -503,6 +836,7 @@ export function createHall({
         showAccountBadges: form.elements.showAccountBadges.checked,
         featuredMode: val("featuredMode"),
         bannerFileId: val("bannerFileId"),
+        banner: readBannerForm(),
         grid: Object.fromEntries(
           ["density", "aspect", "layout", "hover", "radius", "gap"].map((k) => [
             k,
@@ -512,7 +846,7 @@ export function createHall({
         blocks: draft.blocks.map((b, order) => ({ ...b, order })),
       });
       await saveSettings(editingScope, value);
-      editor.classList.remove("active");
+      closeEditor();
       render();
       toast("Hall salvo para este escopo", "success");
     } catch (error) {

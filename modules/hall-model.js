@@ -82,6 +82,43 @@ export function folderAccounts(folder) {
   return normalizeFolder(folder).linkedAccountIds;
 }
 
+export function normalizeBanner(value = {}) {
+  value ||= {};
+  const color = (value, fallback) =>
+    /^#[\da-f]{6}$/i.test(value) ? value : fallback;
+  return {
+    height: Math.round(clamp(value.height, 160, 720, 320)),
+    mobileHeight: Math.round(clamp(value.mobileHeight, 140, 520, 220)),
+    fit: value.fit === "contain" ? "contain" : "cover",
+    positionX: clamp(value.positionX, 0, 100, 50),
+    positionY: clamp(value.positionY, 0, 100, 50),
+    zoom: clamp(value.zoom, 1, 2.5, 1),
+    dim: clamp(value.dim, 0, 85, 25),
+    blur: clamp(value.blur, 0, 16, 0),
+    radius: clamp(value.radius, 0, 40, 18),
+    overlay: ["gradient", "solid", "none"].includes(value.overlay)
+      ? value.overlay
+      : "gradient",
+    title: String(value.title || "").slice(0, 120),
+    subtitle: String(value.subtitle || "").slice(0, 320),
+    titleSize: clamp(value.titleSize, 20, 64, 36),
+    textPosition: [
+      "top-left",
+      "top-center",
+      "top-right",
+      "bottom-left",
+      "bottom-center",
+      "bottom-right",
+    ].includes(value.textPosition)
+      ? value.textPosition
+      : "bottom-left",
+    textColor: color(value.textColor, "#ffffff"),
+    backgroundColor: color(value.backgroundColor, "#14201a"),
+    showFileName: value.showFileName === true,
+    showHeading: value.showHeading === true,
+  };
+}
+
 export function normalizeSettings(value = {}) {
   const configured = new Map(
     (Array.isArray(value.blocks) ? value.blocks : [])
@@ -102,6 +139,7 @@ export function normalizeSettings(value = {}) {
       ? value.featuredMode
       : "manual",
     bannerFileId: String(value.bannerFileId || ""),
+    banner: normalizeBanner(value.banner),
     grid: {
       density: ["compact", "normal", "wide"].includes(value.grid?.density)
         ? value.grid.density
@@ -148,7 +186,12 @@ export function scopeSettings(settings, scope) {
   return normalizeSettings(
     scope === "all" || !own
       ? base
-      : { ...base, ...own, grid: { ...base.grid, ...own.grid } },
+      : {
+          ...base,
+          ...own,
+          grid: { ...base.grid, ...own.grid },
+          banner: { ...base.banner, ...own.banner },
+        },
   );
 }
 

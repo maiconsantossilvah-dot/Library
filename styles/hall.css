@@ -117,9 +117,6 @@
 .hall-pin-controls button:last-child {
   flex: 1;
 }
-.hall-block-banner .hall-open-media {
-  aspect-ratio: 21/8;
-}
 .hall-block-pinned .hall-size-m {
   grid-column: span 2;
 }
@@ -406,11 +403,335 @@ body[data-account-badges="false"] .file-account-badge {
     #fileGrid[data-layout="masonry"]:not(.list-view):not(.gallery-view) {
     columns: 2;
   }
-  .hall-block-banner .hall-open-media {
-    aspect-ratio: 4/3;
-  }
   .vault-reimagined
     #fileGrid[data-density="wide"]:not(.list-view):not(.gallery-view) {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Banner is a full-width feature with its own sizing and typography. */
+.vault-reimagined #hallBlocks .hall-block-banner {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--banner-radius, 18px);
+}
+.hall-banner-frame {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: var(--banner-height, 320px);
+  overflow: hidden;
+  border-radius: var(--banner-radius, 18px);
+  background: var(--banner-background, #14201a);
+  color: var(--banner-text-color, white);
+}
+.hall-banner-media,
+.hall-banner-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hall-banner-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  object-position: var(--banner-x, 50%) var(--banner-y, 50%);
+  transform: scale(var(--banner-zoom, 1));
+  transform-origin: var(--banner-x, 50%) var(--banner-y, 50%);
+  filter: blur(var(--banner-blur, 0px));
+  user-select: none;
+}
+[data-banner-fit="contain"] .hall-banner-media img {
+  object-fit: contain;
+}
+.hall-banner-shade {
+  background: linear-gradient(
+    var(--banner-gradient-direction, to top),
+    rgb(0 0 0 / var(--banner-dim, 0.25)),
+    transparent
+  );
+}
+[data-banner-text^="top"] {
+  --banner-gradient-direction: to bottom;
+}
+[data-banner-overlay="solid"] .hall-banner-shade {
+  background: rgb(0 0 0 / var(--banner-dim, 0.25));
+}
+[data-banner-overlay="none"] .hall-banner-shade {
+  display: none;
+}
+.hall-banner-copy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 68px 32px 30px;
+  text-align: left;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  text-shadow: 0 2px 16px #0006;
+}
+.hall-banner-copy .hall-banner-title {
+  color: inherit;
+  font-size: var(--banner-title-size, 36px);
+  font-weight: 650;
+  line-height: 1.12;
+  margin: 0;
+  max-width: 100%;
+}
+.hall-banner-copy .hall-banner-subtitle {
+  color: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: min(100%, 760px);
+  margin: 0;
+  white-space: pre-line;
+}
+.hall-banner-filename {
+  font-size: 12px;
+  opacity: 0.9;
+}
+[data-banner-text^="top"] .hall-banner-copy {
+  justify-content: flex-start;
+}
+[data-banner-text$="center"] .hall-banner-copy {
+  align-items: center;
+  text-align: center;
+}
+[data-banner-text$="right"] .hall-banner-copy {
+  align-items: flex-end;
+  text-align: right;
+}
+.hall-banner-open {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  cursor: pointer;
+}
+.hall-banner-open:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -5px;
+}
+.hall-banner-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 60px 24px 24px;
+  margin: 0;
+  text-align: center;
+  color: inherit;
+}
+.hall-banner-media .drive-thumb-placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+.hall-banner-tools {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+.hall-banner-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+}
+.vault-reimagined #hallBlocks .hall-banner-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.hall-banner-customize {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #ffffff59;
+  border-radius: 10px;
+  background: #101b18d9;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+}
+.hall-banner-customize:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.hall-banner-settings {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  scroll-margin-top: 16px;
+}
+.hall-banner-settings legend {
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 600;
+}
+.hall-banner-settings > p {
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+.hall-banner-preview {
+  margin: 12px 0;
+  min-width: 0;
+}
+.hall-banner-preview[data-device="mobile"] .hall-banner-frame {
+  width: min(100%, 360px);
+  margin-inline: auto;
+  height: var(--banner-mobile-height, 220px);
+}
+.hall-banner-preview[data-device="desktop"] .hall-banner-frame {
+  height: var(--banner-height, 320px);
+}
+.hall-banner-preview .hall-banner-frame[data-repositionable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+.hall-banner-preview .hall-banner-frame[data-repositionable="true"]:active {
+  cursor: grabbing;
+}
+.hall-banner-preview-toolbar,
+.hall-banner-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.hall-banner-preview-toolbar > span,
+.hall-banner-presets > span {
+  color: var(--text2);
+  font-size: 12px;
+  margin-right: 4px;
+}
+.hall-banner-preview-toolbar button,
+.hall-banner-presets button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.hall-banner-preview-toolbar button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hall-banner-range {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.hall-editor .hall-banner-range input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.hall-banner-range output {
+  min-width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hall-editor .hall-banner-settings textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+  font: inherit;
+}
+.hall-banner-editor-row [data-banner-options] {
+  grid-column: 2/5;
+}
+#hallEditor[data-editor-section="banner"]
+  #hallEditorFields
+  > .hall-appearance-fields,
+#hallEditor[data-editor-section="banner"] #hallEditorFields > h3,
+#hallEditor[data-editor-section="banner"] #hallEditorFields > p,
+#hallEditor[data-editor-section="banner"] .hall-block-editor,
+#hallEditor[data-editor-section="banner"] [data-reset] {
+  display: none;
+}
+#hallEditor[data-editor-section="banner"] .hall-banner-settings {
+  border: 0;
+  margin: 16px 0;
+  padding: 0;
+}
+.hall-banner-preview[data-device="mobile"] .hall-banner-copy {
+  padding: 60px 20px 22px;
+}
+.hall-banner-preview[data-device="mobile"] .hall-banner-title {
+  font-size: min(var(--banner-title-size, 36px), 36px);
+}
+.hall-banner-preview[data-device="mobile"] .hall-banner-subtitle {
+  font-size: 14px;
+}
+@media (max-width: 700px) {
+  .hall-editor .modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .hall-editor .modal-actions .cancel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .hall-editor .modal-actions [type="submit"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .hall-editor .modal-actions [data-reset] {
+    grid-column: 1/-1;
+    grid-row: 2;
+  }
+  .hall-editor .modal-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px;
+  }
+  #hallBlocks .hall-banner-frame {
+    height: var(--banner-mobile-height, 220px);
+  }
+  #hallBlocks .hall-banner-copy {
+    padding: 60px 20px 22px;
+  }
+  #hallBlocks .hall-banner-title {
+    font-size: min(var(--banner-title-size, 36px), 36px);
+  }
+  #hallBlocks .hall-banner-subtitle {
+    font-size: 14px;
+  }
+  .hall-banner-settings {
+    padding: 12px;
+  }
+  .hall-banner-editor-row [data-banner-options] {
+    grid-column: 1/3;
+    grid-row: 2;
   }
 }
