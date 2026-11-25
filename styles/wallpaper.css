@@ -325,6 +325,9 @@
   border-radius: 9px;
   background: var(--bg);
 }
+.wallpaper-photo-row.is-selected {
+  outline: 2px solid var(--accent2);
+}
 .wallpaper-photo-row img {
   width: 40px;
   height: 40px;
@@ -399,17 +402,60 @@
 }
 .wallpaper-canvas-wrap canvas {
   display: block;
-  width: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 65vh;
-  aspect-ratio: 16 / 9;
   object-fit: contain;
   box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35);
 }
 .wallpaper-canvas-wrap canvas.portrait {
-  width: auto;
   max-width: 100%;
-  max-height: 65vh;
-  aspect-ratio: 9 / 16;
+}
+.wallpaper-canvas-wrap canvas.can-drag {
+  cursor: grab;
+  touch-action: none;
+}
+.wallpaper-canvas-wrap canvas.can-drag:active {
+  cursor: grabbing;
+}
+.wallpaper-canvas-wrap canvas:focus-visible {
+  outline: 3px solid var(--accent2);
+  outline-offset: 3px;
+}
+.wallpaper-crop-hint {
+  margin: 12px 0 0;
+  color: var(--text2);
+  font-size: 12px;
+}
+.wallpaper-crop-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--bg);
+}
+.wallpaper-crop-controls > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.wallpaper-crop-controls strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallpaper-crop-controls .wallpaper-field {
+  margin: 2px 0;
+}
+.wallpaper-crop-controls small {
+  color: var(--text2);
+  font-size: 11px;
 }
 #wallpaperStatus {
   margin: 16px 0 8px;
@@ -481,6 +527,10 @@
 .wallpaper-picker-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 172px;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 10px;
   overflow-y: auto;
 }
@@ -492,8 +542,12 @@
 .wallpaper-picker-list button {
   position: relative;
   display: grid;
+  box-sizing: border-box;
+  grid-template-rows: 132px minmax(0, 1fr);
   gap: 7px;
   min-width: 0;
+  height: 172px;
+  overflow: hidden;
   padding: 7px;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -562,6 +616,11 @@
 @media (max-width: 650px) {
   .wallpaper-picker-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 150px;
+  }
+  .wallpaper-picker-list button {
+    height: 150px;
+    grid-template-rows: 110px minmax(0, 1fr);
   }
   .wallpaper-picker-thumb {
     height: 110px;

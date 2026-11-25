@@ -60,18 +60,78 @@ const escapeHtml = (value) =>
       })[char],
   );
 
-function cover(ctx, image, x, y, width, height) {
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+export function wallpaperSlotRects(state) {
+  const [width, height] = sizes[state.size] || sizes.desktop;
+  const layout = wallpaperLayouts[state.layout] || wallpaperLayouts.photo;
+  return layout.slots.map(([left, top, slotWidth, slotHeight]) => {
+    const inset = (state.gap * width) / 1080 / 2;
+    return {
+      x: left * width + inset,
+      y: top * height + inset,
+      width: slotWidth * width - inset * 2,
+      height: slotHeight * height - inset * 2,
+    };
+  });
+}
+
+export function coverFrame(
+  image,
+  width,
+  height,
+  focusX = 0.5,
+  focusY = 0.5,
+  zoom = 1,
+) {
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
-  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const scale =
+    Math.max(width / sourceWidth, height / sourceHeight) * clamp(zoom, 1, 3);
   const cropWidth = width / scale;
   const cropHeight = height / scale;
+  return {
+    x: (sourceWidth - cropWidth) * clamp(focusX, 0, 1),
+    y: (sourceHeight - cropHeight) * clamp(focusY, 0, 1),
+    width: cropWidth,
+    height: cropHeight,
+    scale,
+    excessX: sourceWidth - cropWidth,
+    excessY: sourceHeight - cropHeight,
+  };
+}
+
+export function movePhotoFocus(photo, slot, deltaX, deltaY) {
+  const frame = coverFrame(
+    photo.image,
+    slot.width,
+    slot.height,
+    photo.focusX,
+    photo.focusY,
+    photo.zoom,
+  );
+  if (frame.excessX > 0)
+    photo.focusX = clamp(
+      (photo.focusX ?? 0.5) - deltaX / (frame.scale * frame.excessX),
+      0,
+      1,
+    );
+  if (frame.excessY > 0)
+    photo.focusY = clamp(
+      (photo.focusY ?? 0.5) - deltaY / (frame.scale * frame.excessY),
+      0,
+      1,
+    );
+}
+
+function cover(ctx, image, x, y, width, height, focusX, focusY, zoom) {
+  const crop = coverFrame(image, width, height, focusX, focusY, zoom);
   ctx.drawImage(
     image,
-    (sourceWidth - cropWidth) / 2,
-    (sourceHeight - cropHeight) / 2,
-    cropWidth,
-    cropHeight,
+    crop.x,
+    crop.y,
+    crop.width,
+    crop.height,
     x,
     y,
     width,
@@ -79,7 +139,7 @@ function cover(ctx, image, x, y, width, height) {
   );
 }
 
-export function drawWallpaper(canvas, state) {
+export function drawWallpaper(canvas, state, options = {}) {
   const [width, height] = sizes[state.size] || sizes.desktop;
   canvas.width = width;
   canvas.height = height;
@@ -95,22 +155,26 @@ export function drawWallpaper(canvas, state) {
     ctx.fillStyle = `rgba(0,0,0,${state.shade / 100})`;
     ctx.fillRect(0, 0, width, height);
   }
-  const layout = wallpaperLayouts[state.layout] || wallpaperLayouts.photo;
-  layout.slots.forEach(([left, top, slotWidth, slotHeight], index) => {
-    const image = state.photos[index]?.image;
-    if (!image) return;
-    const inset = (state.gap * width) / 1080 / 2;
-    const x = left * width + inset;
-    const y = top * height + inset;
-    const w = slotWidth * width - inset * 2;
-    const h = slotHeight * height - inset * 2;
+  wallpaperSlotRects(state).forEach((slot, index) => {
+    const photo = state.photos[index];
+    if (!photo?.image) return;
+    const { x, y, width: w, height: h } = slot;
     const radius = Math.min((state.radius * width) / 1080, w / 2, h / 2);
     ctx.save();
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, radius);
     ctx.clip();
-    cover(ctx, image, x, y, w, h);
+    cover(ctx, photo.image, x, y, w, h, photo.focusX, photo.focusY, photo.zoom);
     ctx.restore();
+    if (options.selectedIndex === index) {
+      ctx.save();
+      ctx.strokeStyle = "#fffdf8";
+      ctx.lineWidth = Math.max(3, width / 320);
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.stroke();
+      ctx.restore();
+    }
   });
 }
 
@@ -125,7 +189,7 @@ export function createWallpaperStudio(api) {
         <section class="wallpaper-control-card"><div class="wallpaper-step">03 · LAYOUT</div><h2>Escolha a composição</h2><div class="wallpaper-layouts" id="wallpaperLayouts"></div><div class="wallpaper-finish-options"><label class="wallpaper-field">Espaçamento <input id="wallpaperGap" type="range" min="0" max="32" value="8"><output id="wallpaperGapValue">8</output></label><label class="wallpaper-field">Cantos <input id="wallpaperRadius" type="range" min="0" max="48" value="18"><output id="wallpaperRadiusValue">18</output></label></div></section>
         <section class="wallpaper-control-card"><div class="wallpaper-step">04 · FOTOS DA COLAGEM</div><div class="wallpaper-button-row"><button type="button" id="wallpaperAddPhotos" class="utility-btn">${icon("ImagePlus")} Do computador</button><button type="button" id="wallpaperLibraryPhotos" class="utility-btn">${icon("Library")} Da biblioteca</button></div><p id="wallpaperPhotoHint" class="wallpaper-hint"></p><div class="wallpaper-photo-list" id="wallpaperPhotoList"></div></section>
       </aside>
-      <div class="wallpaper-preview-panel"><div class="wallpaper-preview-head"><div><span class="wallpaper-step">PRÉVIA</span><h2>Seu fundo</h2></div><span id="wallpaperDimensions">1920 × 1080 px</span></div><div class="wallpaper-canvas-wrap"><canvas id="wallpaperCanvas" aria-label="Prévia do fundo da Biblioteca"></canvas></div><p id="wallpaperStatus" role="status">Escolha uma foto de fundo ou um layout para começar.</p><div class="wallpaper-applied-row"><span id="wallpaperAppliedStatus">Nenhum fundo aplicado à Biblioteca.</span><button type="button" id="wallpaperRemoveApplied" class="wallpaper-text-btn" hidden>Remover fundo atual</button></div><p class="wallpaper-preview-note">O fundo da Biblioteca fica salvo neste navegador. Baixar PNG é opcional para usar a imagem fora do Library.</p></div>
+      <div class="wallpaper-preview-panel"><div class="wallpaper-preview-head"><div><span class="wallpaper-step">PRÉVIA</span><h2>Seu fundo</h2></div><span id="wallpaperDimensions">1920 × 1080 px</span></div><div class="wallpaper-canvas-wrap"><canvas id="wallpaperCanvas" tabindex="0" aria-label="Prévia do fundo da Biblioteca. Clique numa foto da colagem para selecioná-la e arraste para enquadrar."></canvas></div><p id="wallpaperCropHint" class="wallpaper-crop-hint" hidden>Clique em uma foto da colagem e arraste para ajustar o enquadramento.</p><div id="wallpaperCropControls" class="wallpaper-crop-controls" hidden><div><strong id="wallpaperCropName">Foto selecionada</strong><button type="button" id="wallpaperCropReset" class="wallpaper-text-btn">Centralizar</button></div><label class="wallpaper-field" for="wallpaperPhotoZoom">Zoom da foto <input id="wallpaperPhotoZoom" type="range" min="100" max="300" value="115"><output id="wallpaperPhotoZoomValue">115%</output></label><small>Arraste a foto na prévia ou use as setas do teclado para movê-la.</small></div><p id="wallpaperStatus" role="status">Escolha uma foto de fundo ou um layout para começar.</p><div class="wallpaper-applied-row"><span id="wallpaperAppliedStatus">Nenhum fundo aplicado à Biblioteca.</span><button type="button" id="wallpaperRemoveApplied" class="wallpaper-text-btn" hidden>Remover fundo atual</button></div><p class="wallpaper-preview-note">O fundo da Biblioteca fica salvo neste navegador. Baixar PNG é opcional para usar a imagem fora do Library.</p></div>
     </div>
     <input id="wallpaperBackgroundInput" type="file" accept="image/*" hidden><input id="wallpaperPhotosInput" type="file" accept="image/*" multiple hidden>
     <div class="wallpaper-picker" id="wallpaperPicker" hidden role="dialog" aria-modal="true" aria-labelledby="wallpaperPickerTitle"><div class="wallpaper-picker-card"><div class="wallpaper-picker-head"><div><h2 id="wallpaperPickerTitle">Escolher foto da biblioteca</h2><p>Veja as miniaturas e toque nas fotos que deseja usar.</p></div><button type="button" id="wallpaperPickerClose" aria-label="Fechar">${icon("X")}</button></div><label class="sr-only" for="wallpaperSearch">Buscar fotos</label><input id="wallpaperSearch" type="search" placeholder="Buscar fotos..."><div class="wallpaper-picker-list" id="wallpaperPickerList"></div><button class="wallpaper-picker-more" id="wallpaperPickerMore" type="button" hidden>Mostrar mais fotos</button></div></div>`;
@@ -150,6 +214,8 @@ export function createWallpaperStudio(api) {
   const fallbackQueued = new Set();
   let fallbackInFlight = 0;
   let applying = false;
+  let selectedIndex = -1;
+  let drag = null;
   let drawing = false;
   let redrawQueued = false;
   const render = () => {
@@ -160,7 +226,7 @@ export function createWallpaperStudio(api) {
     drawing = true;
     requestAnimationFrame(() => {
       try {
-        drawWallpaper($("wallpaperCanvas"), state);
+        drawWallpaper($("wallpaperCanvas"), state, { selectedIndex });
       } catch (error) {
         $("wallpaperStatus").textContent = error.message;
       }
@@ -172,6 +238,21 @@ export function createWallpaperStudio(api) {
     });
     const layout = wallpaperLayouts[state.layout];
     const available = state.photos.length;
+    if (selectedIndex >= layout.count || selectedIndex >= available)
+      selectedIndex = -1;
+    const selectedPhoto =
+      selectedIndex >= 0 ? state.photos[selectedIndex] : null;
+    $("wallpaperCropHint").hidden = !layout.count;
+    $("wallpaperCropControls").hidden = !selectedPhoto;
+    if (selectedPhoto) {
+      $("wallpaperCropName").textContent =
+        `Foto ${selectedIndex + 1}: ${selectedPhoto.name}`;
+      $("wallpaperPhotoZoom").value = String(
+        Math.round((selectedPhoto.zoom || 1) * 100),
+      );
+      $("wallpaperPhotoZoomValue").textContent =
+        `${Math.round((selectedPhoto.zoom || 1) * 100)}%`;
+    }
     $("wallpaperDimensions").textContent =
       `${sizes[state.size][0]} × ${sizes[state.size][1]} px`;
     $("wallpaperBackgroundSummary").textContent =
@@ -209,10 +290,11 @@ export function createWallpaperStudio(api) {
       button.setAttribute("aria-pressed", String(active));
     });
     $("wallpaperCanvas").classList.toggle("portrait", state.size === "mobile");
+    $("wallpaperCanvas").classList.toggle("can-drag", !!layout.count);
     $("wallpaperPhotoList").innerHTML = state.photos
       .map(
         (photo, index) =>
-          `<div class="wallpaper-photo-row"><img src="${photo.url}" alt=""><span>${index + 1}. ${escapeHtml(photo.name)}</span><button type="button" data-wallpaper-move="${index}" data-direction="-1" aria-label="Mover ${escapeHtml(photo.name)} para cima" ${index === 0 ? "disabled" : ""}>${icon("ArrowUp")}</button><button type="button" data-wallpaper-move="${index}" data-direction="1" aria-label="Mover ${escapeHtml(photo.name)} para baixo" ${index === state.photos.length - 1 ? "disabled" : ""}>${icon("ArrowDown")}</button><button type="button" data-wallpaper-background="${index}" aria-label="Usar ${escapeHtml(photo.name)} como fundo">${icon("Image")}</button><button type="button" data-wallpaper-remove="${index}" aria-label="Remover ${escapeHtml(photo.name)}">${icon("X")}</button></div>`,
+          `<div class="wallpaper-photo-row${selectedIndex === index ? " is-selected" : ""}"><img src="${photo.url}" alt=""><span>${index + 1}. ${escapeHtml(photo.name)}</span>${index < layout.count ? `<button type="button" data-wallpaper-frame="${index}" aria-label="Enquadrar ${escapeHtml(photo.name)}" title="Enquadrar foto">${icon("ScanLine")}</button>` : ""}<button type="button" data-wallpaper-move="${index}" data-direction="-1" aria-label="Mover ${escapeHtml(photo.name)} para cima" ${index === 0 ? "disabled" : ""}>${icon("ArrowUp")}</button><button type="button" data-wallpaper-move="${index}" data-direction="1" aria-label="Mover ${escapeHtml(photo.name)} para baixo" ${index === state.photos.length - 1 ? "disabled" : ""}>${icon("ArrowDown")}</button><button type="button" data-wallpaper-background="${index}" aria-label="Usar ${escapeHtml(photo.name)} como fundo">${icon("Image")}</button><button type="button" data-wallpaper-remove="${index}" aria-label="Remover ${escapeHtml(photo.name)}">${icon("X")}</button></div>`,
       )
       .join("");
   };
@@ -236,9 +318,13 @@ export function createWallpaperStudio(api) {
       URL.revokeObjectURL(url);
       throw new Error(`Não foi possível abrir ${name}.`);
     }
-    const photo = { name, url, image };
+    const photo = { name, url, image, focusX: 0.5, focusY: 0.5, zoom: 1.15 };
     if (asBackground) state.background = photo;
-    else state.photos.push(photo);
+    else {
+      state.photos.push(photo);
+      if (state.photos.length <= wallpaperLayouts[state.layout].count)
+        selectedIndex = state.photos.length - 1;
+    }
     render();
   }
 
@@ -279,6 +365,7 @@ export function createWallpaperStudio(api) {
     const button = event.target.closest("[data-wallpaper-layout]");
     if (button) {
       state.layout = button.dataset.wallpaperLayout;
+      selectedIndex = -1;
       render();
     }
   };
@@ -298,6 +385,7 @@ export function createWallpaperStudio(api) {
     };
   }
   $("wallpaperPhotoList").onclick = (event) => {
+    const frame = event.target.closest("[data-wallpaper-frame]");
     const move = event.target.closest("[data-wallpaper-move]");
     const background = event.target.closest("[data-wallpaper-background]");
     const remove = event.target.closest("[data-wallpaper-remove]");
@@ -313,7 +401,93 @@ export function createWallpaperStudio(api) {
       state.background =
         state.photos[Number(background.dataset.wallpaperBackground)];
     if (remove) state.photos.splice(Number(remove.dataset.wallpaperRemove), 1);
-    if (move || background || remove) render();
+    if (frame) {
+      selectedIndex = Number(frame.dataset.wallpaperFrame);
+      $("wallpaperCanvas").focus();
+    }
+    if (move || remove) selectedIndex = -1;
+    if (frame || move || background || remove) render();
+  };
+
+  const canvas = $("wallpaperCanvas");
+  canvas.onpointerdown = (event) => {
+    if (event.button !== 0 && event.pointerType !== "touch") return;
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const x = ((event.clientX - bounds.left) / bounds.width) * canvas.width;
+    const y = ((event.clientY - bounds.top) / bounds.height) * canvas.height;
+    const index = wallpaperSlotRects(state).findIndex(
+      (slot, candidate) =>
+        state.photos[candidate] &&
+        x >= slot.x &&
+        x <= slot.x + slot.width &&
+        y >= slot.y &&
+        y <= slot.y + slot.height,
+    );
+    if (index < 0) return;
+    selectedIndex = index;
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture?.(event.pointerId);
+    canvas.focus();
+    render();
+  };
+  canvas.onpointermove = (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const bounds = canvas.getBoundingClientRect();
+    const slot = wallpaperSlotRects(state)[selectedIndex];
+    if (!slot || !bounds.width || !bounds.height) return;
+    movePhotoFocus(
+      state.photos[selectedIndex],
+      slot,
+      ((event.clientX - drag.x) / bounds.width) * canvas.width,
+      ((event.clientY - drag.y) / bounds.height) * canvas.height,
+    );
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    render();
+  };
+  const stopDrag = (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    canvas.releasePointerCapture?.(event.pointerId);
+    drag = null;
+  };
+  canvas.onpointerup = stopDrag;
+  canvas.onpointercancel = stopDrag;
+  canvas.onkeydown = (event) => {
+    if (
+      selectedIndex < 0 ||
+      !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+    )
+      return;
+    const slot = wallpaperSlotRects(state)[selectedIndex];
+    if (!slot) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 0.12 : 0.04;
+    const dx =
+      event.key === "ArrowLeft"
+        ? -slot.width * step
+        : event.key === "ArrowRight"
+          ? slot.width * step
+          : 0;
+    const dy =
+      event.key === "ArrowUp"
+        ? -slot.height * step
+        : event.key === "ArrowDown"
+          ? slot.height * step
+          : 0;
+    movePhotoFocus(state.photos[selectedIndex], slot, dx, dy);
+    render();
+  };
+  $("wallpaperPhotoZoom").oninput = (event) => {
+    if (selectedIndex < 0) return;
+    state.photos[selectedIndex].zoom = Number(event.target.value) / 100;
+    render();
+  };
+  $("wallpaperCropReset").onclick = () => {
+    if (selectedIndex < 0) return;
+    state.photos[selectedIndex].focusX = 0.5;
+    state.photos[selectedIndex].focusY = 0.5;
+    render();
   };
 
   function showPicker(target) {
@@ -517,6 +691,7 @@ export function createWallpaperStudio(api) {
     canvas.toBlob((blob) => {
       if (!blob) {
         api.toast("Não foi possível gerar o PNG.", "error");
+        render();
         return;
       }
       const url = URL.createObjectURL(blob);
@@ -528,6 +703,7 @@ export function createWallpaperStudio(api) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       api.toast("Wallpaper baixado em PNG.", "success");
+      render();
     }, "image/png");
   };
   document.addEventListener("keydown", (event) => {

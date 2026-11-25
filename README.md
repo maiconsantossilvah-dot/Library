@@ -109,7 +109,7 @@ O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 ## Wallpapers
 
 - Abra **Wallpapers** na lateral ou **Ferramentas → Aparência e privacidade → Personalizar fundo da Biblioteca**. Escolha uma foto de fundo do computador ou da biblioteca, ou use o fundo em degradê.
-- Para uma colagem, escolha **Dupla editorial**, **Tríptico**, **Mosaico** ou **Faixa de memórias** e adicione as fotos necessárias. Reordene as fotos na lista; as primeiras entram no layout. Você também pode usar qualquer foto da lista como fundo.
+- Para uma colagem, escolha **Dupla editorial**, **Tríptico**, **Mosaico** ou **Faixa de memórias** e adicione as fotos necessárias. Reordene as fotos na lista; as primeiras entram no layout. Clique em um card da prévia e arraste a foto para enquadrá-la, ajuste o zoom da foto selecionada ou use **Centralizar**. Você também pode usar qualquer foto da lista como fundo.
 - Ajuste formato **Desktop (1920 × 1080)** ou **Celular (1080 × 1920)**, cor, escurecimento, espaçamento e cantos. Clique em **Usar na Biblioteca** para aplicar a composição atrás do acervo. Use **Remover fundo atual** para voltar à aparência padrão. **Baixar PNG** é opcional.
 - O fundo aplicado fica salvo neste navegador. A montagem em edição fica nesta sessão. As fotos originais na biblioteca não são alteradas nem duplicadas no Drive. O fundo não aparece no hall inicial nem no cofre privado.
 
