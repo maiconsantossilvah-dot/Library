@@ -128,7 +128,7 @@ export function createWallpaperStudio(api) {
       <div class="wallpaper-preview-panel"><div class="wallpaper-preview-head"><div><span class="wallpaper-step">PRÉVIA</span><h2>Seu fundo</h2></div><span id="wallpaperDimensions">1920 × 1080 px</span></div><div class="wallpaper-canvas-wrap"><canvas id="wallpaperCanvas" aria-label="Prévia do fundo da Biblioteca"></canvas></div><p id="wallpaperStatus" role="status">Escolha uma foto de fundo ou um layout para começar.</p><div class="wallpaper-applied-row"><span id="wallpaperAppliedStatus">Nenhum fundo aplicado à Biblioteca.</span><button type="button" id="wallpaperRemoveApplied" class="wallpaper-text-btn" hidden>Remover fundo atual</button></div><p class="wallpaper-preview-note">O fundo da Biblioteca fica salvo neste navegador. Baixar PNG é opcional para usar a imagem fora do Library.</p></div>
     </div>
     <input id="wallpaperBackgroundInput" type="file" accept="image/*" hidden><input id="wallpaperPhotosInput" type="file" accept="image/*" multiple hidden>
-    <div class="wallpaper-picker" id="wallpaperPicker" hidden role="dialog" aria-modal="true" aria-labelledby="wallpaperPickerTitle"><div class="wallpaper-picker-card"><div class="wallpaper-picker-head"><div><h2 id="wallpaperPickerTitle">Escolher foto da biblioteca</h2><p>As fotos originais continuam na biblioteca.</p></div><button type="button" id="wallpaperPickerClose" aria-label="Fechar">${icon("X")}</button></div><label class="sr-only" for="wallpaperSearch">Buscar fotos</label><input id="wallpaperSearch" type="search" placeholder="Buscar fotos..."><div class="wallpaper-picker-list" id="wallpaperPickerList"></div></div></div>`;
+    <div class="wallpaper-picker" id="wallpaperPicker" hidden role="dialog" aria-modal="true" aria-labelledby="wallpaperPickerTitle"><div class="wallpaper-picker-card"><div class="wallpaper-picker-head"><div><h2 id="wallpaperPickerTitle">Escolher foto da biblioteca</h2><p>Veja as miniaturas e toque nas fotos que deseja usar.</p></div><button type="button" id="wallpaperPickerClose" aria-label="Fechar">${icon("X")}</button></div><label class="sr-only" for="wallpaperSearch">Buscar fotos</label><input id="wallpaperSearch" type="search" placeholder="Buscar fotos..."><div class="wallpaper-picker-list" id="wallpaperPickerList"></div><button class="wallpaper-picker-more" id="wallpaperPickerMore" type="button" hidden>Mostrar mais fotos</button></div></div>`;
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -142,6 +142,13 @@ export function createWallpaperStudio(api) {
     photos: [],
   };
   let pickerTarget = "photos";
+  let pickerLimit = 24;
+  let pickerSession = 0;
+  let pickerTiles = new Map();
+  const previewUrls = new Map();
+  const fallbackQueue = [];
+  const fallbackQueued = new Set();
+  let fallbackInFlight = 0;
   let applying = false;
   let drawing = false;
   let redrawQueued = false;
@@ -311,6 +318,8 @@ export function createWallpaperStudio(api) {
 
   function showPicker(target) {
     pickerTarget = target;
+    pickerLimit = 24;
+    pickerSession++;
     $("wallpaperPicker").hidden = false;
     $("wallpaperSearch").value = "";
     renderPicker();
@@ -318,6 +327,76 @@ export function createWallpaperStudio(api) {
   }
   function closePicker() {
     $("wallpaperPicker").hidden = true;
+    pickerSession++;
+    fallbackQueue.length = 0;
+    fallbackQueued.clear();
+    pickerTiles.clear();
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    previewUrls.clear();
+  }
+  function showPreview(file, tile, url, session, fromBlob = false) {
+    tile = pickerTiles.get(file.id);
+    if (session !== pickerSession || !tile?.isConnected) return;
+    const image = document.createElement("img");
+    image.alt = "";
+    image.loading = "lazy";
+    image.onerror = () => {
+      if (fromBlob)
+        tile.innerHTML =
+          '<span class="wallpaper-preview-unavailable">Sem prévia</span>';
+      else queueBlobPreview(file, tile, session);
+    };
+    tile.replaceChildren(image);
+    image.src = url;
+  }
+  function queueBlobPreview(file, tile, session) {
+    tile = pickerTiles.get(file.id);
+    if (session !== pickerSession || !tile?.isConnected) return;
+    const cached = previewUrls.get(file.id);
+    if (cached) {
+      showPreview(file, tile, cached, session, true);
+      return;
+    }
+    const key = `${session}:${file.id}`;
+    if (fallbackQueued.has(key)) return;
+    fallbackQueued.add(key);
+    fallbackQueue.push({ file, tile, session });
+    pumpFallbacks();
+  }
+  function pumpFallbacks() {
+    while (fallbackInFlight < 3 && fallbackQueue.length) {
+      const { file, tile, session } = fallbackQueue.shift();
+      const key = `${session}:${file.id}`;
+      if (session !== pickerSession || !pickerTiles.get(file.id)?.isConnected) {
+        fallbackQueued.delete(key);
+        continue;
+      }
+      fallbackInFlight++;
+      api
+        .getBlob(file)
+        .then((blob) => {
+          if (!blob || !blob.type.startsWith("image/"))
+            throw new Error("Imagem indisponível");
+          const url = URL.createObjectURL(blob);
+          if (session !== pickerSession) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          previewUrls.set(file.id, url);
+          showPreview(file, tile, url, session, true);
+        })
+        .catch(() => {
+          const current = pickerTiles.get(file.id);
+          if (session === pickerSession && current?.isConnected)
+            current.innerHTML =
+              '<span class="wallpaper-preview-unavailable">Sem prévia</span>';
+        })
+        .finally(() => {
+          fallbackQueued.delete(key);
+          fallbackInFlight--;
+          pumpFallbacks();
+        });
+    }
   }
   function renderPicker() {
     const query = $("wallpaperSearch").value.toLocaleLowerCase("pt-BR");
@@ -326,15 +405,41 @@ export function createWallpaperStudio(api) {
       .filter((file) =>
         (file.name || "").toLocaleLowerCase("pt-BR").includes(query),
       );
-    $("wallpaperPickerList").innerHTML = photos.length
-      ? photos
+    const visible = photos.slice(0, pickerLimit);
+    $("wallpaperPickerList").innerHTML = visible.length
+      ? visible
           .map(
             (file) =>
-              `<button type="button" data-wallpaper-file="${escapeHtml(file.id)}"><span class="wallpaper-picker-thumb">${api.getThumbnail(file) ? `<img src="${escapeHtml(api.getThumbnail(file))}" alt="" data-drive-file-id="${escapeHtml(file.id)}">` : icon("Image")}</span><span>${escapeHtml(file.name || "Foto")}</span>${icon("Plus")}</button>`,
+              `<button type="button" data-wallpaper-file="${escapeHtml(file.id)}" aria-label="Adicionar ${escapeHtml(file.name || "Foto")}"><span class="wallpaper-picker-thumb">${icon("Image")}</span><span class="wallpaper-picker-name">${escapeHtml(file.name || "Foto")}</span><span class="wallpaper-picker-add" aria-hidden="true">${icon("Plus")}</span></button>`,
           )
           .join("")
       : "<p>Nenhuma foto encontrada. Adicione arquivos do computador para começar.</p>";
-    api.hydrate($("wallpaperPickerList"));
+    $("wallpaperPickerMore").hidden = visible.length >= photos.length;
+    pickerTiles = new Map(
+      visible.map((file, index) => [
+        file.id,
+        $("wallpaperPickerList").children[index]?.querySelector(
+          ".wallpaper-picker-thumb",
+        ),
+      ]),
+    );
+    const session = pickerSession;
+    visible.forEach(async (file, index) => {
+      const tile = pickerTiles.get(file.id);
+      if (!tile) return;
+      const cached = previewUrls.get(file.id);
+      if (cached) {
+        showPreview(file, tile, cached, session, true);
+        return;
+      }
+      try {
+        const url = api.getThumbnail(file) || (await api.loadThumbnail(file));
+        if (url) showPreview(file, tile, url, session);
+        else queueBlobPreview(file, tile, session);
+      } catch {
+        queueBlobPreview(file, tile, session);
+      }
+    });
   }
   $("wallpaperLibraryBackground").onclick = () => showPicker("background");
   $("wallpaperLibraryPhotos").onclick = () => showPicker("photos");
@@ -342,7 +447,14 @@ export function createWallpaperStudio(api) {
   $("wallpaperPicker").onclick = (event) => {
     if (event.target === $("wallpaperPicker")) closePicker();
   };
-  $("wallpaperSearch").oninput = renderPicker;
+  $("wallpaperSearch").oninput = () => {
+    pickerLimit = 24;
+    renderPicker();
+  };
+  $("wallpaperPickerMore").onclick = () => {
+    pickerLimit += 24;
+    renderPicker();
+  };
   $("wallpaperPickerList").onclick = async (event) => {
     const button = event.target.closest("[data-wallpaper-file]");
     if (!button || button.disabled) return;

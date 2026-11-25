@@ -8724,8 +8724,11 @@ libraryWallpaper.ready.catch((error) => console.warn("Fundo da Biblioteca indisp
 const wallpaperStudio = createWallpaperStudio({
   getPhotos: () => files.filter((file) => file.fileType === "image" && !file.deletedAt && !file.privateVault),
   getThumbnail: (file) => mediaThumbUrl(file, 320, 240),
+  loadThumbnail: (file) =>
+    isGoogleDriveRecord(file)
+      ? loadDriveThumbnail(file)
+      : Promise.resolve(mediaThumbUrl(file, 320, 240)),
   getBlob: fetchStoredBlob,
-  hydrate: hydrateDriveThumbnails,
   toast: showToast,
   applyWallpaper: (blob) => libraryWallpaper.apply(blob),
   clearWallpaper: () => libraryWallpaper.clear(),

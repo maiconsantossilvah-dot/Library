@@ -1,8 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { drawWallpaper, wallpaperLayouts } from "../modules/wallpaper.js";
+import {
+  createWallpaperStudio,
+  drawWallpaper,
+  wallpaperLayouts,
+} from "../modules/wallpaper.js";
 import { createLibraryWallpaper } from "../modules/library-wallpaper.js";
 import { IDBFactory } from "fake-indexeddb";
+import { JSDOM } from "jsdom";
 
 function canvasRecorder() {
   const drawings = [];
@@ -103,5 +108,58 @@ test("fundo da Biblioteca é restaurado e pode ser removido", async () => {
     assert.equal(last.isActive(), false);
   } finally {
     globalThis.indexedDB = previousIndexedDb;
+  }
+});
+
+test("seletor mostra miniaturas, pagina fotos e usa original quando falta prévia", async () => {
+  const previousDocument = globalThis.document;
+  const dom = new JSDOM('<section id="wallpaperWorkspace"></section>', {
+    url: "https://vault.test/",
+  });
+  globalThis.document = dom.window.document;
+  const photos = Array.from({ length: 25 }, (_, index) => ({
+    id: String(index + 1),
+    name: `Foto-${index + 1}.jpg`,
+    fileType: "image",
+  }));
+  try {
+    createWallpaperStudio({
+      getPhotos: () => photos,
+      getThumbnail: () => "",
+      loadThumbnail: async (file) =>
+        file.id === "25" ? "" : `https://vault.test/thumb-${file.id}.jpg`,
+      getBlob: async () => new Blob(["imagem"], { type: "image/jpeg" }),
+      hasWallpaper: () => false,
+      toast() {},
+    });
+    document.getElementById("wallpaperLibraryPhotos").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      document.querySelectorAll(".wallpaper-picker-list img").length,
+      24,
+    );
+    assert.equal(document.getElementById("wallpaperPickerMore").hidden, false);
+    document.getElementById("wallpaperPickerMore").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      document.querySelectorAll(".wallpaper-picker-list img").length,
+      25,
+    );
+    const search = document.getElementById("wallpaperSearch");
+    search.value = "Foto-25";
+    search.dispatchEvent(new dom.window.Event("input"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      document.querySelectorAll(".wallpaper-picker-list button").length,
+      1,
+    );
+    assert.match(
+      document.querySelector(".wallpaper-picker-list img")?.src || "",
+      /^blob:/,
+    );
+    document.getElementById("wallpaperPickerClose").click();
+  } finally {
+    globalThis.document = previousDocument;
+    dom.window.close();
   }
 });
