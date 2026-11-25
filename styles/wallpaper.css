@@ -416,6 +416,10 @@
   cursor: grab;
   touch-action: none;
 }
+.wallpaper-canvas-wrap canvas.can-move {
+  cursor: move;
+  touch-action: none;
+}
 .wallpaper-canvas-wrap canvas.can-drag:active {
   cursor: grabbing;
 }
@@ -456,6 +460,35 @@
 .wallpaper-crop-controls small {
   color: var(--text2);
   font-size: 11px;
+}
+.wallpaper-card-modes {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.wallpaper-card-modes button {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.wallpaper-card-modes button.active {
+  border-color: var(--accent2);
+  background: var(--accent2);
+  color: #fff;
+}
+.wallpaper-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.wallpaper-card-foot small {
+  flex: 1;
 }
 #wallpaperStatus {
   margin: 16px 0 8px;

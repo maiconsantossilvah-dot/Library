@@ -5,8 +5,10 @@ import {
   createWallpaperStudio,
   drawWallpaper,
   movePhotoFocus,
+  updateWallpaperSlot,
   wallpaperLayouts,
   wallpaperSlotRects,
+  wallpaperSlotValues,
 } from "../modules/wallpaper.js";
 import { createLibraryWallpaper } from "../modules/library-wallpaper.js";
 import { IDBFactory } from "fake-indexeddb";
@@ -133,6 +135,51 @@ test("cada card mantém seu próprio zoom e enquadramento ao arrastar", () => {
   movePhotoFocus(first, slot, 100000, -100000);
   assert.ok(first.focusX >= 0 && first.focusX <= 1);
   assert.ok(first.focusY >= 0 && first.focusY <= 1);
+});
+
+test("largura, altura e posição podem ser alteradas por card sem mudar os outros layouts", () => {
+  const state = { size: "desktop", layout: "duo", gap: 8 };
+  const original = wallpaperSlotValues(state).map((slot) => [...slot]);
+  updateWallpaperSlot(state, 0, { width: 0.7, height: 0.5 });
+  assert.deepEqual(wallpaperSlotValues(state)[0], [
+    original[0][0],
+    original[0][1],
+    0.7,
+    0.5,
+  ]);
+  assert.deepEqual(wallpaperSlotValues(state)[1], original[1]);
+  updateWallpaperSlot(state, 0, { x: 0.2, y: 0.4 });
+  assert.deepEqual(wallpaperSlotValues(state)[0], [0.2, 0.4, 0.7, 0.5]);
+  updateWallpaperSlot(state, 0, { width: 2, height: 2 });
+  assert.equal(wallpaperSlotValues(state)[0][0], 0.2);
+  assert.equal(wallpaperSlotValues(state)[0][1], 0.4);
+  assert.ok(wallpaperSlotValues(state)[0][2] <= 0.8);
+  assert.ok(wallpaperSlotValues(state)[0][3] <= 0.6);
+  state.size = "mobile";
+  assert.deepEqual(wallpaperSlotValues(state)[0], original[0]);
+  state.size = "desktop";
+  assert.notDeepEqual(wallpaperSlotValues(state)[0], original[0]);
+  const { canvas, drawings } = canvasRecorder();
+  Object.assign(state, {
+    color: "#315e4e",
+    shade: 0,
+    radius: 18,
+    background: null,
+    photos: [
+      { image: { naturalWidth: 1000, naturalHeight: 800 } },
+      { image: { naturalWidth: 1000, naturalHeight: 800 } },
+    ],
+  });
+  drawWallpaper(canvas, state);
+  const edited = wallpaperSlotRects(state)[0];
+  assert.equal(drawings[0][5], edited.x);
+  assert.equal(drawings[0][7], edited.width);
+  assert.equal(drawings[0][8], edited.height);
+  state.layout = "trio";
+  assert.deepEqual(
+    wallpaperSlotValues(state)[0],
+    wallpaperLayouts.trio.slots[0],
+  );
 });
 
 test("fundo da Biblioteca é restaurado e pode ser removido", async () => {
@@ -301,6 +348,48 @@ test("arrastar uma foto na prévia muda só o enquadramento do card selecionado"
       document.getElementById("wallpaperPhotoZoomValue").textContent,
       "200%",
     );
+    const firstSlot = wallpaperSlotRects({
+      size: "desktop",
+      layout: "duo",
+      gap: 8,
+    })[0];
+    pointer(
+      "pointerdown",
+      (firstSlot.x + firstSlot.width - 8) / 2,
+      (firstSlot.y + firstSlot.height - 8) / 2,
+    );
+    pointer(
+      "pointermove",
+      (firstSlot.x + firstSlot.width - 8) / 2 + 35,
+      (firstSlot.y + firstSlot.height - 8) / 2 - 30,
+    );
+    pointer("pointerup", 0, 0);
+    const resized = drawings.slice(-2);
+    assert.ok(
+      resized[0][7] > before[0][7],
+      "arrastar o canto aumenta a largura do card",
+    );
+    assert.ok(
+      resized[0][8] < before[0][8],
+      "arrastar o canto diminui a altura do card",
+    );
+    document.getElementById("wallpaperMoveMode").click();
+    pointer("pointerdown", 300, 250);
+    pointer("pointermove", 330, 270);
+    pointer("pointerup", 0, 0);
+    const moved = drawings.slice(-2);
+    assert.ok(moved[0][5] > resized[0][5], "mover card muda sua posição");
+    assert.equal(moved[0][7], resized[0][7], "mover card mantém sua largura");
+    assert.deepEqual(moved[1].slice(5, 9), resized[1].slice(5, 9));
+    const width = document.getElementById("wallpaperCardWidth");
+    width.value = "70";
+    width.dispatchEvent(new dom.window.Event("input"));
+    assert.equal(
+      document.getElementById("wallpaperCardWidthValue").textContent,
+      "70%",
+    );
+    document.getElementById("wallpaperLayoutReset").click();
+    assert.equal(document.getElementById("wallpaperLayoutReset").hidden, true);
   } finally {
     globalThis.document = previous.document;
     globalThis.Image = previous.Image;

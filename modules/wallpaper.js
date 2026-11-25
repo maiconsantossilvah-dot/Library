@@ -62,18 +62,71 @@ const escapeHtml = (value) =>
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const slotKey = (state) => `${state.layout}:${state.size}`;
+
+export function wallpaperSlotValues(state) {
+  return (
+    state.slotOverrides?.[slotKey(state)] ||
+    (wallpaperLayouts[state.layout] || wallpaperLayouts.photo).slots
+  );
+}
+
+export function updateWallpaperSlot(state, index, patch) {
+  const original = wallpaperSlotValues(state)[index];
+  if (!original) return;
+  const [canvasWidth, canvasHeight] = sizes[state.size] || sizes.desktop;
+  const inset = (state.gap * canvasWidth) / 1080 / 2;
+  const minWidth = Math.max(0.08, (inset * 2 + 72) / canvasWidth);
+  const minHeight = Math.max(0.08, (inset * 2 + 72) / canvasHeight);
+  const next = {
+    x: patch.x ?? original[0],
+    y: patch.y ?? original[1],
+    width: patch.width ?? original[2],
+    height: patch.height ?? original[3],
+  };
+  next.width = clamp(
+    next.width,
+    minWidth,
+    patch.width == null ? 1 : 1 - original[0],
+  );
+  next.height = clamp(
+    next.height,
+    minHeight,
+    patch.height == null ? 1 : 1 - original[1],
+  );
+  next.x =
+    patch.width != null && patch.x == null
+      ? original[0]
+      : clamp(next.x, 0, 1 - next.width);
+  next.y =
+    patch.height != null && patch.y == null
+      ? original[1]
+      : clamp(next.y, 0, 1 - next.height);
+  state.slotOverrides ||= {};
+  state.slotOverrides[slotKey(state)] ||= wallpaperLayouts[
+    state.layout
+  ].slots.map((slot) => [...slot]);
+  state.slotOverrides[slotKey(state)][index] = [
+    next.x,
+    next.y,
+    next.width,
+    next.height,
+  ];
+}
+
 export function wallpaperSlotRects(state) {
   const [width, height] = sizes[state.size] || sizes.desktop;
-  const layout = wallpaperLayouts[state.layout] || wallpaperLayouts.photo;
-  return layout.slots.map(([left, top, slotWidth, slotHeight]) => {
-    const inset = (state.gap * width) / 1080 / 2;
-    return {
-      x: left * width + inset,
-      y: top * height + inset,
-      width: slotWidth * width - inset * 2,
-      height: slotHeight * height - inset * 2,
-    };
-  });
+  return wallpaperSlotValues(state).map(
+    ([left, top, slotWidth, slotHeight]) => {
+      const inset = (state.gap * width) / 1080 / 2;
+      return {
+        x: left * width + inset,
+        y: top * height + inset,
+        width: slotWidth * width - inset * 2,
+        height: slotHeight * height - inset * 2,
+      };
+    },
+  );
 }
 
 export function coverFrame(
@@ -166,16 +219,35 @@ export function drawWallpaper(canvas, state, options = {}) {
     ctx.clip();
     cover(ctx, photo.image, x, y, w, h, photo.focusX, photo.focusY, photo.zoom);
     ctx.restore();
-    if (options.selectedIndex === index) {
-      ctx.save();
-      ctx.strokeStyle = "#fffdf8";
-      ctx.lineWidth = Math.max(3, width / 320);
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, radius);
-      ctx.stroke();
-      ctx.restore();
-    }
   });
+  const selected = wallpaperSlotRects(state)[options.selectedIndex];
+  if (selected && state.photos[options.selectedIndex]?.image) {
+    const { x, y, width: w, height: h } = selected;
+    const radius = Math.min((state.radius * width) / 1080, w / 2, h / 2);
+    ctx.save();
+    ctx.strokeStyle = "#fffdf8";
+    ctx.lineWidth = Math.max(3, width / 320);
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.stroke();
+    const handle = Math.min(w, h, Math.max(32, width / 40));
+    ctx.fillStyle = "#fffdf8";
+    ctx.fillRect(x + w - handle, y + h - handle, handle, handle);
+    ctx.fillStyle = "#254d3e";
+    ctx.fillRect(
+      x + w - handle * 0.65,
+      y + h - handle * 0.42,
+      handle * 0.38,
+      4,
+    );
+    ctx.fillRect(
+      x + w - handle * 0.42,
+      y + h - handle * 0.65,
+      4,
+      handle * 0.38,
+    );
+    ctx.restore();
+  }
 }
 
 export function createWallpaperStudio(api) {
@@ -189,7 +261,7 @@ export function createWallpaperStudio(api) {
         <section class="wallpaper-control-card"><div class="wallpaper-step">03 · LAYOUT</div><h2>Escolha a composição</h2><div class="wallpaper-layouts" id="wallpaperLayouts"></div><div class="wallpaper-finish-options"><label class="wallpaper-field">Espaçamento <input id="wallpaperGap" type="range" min="0" max="32" value="8"><output id="wallpaperGapValue">8</output></label><label class="wallpaper-field">Cantos <input id="wallpaperRadius" type="range" min="0" max="48" value="18"><output id="wallpaperRadiusValue">18</output></label></div></section>
         <section class="wallpaper-control-card"><div class="wallpaper-step">04 · FOTOS DA COLAGEM</div><div class="wallpaper-button-row"><button type="button" id="wallpaperAddPhotos" class="utility-btn">${icon("ImagePlus")} Do computador</button><button type="button" id="wallpaperLibraryPhotos" class="utility-btn">${icon("Library")} Da biblioteca</button></div><p id="wallpaperPhotoHint" class="wallpaper-hint"></p><div class="wallpaper-photo-list" id="wallpaperPhotoList"></div></section>
       </aside>
-      <div class="wallpaper-preview-panel"><div class="wallpaper-preview-head"><div><span class="wallpaper-step">PRÉVIA</span><h2>Seu fundo</h2></div><span id="wallpaperDimensions">1920 × 1080 px</span></div><div class="wallpaper-canvas-wrap"><canvas id="wallpaperCanvas" tabindex="0" aria-label="Prévia do fundo da Biblioteca. Clique numa foto da colagem para selecioná-la e arraste para enquadrar."></canvas></div><p id="wallpaperCropHint" class="wallpaper-crop-hint" hidden>Clique em uma foto da colagem e arraste para ajustar o enquadramento.</p><div id="wallpaperCropControls" class="wallpaper-crop-controls" hidden><div><strong id="wallpaperCropName">Foto selecionada</strong><button type="button" id="wallpaperCropReset" class="wallpaper-text-btn">Centralizar</button></div><label class="wallpaper-field" for="wallpaperPhotoZoom">Zoom da foto <input id="wallpaperPhotoZoom" type="range" min="100" max="300" value="115"><output id="wallpaperPhotoZoomValue">115%</output></label><small>Arraste a foto na prévia ou use as setas do teclado para movê-la.</small></div><p id="wallpaperStatus" role="status">Escolha uma foto de fundo ou um layout para começar.</p><div class="wallpaper-applied-row"><span id="wallpaperAppliedStatus">Nenhum fundo aplicado à Biblioteca.</span><button type="button" id="wallpaperRemoveApplied" class="wallpaper-text-btn" hidden>Remover fundo atual</button></div><p class="wallpaper-preview-note">O fundo da Biblioteca fica salvo neste navegador. Baixar PNG é opcional para usar a imagem fora do Library.</p></div>
+      <div class="wallpaper-preview-panel"><div class="wallpaper-preview-head"><div><span class="wallpaper-step">PRÉVIA</span><h2>Seu fundo</h2></div><span id="wallpaperDimensions">1920 × 1080 px</span></div><div class="wallpaper-canvas-wrap"><canvas id="wallpaperCanvas" tabindex="0" aria-label="Prévia do fundo da Biblioteca. Selecione uma foto, arraste para enquadrar ou mova o card e puxe seu canto para redimensionar."></canvas></div><p id="wallpaperCropHint" class="wallpaper-crop-hint" hidden>Selecione um card. Arraste a foto para enquadrar ou puxe o quadrado no canto para mudar o tamanho.</p><div id="wallpaperCropControls" class="wallpaper-crop-controls" hidden><div><strong id="wallpaperCropName">Foto selecionada</strong><button type="button" id="wallpaperCropReset" class="wallpaper-text-btn">Centralizar foto</button></div><div class="wallpaper-card-modes" role="group" aria-label="Modo de arraste"><button type="button" id="wallpaperCropMode" aria-pressed="true">Enquadrar foto</button><button type="button" id="wallpaperMoveMode" aria-pressed="false">Mover card</button></div><label class="wallpaper-field" for="wallpaperPhotoZoom">Zoom da foto <input id="wallpaperPhotoZoom" type="range" min="100" max="300" value="115"><output id="wallpaperPhotoZoomValue">115%</output></label><label class="wallpaper-field" for="wallpaperCardWidth">Largura do card <input id="wallpaperCardWidth" type="range" min="8" max="100" value="50"><output id="wallpaperCardWidthValue">50%</output></label><label class="wallpaper-field" for="wallpaperCardHeight">Altura do card <input id="wallpaperCardHeight" type="range" min="8" max="100" value="50"><output id="wallpaperCardHeightValue">50%</output></label><div class="wallpaper-card-foot"><small>No modo Mover card, use também as setas do teclado.</small><button type="button" id="wallpaperLayoutReset" class="wallpaper-text-btn" hidden>Restaurar layout</button></div></div><p id="wallpaperStatus" role="status">Escolha uma foto de fundo ou um layout para começar.</p><div class="wallpaper-applied-row"><span id="wallpaperAppliedStatus">Nenhum fundo aplicado à Biblioteca.</span><button type="button" id="wallpaperRemoveApplied" class="wallpaper-text-btn" hidden>Remover fundo atual</button></div><p class="wallpaper-preview-note">O fundo da Biblioteca fica salvo neste navegador. Baixar PNG é opcional para usar a imagem fora do Library.</p></div>
     </div>
     <input id="wallpaperBackgroundInput" type="file" accept="image/*" hidden><input id="wallpaperPhotosInput" type="file" accept="image/*" multiple hidden>
     <div class="wallpaper-picker" id="wallpaperPicker" hidden role="dialog" aria-modal="true" aria-labelledby="wallpaperPickerTitle"><div class="wallpaper-picker-card"><div class="wallpaper-picker-head"><div><h2 id="wallpaperPickerTitle">Escolher foto da biblioteca</h2><p>Veja as miniaturas e toque nas fotos que deseja usar.</p></div><button type="button" id="wallpaperPickerClose" aria-label="Fechar">${icon("X")}</button></div><label class="sr-only" for="wallpaperSearch">Buscar fotos</label><input id="wallpaperSearch" type="search" placeholder="Buscar fotos..."><div class="wallpaper-picker-list" id="wallpaperPickerList"></div><button class="wallpaper-picker-more" id="wallpaperPickerMore" type="button" hidden>Mostrar mais fotos</button></div></div>`;
@@ -204,6 +276,7 @@ export function createWallpaperStudio(api) {
     radius: 18,
     background: null,
     photos: [],
+    slotOverrides: {},
   };
   let pickerTarget = "photos";
   let pickerLimit = 24;
@@ -215,6 +288,7 @@ export function createWallpaperStudio(api) {
   let fallbackInFlight = 0;
   let applying = false;
   let selectedIndex = -1;
+  let editMode = "crop";
   let drag = null;
   let drawing = false;
   let redrawQueued = false;
@@ -243,8 +317,13 @@ export function createWallpaperStudio(api) {
     const selectedPhoto =
       selectedIndex >= 0 ? state.photos[selectedIndex] : null;
     $("wallpaperCropHint").hidden = !layout.count;
+    $("wallpaperCropHint").textContent =
+      editMode === "card"
+        ? "Arraste o card para movê-lo ou puxe o quadrado no canto para mudar o tamanho."
+        : "Selecione um card. Arraste a foto para enquadrar ou puxe o quadrado no canto para mudar o tamanho.";
     $("wallpaperCropControls").hidden = !selectedPhoto;
     if (selectedPhoto) {
+      const slot = wallpaperSlotValues(state)[selectedIndex];
       $("wallpaperCropName").textContent =
         `Foto ${selectedIndex + 1}: ${selectedPhoto.name}`;
       $("wallpaperPhotoZoom").value = String(
@@ -252,6 +331,27 @@ export function createWallpaperStudio(api) {
       );
       $("wallpaperPhotoZoomValue").textContent =
         `${Math.round((selectedPhoto.zoom || 1) * 100)}%`;
+      for (const [dimension, value] of [
+        ["Width", slot[2]],
+        ["Height", slot[3]],
+      ]) {
+        const input = $(`wallpaperCard${dimension}`);
+        input.max = String(
+          Math.floor((1 - slot[dimension === "Width" ? 0 : 1]) * 100),
+        );
+        input.value = String(Math.round(value * 100));
+        $(`wallpaperCard${dimension}Value`).textContent =
+          `${Math.round(value * 100)}%`;
+      }
+    }
+    $("wallpaperLayoutReset").hidden = !state.slotOverrides[slotKey(state)];
+    for (const [id, mode] of [
+      ["wallpaperCropMode", "crop"],
+      ["wallpaperMoveMode", "card"],
+    ]) {
+      const button = $(id);
+      button.classList.toggle("active", editMode === mode);
+      button.setAttribute("aria-pressed", String(editMode === mode));
     }
     $("wallpaperDimensions").textContent =
       `${sizes[state.size][0]} × ${sizes[state.size][1]} px`;
@@ -290,7 +390,14 @@ export function createWallpaperStudio(api) {
       button.setAttribute("aria-pressed", String(active));
     });
     $("wallpaperCanvas").classList.toggle("portrait", state.size === "mobile");
-    $("wallpaperCanvas").classList.toggle("can-drag", !!layout.count);
+    $("wallpaperCanvas").classList.toggle(
+      "can-drag",
+      !!layout.count && editMode === "crop",
+    );
+    $("wallpaperCanvas").classList.toggle(
+      "can-move",
+      !!layout.count && editMode === "card",
+    );
     $("wallpaperPhotoList").innerHTML = state.photos
       .map(
         (photo, index) =>
@@ -410,46 +517,113 @@ export function createWallpaperStudio(api) {
   };
 
   const canvas = $("wallpaperCanvas");
+  const handleSize = (slot) =>
+    Math.min(slot.width, slot.height, Math.max(32, canvas.width / 40));
+  const onResizeHandle = (slot, x, y) => {
+    const handle = handleSize(slot);
+    return (
+      x >= slot.x + slot.width - handle &&
+      x <= slot.x + slot.width &&
+      y >= slot.y + slot.height - handle &&
+      y <= slot.y + slot.height
+    );
+  };
   canvas.onpointerdown = (event) => {
     if (event.button !== 0 && event.pointerType !== "touch") return;
     const bounds = canvas.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
     const x = ((event.clientX - bounds.left) / bounds.width) * canvas.width;
     const y = ((event.clientY - bounds.top) / bounds.height) * canvas.height;
-    const index = wallpaperSlotRects(state).findIndex(
-      (slot, candidate) =>
+    const slots = wallpaperSlotRects(state);
+    let index = -1;
+    const selected = slots[selectedIndex];
+    if (
+      selected &&
+      state.photos[selectedIndex] &&
+      (onResizeHandle(selected, x, y) ||
+        (editMode === "card" &&
+          x >= selected.x &&
+          x <= selected.x + selected.width &&
+          y >= selected.y &&
+          y <= selected.y + selected.height))
+    ) {
+      index = selectedIndex;
+    }
+    for (
+      let candidate = slots.length - 1;
+      index < 0 && candidate >= 0;
+      candidate--
+    ) {
+      const slot = slots[candidate];
+      if (
         state.photos[candidate] &&
         x >= slot.x &&
         x <= slot.x + slot.width &&
         y >= slot.y &&
-        y <= slot.y + slot.height,
-    );
+        y <= slot.y + slot.height
+      ) {
+        index = candidate;
+        break;
+      }
+    }
     if (index < 0) return;
     selectedIndex = index;
-    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    drag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      mode: onResizeHandle(slots[index], x, y) ? "resize" : editMode,
+      startSlot: [...wallpaperSlotValues(state)[index]],
+    };
     canvas.setPointerCapture?.(event.pointerId);
     canvas.focus();
     render();
   };
   canvas.onpointermove = (event) => {
-    if (!drag || drag.pointerId !== event.pointerId) return;
     const bounds = canvas.getBoundingClientRect();
+    if (!drag) {
+      const slot = wallpaperSlotRects(state)[selectedIndex];
+      if (slot && bounds.width && bounds.height) {
+        const x = ((event.clientX - bounds.left) / bounds.width) * canvas.width;
+        const y =
+          ((event.clientY - bounds.top) / bounds.height) * canvas.height;
+        canvas.style.cursor = onResizeHandle(slot, x, y) ? "nwse-resize" : "";
+      }
+      return;
+    }
+    if (drag.pointerId !== event.pointerId) return;
     const slot = wallpaperSlotRects(state)[selectedIndex];
     if (!slot || !bounds.width || !bounds.height) return;
-    movePhotoFocus(
-      state.photos[selectedIndex],
-      slot,
-      ((event.clientX - drag.x) / bounds.width) * canvas.width,
-      ((event.clientY - drag.y) / bounds.height) * canvas.height,
-    );
-    drag.x = event.clientX;
-    drag.y = event.clientY;
+    const deltaX = (event.clientX - drag.x) / bounds.width;
+    const deltaY = (event.clientY - drag.y) / bounds.height;
+    if (drag.mode === "resize") {
+      updateWallpaperSlot(state, selectedIndex, {
+        width: drag.startSlot[2] + deltaX,
+        height: drag.startSlot[3] + deltaY,
+      });
+      canvas.style.cursor = "nwse-resize";
+    } else if (drag.mode === "card") {
+      updateWallpaperSlot(state, selectedIndex, {
+        x: drag.startSlot[0] + deltaX,
+        y: drag.startSlot[1] + deltaY,
+      });
+    } else {
+      movePhotoFocus(
+        state.photos[selectedIndex],
+        slot,
+        deltaX * canvas.width,
+        deltaY * canvas.height,
+      );
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+    }
     render();
   };
   const stopDrag = (event) => {
     if (drag?.pointerId !== event.pointerId) return;
     canvas.releasePointerCapture?.(event.pointerId);
     drag = null;
+    canvas.style.cursor = "";
   };
   canvas.onpointerup = stopDrag;
   canvas.onpointercancel = stopDrag;
@@ -475,7 +649,37 @@ export function createWallpaperStudio(api) {
         : event.key === "ArrowDown"
           ? slot.height * step
           : 0;
-    movePhotoFocus(state.photos[selectedIndex], slot, dx, dy);
+    if (editMode === "card") {
+      const current = wallpaperSlotValues(state)[selectedIndex];
+      updateWallpaperSlot(state, selectedIndex, {
+        x: current[0] + dx / canvas.width,
+        y: current[1] + dy / canvas.height,
+      });
+    } else movePhotoFocus(state.photos[selectedIndex], slot, dx, dy);
+    render();
+  };
+  $("wallpaperCropMode").onclick = () => {
+    editMode = "crop";
+    render();
+  };
+  $("wallpaperMoveMode").onclick = () => {
+    editMode = "card";
+    render();
+  };
+  for (const [dimension, key] of [
+    ["Width", "width"],
+    ["Height", "height"],
+  ]) {
+    $(`wallpaperCard${dimension}`).oninput = (event) => {
+      if (selectedIndex < 0) return;
+      updateWallpaperSlot(state, selectedIndex, {
+        [key]: Number(event.target.value) / 100,
+      });
+      render();
+    };
+  }
+  $("wallpaperLayoutReset").onclick = () => {
+    delete state.slotOverrides[slotKey(state)];
     render();
   };
   $("wallpaperPhotoZoom").oninput = (event) => {
