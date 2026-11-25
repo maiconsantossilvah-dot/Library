@@ -1,0 +1,567 @@
+.vault-reimagined[data-section="wallpaper"] .workspace-toolbar {
+  display: none;
+}
+.vault-reimagined[data-section="wallpaper"] .global-search {
+  visibility: hidden;
+}
+.wallpaper-workspace {
+  max-width: 1500px;
+  margin: 0 auto;
+  color: var(--text);
+}
+.wallpaper-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+.wallpaper-header h1 {
+  margin: 5px 0 8px;
+  font: 400 clamp(36px, 4vw, 54px)/1 var(--font-display, Georgia, serif);
+}
+.wallpaper-header p {
+  margin: 0;
+  color: var(--text2);
+  font-size: 14px;
+}
+.wallpaper-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent2);
+  color: white;
+  font: 700 13px var(--font-body, sans-serif);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wallpaper-download:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.wallpaper-download .lucide {
+  width: 17px;
+  height: 17px;
+}
+.wallpaper-header-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.wallpaper-download-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.vault-reimagined[data-section="files"][data-library-wallpaper="true"]
+  .content {
+  background-image:
+    linear-gradient(rgba(246, 243, 235, 0.58), rgba(246, 243, 235, 0.58)),
+    var(--library-wallpaper);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: calc(100vh - 110px);
+}
+.vault-reimagined[data-section="files"][data-theme="dark"][data-library-wallpaper="true"]
+  .content {
+  background-image:
+    linear-gradient(rgba(14, 22, 18, 0.68), rgba(14, 22, 18, 0.68)),
+    var(--library-wallpaper);
+}
+.wallpaper-applied-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 11px;
+}
+.wallpaper-studio {
+  display: grid;
+  grid-template-columns: minmax(320px, 385px) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.wallpaper-controls {
+  display: grid;
+  gap: 14px;
+}
+.wallpaper-control-card,
+.wallpaper-preview-panel {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(23, 38, 31, 0.05);
+}
+.wallpaper-control-card {
+  padding: 20px;
+}
+.wallpaper-control-card h2,
+.wallpaper-preview-head h2 {
+  margin: 7px 0 5px;
+  font: 400 23px/1.2 var(--font-display, Georgia, serif);
+}
+.wallpaper-control-card p,
+.wallpaper-picker-head p {
+  margin: 0 0 15px;
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.wallpaper-step {
+  font: 700 10px/1.3 var(--font-mono, monospace);
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.wallpaper-format-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 13px;
+}
+.wallpaper-format-group button {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 88px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  font: 700 13px var(--font-body, sans-serif);
+  cursor: pointer;
+}
+.wallpaper-format-group button.active,
+.wallpaper-layouts button.active {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent2) 25%, transparent);
+}
+.wallpaper-format-group .lucide {
+  width: 17px;
+  height: 17px;
+  color: var(--accent2);
+}
+.wallpaper-format-group small,
+.wallpaper-layouts small {
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 400;
+}
+.wallpaper-button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 13px 0;
+}
+.wallpaper-button-row .utility-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.wallpaper-button-row .lucide {
+  width: 16px;
+  height: 16px;
+}
+.wallpaper-background-summary {
+  overflow: hidden;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallpaper-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 10px 0;
+  color: var(--text2);
+  font-size: 12px;
+}
+.wallpaper-field input[type="range"] {
+  flex: 1;
+  max-width: 130px;
+  accent-color: var(--accent2);
+}
+.wallpaper-field input[type="color"] {
+  width: 38px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.wallpaper-field output {
+  min-width: 28px;
+  text-align: right;
+}
+.wallpaper-text-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: 600 12px var(--font-body, sans-serif);
+  cursor: pointer;
+}
+.wallpaper-layouts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+.wallpaper-layouts button {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.wallpaper-layouts strong {
+  font: 700 11px/1.3 var(--font-body, sans-serif);
+}
+.wallpaper-layout-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 55px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: linear-gradient(140deg, #375d60, #c59170);
+}
+.wallpaper-layout-thumb i {
+  position: absolute;
+  display: block;
+  border-radius: 3px;
+  background: linear-gradient(140deg, #f3d6a3, #a76c65);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.wallpaper-layout-photo i {
+  inset: 0;
+  border: 0;
+}
+.wallpaper-layout-duo i:first-child {
+  inset: 10% 43% 10% 5%;
+}
+.wallpaper-layout-duo i:last-child {
+  inset: 18% 5% 18% 59%;
+}
+.wallpaper-layout-trio i:first-child {
+  inset: 8% 44% 8% 5%;
+}
+.wallpaper-layout-trio i:nth-child(2) {
+  inset: 8% 5% 52% 59%;
+}
+.wallpaper-layout-trio i:nth-child(3) {
+  inset: 52% 5% 8% 59%;
+}
+.wallpaper-layout-mosaic i:first-child {
+  inset: 8% 52% 42% 5%;
+}
+.wallpaper-layout-mosaic i:nth-child(2) {
+  inset: 8% 5% 59% 52%;
+}
+.wallpaper-layout-mosaic i:nth-child(3) {
+  inset: 44% 5% 8% 52%;
+}
+.wallpaper-layout-mosaic i:nth-child(4) {
+  inset: 64% 52% 8% 5%;
+}
+.wallpaper-layout-strip {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  padding: 6px;
+}
+.wallpaper-layout-strip i {
+  position: static;
+  flex: 1;
+  height: 100%;
+}
+.wallpaper-finish-options {
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.wallpaper-hint {
+  margin: 0 0 8px !important;
+}
+.wallpaper-photo-list {
+  display: grid;
+  gap: 6px;
+  max-height: 330px;
+  overflow-y: auto;
+}
+.wallpaper-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px;
+  border-radius: 9px;
+  background: var(--bg);
+}
+.wallpaper-photo-row img {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.wallpaper-photo-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wallpaper-photo-row button {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+}
+.wallpaper-photo-row button:hover {
+  background: var(--bg2);
+}
+.wallpaper-photo-row button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.wallpaper-photo-row .lucide {
+  width: 14px;
+  height: 14px;
+}
+.wallpaper-preview-panel {
+  position: sticky;
+  top: 22px;
+  padding: 24px;
+}
+.wallpaper-preview-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 19px;
+}
+.wallpaper-preview-head h2 {
+  margin-bottom: 0;
+}
+.wallpaper-preview-head > span {
+  color: var(--text2);
+  font: 11px var(--font-mono, monospace);
+}
+.wallpaper-canvas-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 470px;
+  padding: 25px;
+  border-radius: 15px;
+  background: #14221d;
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.08) 1px,
+    transparent 1px
+  );
+  background-size: 14px 14px;
+}
+.wallpaper-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  max-height: 65vh;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35);
+}
+.wallpaper-canvas-wrap canvas.portrait {
+  width: auto;
+  max-width: 100%;
+  max-height: 65vh;
+  aspect-ratio: 9 / 16;
+}
+#wallpaperStatus {
+  margin: 16px 0 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.wallpaper-preview-note {
+  margin: 0;
+  color: var(--text2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.wallpaper-picker[hidden] {
+  display: none;
+}
+.wallpaper-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 19, 16, 0.7);
+}
+.wallpaper-picker-card {
+  width: min(640px, 100%);
+  max-height: min(720px, 90vh);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 23px;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
+}
+.wallpaper-picker-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.wallpaper-picker-head h2 {
+  margin: 0 0 4px;
+  font: 400 27px var(--font-display, Georgia, serif);
+}
+.wallpaper-picker-head p {
+  margin: 0;
+}
+.wallpaper-picker-head button {
+  align-self: start;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.wallpaper-picker-head .lucide {
+  width: 20px;
+  height: 20px;
+}
+#wallpaperSearch {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+}
+.wallpaper-picker-list {
+  display: grid;
+  gap: 7px;
+  overflow-y: auto;
+}
+.wallpaper-picker-list > p {
+  color: var(--text2);
+  font-size: 13px;
+}
+.wallpaper-picker-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.wallpaper-picker-list button:hover {
+  border-color: var(--accent2);
+}
+.wallpaper-picker-list button:disabled {
+  opacity: 0.5;
+}
+.wallpaper-picker-list button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.wallpaper-picker-thumb {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--bg2);
+}
+.wallpaper-picker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@media (max-width: 1100px) {
+  .wallpaper-studio {
+    grid-template-columns: 1fr;
+  }
+  .wallpaper-preview-panel {
+    position: static;
+    grid-row: 1;
+  }
+  .wallpaper-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .wallpaper-header {
+    align-items: start;
+    flex-direction: column;
+  }
+  .wallpaper-header-actions,
+  .wallpaper-download {
+    width: 100%;
+    justify-content: center;
+  }
+  .wallpaper-controls {
+    grid-template-columns: 1fr;
+  }
+  .wallpaper-preview-panel {
+    padding: 15px;
+  }
+  .wallpaper-canvas-wrap {
+    min-height: 280px;
+    padding: 12px;
+  }
+  .wallpaper-canvas-wrap canvas,
+  .wallpaper-canvas-wrap canvas.portrait {
+    max-height: 50vh;
+  }
+}

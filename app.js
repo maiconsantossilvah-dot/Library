@@ -27,6 +27,8 @@ import { installPrivacy } from "./modules/privacy.js";
 import { installPrivateVault } from "./modules/vault-interface.js";
 import { installVideoScenes, captureCover } from "./modules/video-scenes.js";
 import { createMural } from "./modules/mural.js";
+import { createWallpaperStudio } from "./modules/wallpaper.js";
+import { createLibraryWallpaper } from "./modules/library-wallpaper.js";
 import { runLimitedQueue } from "./modules/async-queue.js";
 import { hashBrowserFile } from "./modules/file-hash.js";
 import { comparePageFiles } from "./modules/page-order.js";
@@ -2093,6 +2095,12 @@ function syncSectionUI() {
     "aria-current",
     navState.section === "mural" ? "page" : "false",
   );
+  $("wallpaperWorkspace").hidden = navState.section !== "wallpaper";
+  $("navWallpaper").classList.toggle("active", navState.section === "wallpaper");
+  $("navWallpaper").setAttribute(
+    "aria-current",
+    navState.section === "wallpaper" ? "page" : "false",
+  );
   dashboard.setAttribute("aria-hidden", isHome ? "false" : "true");
   filesWorkspace.setAttribute(
     "aria-hidden",
@@ -2185,6 +2193,10 @@ function navigateFolder(folderId) {
 }
 
 function renderBreadcrumb() {
+  if (navState.section === "wallpaper") {
+    breadcrumb.textContent = "Wallpapers";
+    return;
+  }
   if (navState.section === "mural") {
     breadcrumb.textContent = "Mural";
     return;
@@ -8707,6 +8719,31 @@ const mural = createMural({
   confirm: openConfirmDialog,
   toast: showToast,
 });
+const libraryWallpaper = createLibraryWallpaper();
+libraryWallpaper.ready.catch((error) => console.warn("Fundo da Biblioteca indisponível", error));
+const wallpaperStudio = createWallpaperStudio({
+  getPhotos: () => files.filter((file) => file.fileType === "image" && !file.deletedAt && !file.privateVault),
+  getThumbnail: (file) => mediaThumbUrl(file, 320, 240),
+  getBlob: fetchStoredBlob,
+  hydrate: hydrateDriveThumbnails,
+  toast: showToast,
+  applyWallpaper: (blob) => libraryWallpaper.apply(blob),
+  clearWallpaper: () => libraryWallpaper.clear(),
+  hasWallpaper: () => libraryWallpaper.isActive(),
+  openLibrary: () => openLibraryView(),
+});
+function openWallpaperSection() {
+  navState.section = "wallpaper";
+  syncSectionUI();
+  renderBreadcrumb();
+  renderGrid();
+  wallpaperStudio.open();
+}
+$("navWallpaper").onclick = openWallpaperSection;
+$("openWallpaperStudio").onclick = () => {
+  setPanelOpen(toolsPanel, $("toolsPanelToggle"), false);
+  openWallpaperSection();
+};
 $("navMural").onclick = async () => {
   navState.section = "mural";
   syncSectionUI();

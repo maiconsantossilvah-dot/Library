@@ -28,7 +28,7 @@ Ao atualizar a dependência Lucide ou adicionar ícones em `modules/icons.js`, e
 ## Navegação no computador
 
 - **Início** abre um hall sem imagens, capas, nomes de arquivos ou atividade recente: apenas contagens, contas, armazenamento e sincronização. A árvore de pastas fica oculta no hall, inclusive no tema After Dark.
-- **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual. **Cofre privado** abre a área protegida por senha.
+- **Biblioteca** mantém a última pasta, filtro e visualização usados; **Mural** abre a organização visual. **Wallpapers** cria e aplica fundos à Biblioteca. **Cofre privado** abre a área protegida por senha.
 - Dentro da Biblioteca, use as abas **Todos**, **Fotos**, **Vídeos** e **Documentos**. Recentes, favoritos, importantes, lixeira e a árvore de pastas ficam na lateral.
 - Filtros especiais, como duplicados, capturas e vídeos grandes, ficam em **Filtros**. Sincronização, contas, privacidade, aparência, backup e manutenção ficam em **Ferramentas**.
 - Atalhos: `Ctrl+K` busca, `Ctrl+U` adiciona arquivos, `Ctrl+Shift+N` cria uma pasta e `Alt+←` volta para a pasta anterior (ou para o Início quando estiver na raiz).
@@ -105,6 +105,13 @@ O escopo [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 - Selecione um item, escolha outro em **Conectar a** e crie uma ligação. Remova ligações no mesmo painel.
 - Arraste o fundo para navegar, ajuste o zoom ou use **Enquadrar**. Setas movem o item focado; Shift aumenta o passo. Desfazer/refazer funciona durante a sessão do mural (até 60 operações).
 - Remover um item do mural não exclui o arquivo da biblioteca. Os originais precisam continuar acessíveis nas contas correspondentes.
+
+## Wallpapers
+
+- Abra **Wallpapers** na lateral ou **Ferramentas → Aparência e privacidade → Personalizar fundo da Biblioteca**. Escolha uma foto de fundo do computador ou da biblioteca, ou use o fundo em degradê.
+- Para uma colagem, escolha **Dupla editorial**, **Tríptico**, **Mosaico** ou **Faixa de memórias** e adicione as fotos necessárias. Reordene as fotos na lista; as primeiras entram no layout. Você também pode usar qualquer foto da lista como fundo.
+- Ajuste formato **Desktop (1920 × 1080)** ou **Celular (1080 × 1920)**, cor, escurecimento, espaçamento e cantos. Clique em **Usar na Biblioteca** para aplicar a composição atrás do acervo. Use **Remover fundo atual** para voltar à aparência padrão. **Baixar PNG** é opcional.
+- O fundo aplicado fica salvo neste navegador. A montagem em edição fica nesta sessão. As fotos originais na biblioteca não são alteradas nem duplicadas no Drive. O fundo não aparece no hall inicial nem no cofre privado.
 
 ## Migrar da versão anterior
 

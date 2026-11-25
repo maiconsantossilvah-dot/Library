@@ -83,6 +83,10 @@
             <span data-icon="LayoutGrid" aria-hidden="true"></span
             ><span>Mural</span>
           </button>
+          <button class="app-nav-item" id="navWallpaper" type="button">
+            <span data-icon="Images" aria-hidden="true"></span
+            ><span>Wallpapers</span>
+          </button>
           <button class="app-nav-item" id="navPrivate" type="button">
             <span data-icon="ShieldAlert" aria-hidden="true"></span
             ><span>Cofre privado</span>
@@ -596,6 +600,10 @@
                   ></span>
                   <span id="afterDarkToggleText">Ativar tema After Dark</span>
                 </button>
+                <button class="utility-btn" id="openWallpaperStudio" type="button">
+                  <span data-icon="Images" aria-hidden="true"></span>
+                  Personalizar fundo da Biblioteca
+                </button>
               </div>
               <div class="privacy-settings">
                 <label
@@ -865,6 +873,12 @@
             id="muralWorkspace"
             hidden
             aria-label="Mural visual"
+          ></section>
+          <section
+            class="wallpaper-workspace"
+            id="wallpaperWorkspace"
+            hidden
+            aria-label="Criador de wallpapers"
           ></section>
           <section class="dashboard dashboard-home" id="dashboard">
             <header class="dashboard-hero">
